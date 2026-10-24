@@ -1,0 +1,1015 @@
+     1→'use client'
+     2→
+     3→import React, { useState, useCallback, useEffect, useRef } from 'react'
+     4→import { createPortal } from 'react-dom'
+     5→import LoginPage from '@/components/login-page'
+     6→import { AuthProvider, useAuth } from '@/components/auth-provider'
+     7→import { SyncProvider, useSync } from '@/components/sync-provider'
+     8→import { PWAInstallPrompt } from '@/components/pwa-install-prompt'
+     9→import { registerServiceWorker } from '@/lib/pwa'
+    10→import type { UserSession } from '@/components/auth-provider'
+    11→import { useNavigationHistory } from '@/hooks/use-navigation-history'
+    12→import { useIdleTimeout } from '@/hooks/use-idle-timeout'
+    13→import { notify as notifyStandalone } from '@/lib/notification-store'
+    14→import {
+    15→  LogOut,
+    16→  Receipt,
+    17→  AlertCircle,
+    18→  RefreshCcw,
+    19→  Zap,
+    20→  Shield,
+    21→  Fingerprint,
+    22→  ShieldAlert,
+    23→  Clock,
+    24→  Ban,
+    25→} from 'lucide-react'
+    26→import {
+    27→  SidebarProvider,
+    28→  SidebarInset,
+    29→} from '@/components/ui/sidebar'
+    30→
+    31→import { Button } from '@/components/ui/button'
+    32→import AppSidebar, { type PageId } from '@/components/app-sidebar'
+    33→import dynamic from 'next/dynamic'
+    34→
+    35→import TopBar from '@/components/top-bar'
+    36→import NotificationToasts from '@/components/notification-toast'
+    37→
+    38→// ─── Section-level Error Boundary ───
+    39→// Catches rendering errors in ANY section so they don't crash the entire page
+    40→class SectionErrorBoundary extends React.Component<{ children: React.ReactNode; sectionName: string }, { hasError: boolean; error: Error | null }> {
+    41→  state = { hasError: false, error: null as Error | null }
+    42→  static getDerivedStateFromError(error: Error) {
+    43→    return { hasError: true, error }
+    44→  }
+    45→  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    46→    console.error(`[SectionErrorBoundary:${this.props.sectionName}]`, error?.message, error?.stack, info?.componentStack)
+    47→    // Auto-retry ChunkLoadError once after a short delay (module system may recover)
+    48→    const isChunkError = error?.name === 'ChunkLoadError' || (error?.message && error.message.includes('Loading chunk'))
+    49→    if (isChunkError) {
+    50→      setTimeout(() => {
+    51→        this.setState({ hasError: false, error: null })
+    52→      }, 800)
+    53→    }
+    54→  }
+    55→  handleRetry = () => {
+    56→    const isChunkError = this.state.error?.name === 'ChunkLoadError' || (this.state.error?.message && this.state.error.message.includes('Loading chunk'))
+    57→    if (isChunkError) {
+    58→      // For chunk errors, a full page reload is the most reliable fix
+    59→      window.location.reload()
+    60→    } else {
+    61→      this.setState({ hasError: false, error: null })
+    62→    }
+    63→  }
+    64→  render() {
+    65→    if (this.state.hasError) {
+    66→      const errMsg = this.state.error?.message || 'Unknown error'
+    67→      const errName = this.state.error?.name || 'Error'
+    68→      const isChunkError = errName === 'ChunkLoadError' || errMsg.includes('Loading chunk')
+    69→      const stackLines = (this.state.error?.stack || '').split('\n').filter((l: string) => l.includes('src/')).slice(0, 2).map((l: string) => l.trim())
+    70→      return (
+    71→        <div className="flex flex-col items-center justify-center py-20 px-6">
+    72→          <div className="flex size-14 items-center justify-center rounded-2xl bg-red-100 dark:bg-red-900/30 mb-4">
+    73→            <AlertCircle className="size-7 text-red-500" />
+    74→          </div>
+    75→          <h3 className="text-base font-bold text-slate-800 dark:text-slate-200 mb-1">Section Error: {this.props.sectionName}</h3>
+    76→          <p className="text-xs text-red-500 dark:text-red-400 mb-1 font-mono">{errName}: {errMsg}</p>
+    77→          {isChunkError && (
+    78→            <p className="text-xs text-slate-500 dark:text-slate-400 mb-2 mt-1">This usually fixes itself after a page reload.</p>
+    79→          )}
+    80→          {stackLines.length > 0 && !isChunkError && (
+    81→            <pre className="text-[10px] text-slate-400 dark:text-slate-500 max-w-lg text-center overflow-x-auto mb-4 whitespace-pre-wrap mt-1">{stackLines.join('\n')}</pre>
+    82→          )}
+    83→          <Button variant="outline" size="sm" onClick={this.handleRetry} className="gap-1.5 mt-2">
+    84→            <RefreshCcw className="size-3" /> {isChunkError ? 'Reload Page' : 'Try Again'}
+    85→          </Button>
+    86→        </div>
+    87→      )
+    88→    }
+    89→    return this.props.children
+    90→  }
+    91→}
+    92→
+    93→// Shared loading spinner for dynamic imports
+    94→function SectionLoader() {
+    95→  return (
+    96→    <div className="flex items-center justify-center py-20">
+    97→      <div className="text-center space-y-3">
+    98→        <div className="size-8 animate-spin rounded-full border-2 border-emerald-600 border-t-transparent mx-auto" />
+    99→        <p className="text-xs text-muted-foreground">Loading section...</p>
+   100→      </div>
+   101→    </div>
+   102→  )
+   103→}
+   104→
+   105→const DashboardSection = dynamic(() => import('@/components/sections/dashboard-section'), { ssr: false, loading: () => <SectionLoader /> })
+   106→const BillGeneratorSection = dynamic(() => import('@/components/sections/bill-generator-section'), { ssr: false, loading: () => <SectionLoader /> })
+   107→const BillHistorySection = dynamic(() => import('@/components/sections/bill-history-section'), { ssr: false, loading: () => <SectionLoader /> })
+   108→const CashManagerSection = dynamic(() => import('@/components/sections/cash-manager-section'), { ssr: false, loading: () => <SectionLoader /> })
+   109→const KhataSection = dynamic(() => import('@/components/sections/customer-folio-section'), { ssr: false, loading: () => <SectionLoader /> })
+   110→const AttendanceSection = dynamic(() => import('@/components/sections/attendance-section'), { ssr: false, loading: () => <SectionLoader /> })
+   111→const CalculatorSection = dynamic(() => import('@/components/sections/calculator-section'), { ssr: false, loading: () => <SectionLoader /> })
+   112→const ItemManagementSection = dynamic(() => import('@/components/sections/item-management-section'), { ssr: false, loading: () => <SectionLoader /> })
+   113→const TableManagementSection = dynamic(() => import('@/components/sections/table-management-section'), { ssr: false, loading: () => <SectionLoader /> })
+   114→const ReportsSection = dynamic(() => import('@/components/sections/reports-section'), { ssr: false, loading: () => <SectionLoader /> })
+   115→const SettingsSection = dynamic(() => import('@/components/sections/settings-section'), { ssr: false, loading: () => <SectionLoader /> })
+   116→const SuperAdminSection = dynamic(() => import('@/components/sections/super-admin-section'), { ssr: false, loading: () => <SectionLoader /> })
+   117→
+   118→const PAGE_DISPLAY_NAMES: Record<string, string> = {
+   119→  'dashboard': 'Dashboard',
+   120→  'new-bill': 'New Bill',
+   121→  'bill-history': 'Bill History',
+   122→  'cash-manager': 'Cash Manager',
+   123→  'khata': 'Customer Folio',
+   124→  'attendance': 'Staff & Attendance',
+   125→  'calculator': 'Calculator',
+   126→  'item-management': 'Item Management',
+   127→  'table-management': 'Table Management',
+   128→  'reports': 'Reports',
+   129→  'settings': 'Settings',
+   130→  'super-admin': 'Super Admin',
+   131→}
+   132→
+   133→export default function Home() {
+   134→  // Register service worker for PWA
+   135→  React.useEffect(() => {
+   136→    registerServiceWorker();
+   137→    // Global error capture for debugging
+   138→    if (typeof window !== 'undefined') {
+   139→      window.onerror = (msg, src, line, col, err) => {
+   140→        console.error('[Global]', msg, src, line, col, err);
+   141→        (window as any).__globalError = { msg, src, line, col, stack: err?.stack };
+   142→        return false;
+   143→      };
+   144→      window.addEventListener('unhandledrejection', (e) => {
+   145→        console.error('[Unhandled Rejection]', e.reason);
+   146→        (window as any).__globalError = { msg: e.reason?.message || String(e.reason), stack: e.reason?.stack };
+   147→      });
+   148→    }
+   149→  }, []);
+   150→
+   151→  return (
+   152→    <AuthProvider>
+   153→      <SyncProvider>
+   154→      <AppContent />
+   155→      <PWAInstallPrompt />
+   156→      </SyncProvider>
+   157→    </AuthProvider>
+   158→  )
+   159→}
+   160→
+   161→function AppContent() {
+   162→  const { isAuthenticated, currentUser, token, login, logout, isSuperAdmin } = useAuth()
+   163→  const { syncVersion } = useSync()
+   164→  const [activePage, setActivePage] = useState<PageId>('dashboard')
+   165→  const [refreshKey, setRefreshKey] = useState(0)
+   166→  const [editInvoiceData, setEditInvoiceData] = useState<any>(null)
+   167→  const [pageKey, setPageKey] = useState(0)
+   168→  const [hasError, setHasError] = useState(false)
+   169→  const [isExpired, setIsExpired] = useState(false)
+   170→  const [isSuspended, setIsSuspended] = useState(false)
+   171→  const [expiryDate, setExpiryDate] = useState<string | null>(null)
+   172→  const navHistory = useNavigationHistory()
+   173→  // Track whether navigation history has been initialized after authentication
+   174→  const navInitializedRef = useRef(false)
+   175→  // backExitToast removed — now uses notify() for consistency
+   176→
+   177→  // When sync version changes (another tab/device changed data), refresh current section
+   178→  // Use useMemo to compute refreshKey from syncVersion instead of setState in effect
+   179→
+   180→
+   181→  // Override fetch to include auth token
+   182→  // Uses a ref for the token so we don't re-create the fetch wrapper on every token change.
+   183→  // The wrapper reads the latest token from the ref at call time.
+   184→  const fetchTokenRef = useRef(token);
+   185→  useEffect(() => { fetchTokenRef.current = token; }, [token]);
+   186→
+   187→  useEffect(() => {
+   188→    if (token) {
+   189→      const originalFetch = window.fetch
+   190→      window.fetch = function(input: RequestInfo | URL, init?: RequestInit) {
+   191→        const headers = new Headers(init?.headers)
+   192→        // Use the ref to get the latest token (avoids stale closure)
+   193→        const currentToken = fetchTokenRef.current;
+   194→        if (!headers.has('Authorization') && currentToken) {
+   195→          headers.set('Authorization', `Bearer ${currentToken}`)
+   196→        }
+   197→        return originalFetch(input, { ...init, headers })
+   198→      }
+   199→      return () => {
+   200→        window.fetch = originalFetch
+   201→      }
+   202→    }
+   203→  }, [token])
+   204→
+   205→  // Auto-Rotation control using screen.orientation.lock/unlock
+   206→  // Default: OFF (portrait locked). Saved in localStorage + DB for persistence.
+   207→  useEffect(() => {
+   208→    if (!isAuthenticated) return;
+   209→
+   210→    const applyOrientation = async () => {
+   211→      try {
+   212→        // Check localStorage first for immediate response
+   213→        const stored = localStorage.getItem('fp_auto_rotate');
+   214→        // Default OFF (portrait locked) if not set
+   215→        const autoRotate = stored !== null ? stored === 'true' : false;
+   216→
+   217→        if (autoRotate) {
+   218→          // Allow rotation
+   219→          if (screen.orientation && screen.orientation.unlock) {
+   220→            screen.orientation.unlock();
+   221→          }
+   222→        } else {
+   223→          // Lock to portrait
+   224→          if (screen.orientation && screen.orientation.lock) {
+   225→            try {
+   226→              await screen.orientation.lock('portrait');
+   227→            } catch {
+   228→              // screen.orientation.lock() may fail in some browsers/contexts
+   229→              // (e.g., not in fullscreen/standalone PWA, or not supported). That's okay.
+   230→            }
+   231→          }
+   232→        }
+   233→      } catch {
+   234→        // Ignore errors
+   235→      }
+   236→    };
+   237→
+   238→    applyOrientation();
+   239→
+   240→    // Listen for storage changes from other tabs/settings page
+   241→    const handleStorageChange = (e: StorageEvent) => {
+   242→      if (e.key === 'fp_auto_rotate') {
+   243→        applyOrientation();
+   244→      }
+   245→    };
+   246→    window.addEventListener('storage', handleStorageChange);
+   247→
+   248→    // Poll for DB setting changes periodically (in case changed from another device)
+   249→    const interval = setInterval(async () => {
+   250→      try {
+   251→        const currentToken = fetchTokenRef.current;
+   252→        if (!currentToken) return;
+   253→        const res = await fetch('/api/settings', {
+   254→          headers: { 'Authorization': `Bearer ${currentToken}` },
+   255→        });
+   256→        if (res.ok) {
+   257→          const settings = await res.json();
+   258→          const dbAutoRotate = settings.autoRotate ?? false;
+   259→          const stored = localStorage.getItem('fp_auto_rotate');
+   260→          const localAutoRotate = stored !== null ? stored === 'true' : false;
+   261→          // Sync: if DB differs from localStorage, update localStorage
+   262→          if (dbAutoRotate !== localAutoRotate) {
+   263→            localStorage.setItem('fp_auto_rotate', String(dbAutoRotate));
+   264→            applyOrientation();
+   265→          }
+   266→        }
+   267→      } catch {
+   268→        // Ignore
+   269→      }
+   270→    }, 60000);
+   271→
+   272→    return () => {
+   273→      window.removeEventListener('storage', handleStorageChange);
+   274→      clearInterval(interval);
+   275→    };
+   276→  }, [isAuthenticated]);
+   277→
+   278→  const handleLoginSuccess = useCallback((newToken: string, user: UserSession) => {
+   279→    login(newToken, user)
+   280→    // After login, clean the browser history to remove the pre-login entry
+   281→    // so the back button never returns to the login page
+   282→    if (typeof window !== 'undefined') {
+   283→      window.history.replaceState({ page: 'dashboard', index: 0 }, '')
+   284→      window.history.pushState({ page: 'dashboard', index: 0 }, '')
+   285→    }
+   286→  }, [login])
+   287→
+   288→  const handleLogout = useCallback(() => {
+   289→    logout()
+   290→    setActivePage('dashboard')
+   291→    setPageKey(0)
+   292→    setEditInvoiceData(null)
+   293→    navHistory.clear()
+   294→    // Reset nav initialized flag so navigation history is re-set up on next login
+   295→    navInitializedRef.current = false
+   296→  }, [logout, navHistory])
+   297→
+   298→  // Auto-logout after 10 minutes of inactivity
+   299→  const handleIdleLogout = useCallback(() => {
+   300→    handleLogout()
+   301→    notifyStandalone({ type: 'warning', title: 'Session Expired', message: 'You were logged out due to 10 minutes of inactivity.' })
+   302→  }, [handleLogout])
+   303→  const { showWarning: idleWarning, secondsLeft: idleSecondsLeft, resetIdle } = useIdleTimeout(isAuthenticated, handleIdleLogout)
+   304→
+   305→  const handleNavigate = useCallback((page: PageId) => {
+   306→    setActivePage(page)
+   307→    setPageKey((prev) => prev + 1)
+   308→    navHistory.push(page)
+   309→    window.scrollTo({ top: 0, behavior: 'smooth' })
+   310→  }, [navHistory])
+   311→
+   312→  const handleEditInvoice = useCallback((invoice: any) => {
+   313→    setEditInvoiceData(invoice)
+   314→    setActivePage('new-bill')
+   315→    setPageKey((prev) => prev + 1)
+   316→    navHistory.push('new-bill')
+   317→  }, [navHistory])
+   318→
+   319→  const handleClearEditInvoice = useCallback(() => {
+   320→    setEditInvoiceData(null)
+   321→  }, [])
+   322→
+   323→  const handleRefreshData = useCallback(() => {
+   324→    setRefreshKey((prev) => prev + 1)
+   325→  }, [])
+   326→
+   327→  // ── Back-button handling for PWA ──
+   328→  const handleBackButton = useCallback(() => {
+   329→    // 1. Close open modals / dialogs / sheets / popups first
+   330→    const anyDialogOpen =
+   331→      document.querySelector('[data-state="open"][role="dialog"]') !== null
+   332→    const anySheetOpen =
+   333→      document.querySelector(
+   334→        '[data-state="open"][role="dialog"][data-vaul-drawer]'
+   335→      ) !== null
+   336→    const sidebarExpanded =
+   337→      document.querySelector('[data-state="expanded"]') !== null
+   338→
+   339→    if (anyDialogOpen || anySheetOpen) {
+   340→      // Dispatch Escape to let Radix / Vaul close their overlays
+   341→      document.dispatchEvent(
+   342→        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
+   343→      )
+   344→      return
+   345→    }
+   346→
+   347→    if (sidebarExpanded) {
+   348→      // Collapse the sidebar
+   349→      document.dispatchEvent(
+   350→        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
+   351→      )
+   352→      return
+   353→    }
+   354→
+   355→    // 2. Navigate back through our history
+   356→    const result = navHistory.handleBackPress()
+   357→
+   358→    if (result.action === 'navigate' && result.previousPage) {
+   359→      setActivePage(result.previousPage as PageId)
+   360→      setPageKey((prev) => prev + 1)
+   361→    } else if (result.action === 'wait') {
+   362→      // Show "Press back again to exit" via swipeable notification
+   363→      notifyStandalone({ type: 'warning', title: 'Exit?', message: 'Press back again to exit the app', duration: 2000 })
+   364→    } else if (result.action === 'exit') {
+   365→      // Go back in browser history to let the browser handle exit
+   366→      // window.close() doesn't work in most browsers/PWAs
+   367→      window.history.back()
+   368→    }
+   369→  }, [navHistory])
+   370→
+   371→  // Listen for browser/hardware back button via popstate
+   372→  useEffect(() => {
+   373→    const handlePopState = (_e: PopStateEvent) => {
+   374→      // Push state back so the browser never actually navigates away
+   375→      window.history.pushState(null, '')
+   376→      handleBackButton()
+   377→      // After handling, update the history state to match our internal state
+   378→      const currentPage = navHistory.getCurrentPage()
+   379→      if (currentPage) {
+   380→        window.history.replaceState({ page: currentPage }, '')
+   381→      }
+   382→    }
+   383→
+   384→    window.addEventListener('popstate', handlePopState)
+   385→    return () => window.removeEventListener('popstate', handlePopState)
+   386→  }, [handleBackButton, navHistory])
+   387→
+   388→  // Push the initial page into history ONLY after authentication is confirmed
+   389→  // This prevents the pre-login history entry from remaining in the browser history stack
+   390→  useEffect(() => {
+   391→    if (!isAuthenticated || navInitializedRef.current) return
+   392→    navInitializedRef.current = true
+   393→    navHistory.push('dashboard')
+   394→    // Replace the current history entry so the very first state is ours
+   395→    // (removes the pre-login/pre-auth entry from browser history)
+   396→    window.history.replaceState({ page: 'dashboard', index: 0 }, '')
+   397→    // Also push an extra entry so the first hardware back press triggers popstate
+   398→    window.history.pushState({ page: 'dashboard', index: 0 }, '')
+   399→  }, [isAuthenticated])
+   400→
+   401→  // Data version: tracks both manual refresh and sync-triggered changes
+   402→  // This is passed as a prop so components can re-fetch data WITHOUT remounting
+   403→  const dataVersion = refreshKey + (syncVersion > 0 ? syncVersion : 0)
+   404→
+   405→  // Check if the client's subscription has expired or been suspended (for business users)
+   406→  // Also uses the response to keep the session in sync with the DB (rolling refresh)
+   407→  // NOTE: Uses refs for token/login so the interval doesn't restart on every token change.
+   408→  // Previously, `login(data.token, data.user)` would change the token, which re-triggered
+   409→  // this effect, which called login() again — causing a cascade of re-renders that
+   410→  // overwrote user input in Settings and other sections.
+   411→  const checkStatusTokenRef = useRef(token);
+   412→  useEffect(() => { checkStatusTokenRef.current = token; }, [token]);
+   413→  const loginRef = useRef(login);
+   414→  useEffect(() => { loginRef.current = login; }, [login]);
+   415→
+   416→  useEffect(() => {
+   417→    if (!isAuthenticated || isSuperAdmin) return;
+   418→    const checkStatus = async () => {
+   419→      const currentToken = checkStatusTokenRef.current;
+   420→      if (!currentToken) return;
+   421→      try {
+   422→        const res = await fetch('/api/auth', {
+   423→          headers: { 'Authorization': `Bearer ${currentToken}` },
+   424→        });
+   425→        if (res.ok) {
+   426→          const data = await res.json().catch(() => ({}));
+   427→          if (data.valid && data.token && data.user) {
+   428→            // Rolling refresh: update session with fresh data from DB
+   429→            loginRef.current(data.token, data.user as UserSession);
+   430→          }
+   431→        } else {
+   432→          const data = await res.json().catch(() => ({}));
+   433→          if (data.expired) {
+   434→            setIsExpired(true);
+   435→            setExpiryDate(data.expiresAt || null);
+   436→          } else if (data.suspended) {
+   437→            setIsSuspended(true);
+   438→          }
+   439→        }
+   440→      } catch {
+   441→        // Network error — don't block
+   442→      }
+   443→    };
+   444→    checkStatus();
+   445→    // Check every 5 minutes
+   446→    const interval = setInterval(checkStatus, 5 * 60 * 1000);
+   447→    return () => clearInterval(interval);
+   448→  }, [isAuthenticated, isSuperAdmin]);
+   449→
+   450→  // Clean up browser history after auto-login to prevent back button from going to login
+   451→  useEffect(() => {
+   452→    if (isAuthenticated) {
+   453→      // Small delay to ensure React has finished rendering the app
+   454→      const timer = setTimeout(() => {
+   455→        window.history.replaceState({ page: 'dashboard', index: 0 }, '')
+   456→      }, 100)
+   457→      return () => clearTimeout(timer)
+   458→    }
+   459→  }, [isAuthenticated])
+   460→
+   461→  if (!isAuthenticated) {
+   462→    return <LoginPage onLoginSuccess={handleLoginSuccess} />
+   463→  }
+   464→
+   465→  // Super Admin gets their own panel (not affected by expiry)
+   466→  if (isSuperAdmin && token) {
+   467→    return <SuperAdminSection token={token} onLogout={handleLogout} />
+   468→  }
+   469→
+   470→  // ── Suspended Account Screen ──
+   471→  if (isSuspended) {
+   472→    return (
+   473→      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 via-gray-900 to-slate-950 p-4 relative overflow-hidden">
+   474→        {/* Background Effects */}
+   475→        <div className="absolute inset-0 pointer-events-none">
+   476→          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full bg-amber-500/5 blur-[120px]" />
+   477→          <div className="absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full bg-orange-500/5 blur-[100px]" />
+   478→          <div className="absolute inset-0 opacity-[0.02]" style={{
+   479→            backgroundImage: `linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)`,
+   480→            backgroundSize: '40px 40px',
+   481→          }} />
+   482→        </div>
+   483→
+   484→        <div className="relative z-10 max-w-[480px] w-full">
+   485→          {/* Notice Card */}
+   486→          <div className="relative rounded-2xl overflow-hidden shadow-2xl shadow-black/40">
+   487→            {/* Animated top border */}
+   488→            <div className="h-1 bg-gradient-to-r from-amber-500 via-orange-500 to-yellow-500" style={{
+   489→              animation: 'shimmer 3s ease-in-out infinite',
+   490→              backgroundSize: '200% 100%',
+   491→            }} />
+   492→
+   493→            <div className="bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-b-2xl">
+   494→              {/* Header Section */}
+   495→              <div className="relative px-8 pt-8 pb-6 text-center">
+   496→                {/* Pulsing ring icon */}
+   497→                <div className="relative inline-flex mb-5">
+   498→                  <div className="absolute inset-0 rounded-full bg-amber-500/20" style={{ animation: 'ping-slow 2s cubic-bezier(0, 0, 0.2, 1) infinite' }} />
+   499→                  <div className="relative flex size-20 items-center justify-center rounded-full bg-gradient-to-br from-amber-500/20 to-orange-500/20 border border-amber-500/30 backdrop-blur-sm">
+   500→                    <Ban className="size-10 text-amber-400" />
+   501→                  </div>
+   502→                </div>
+   503→
+   504→                <h1 className="text-2xl font-bold text-white tracking-tight">Account Suspended</h1>
+   505→                <p className="text-sm text-gray-400 mt-1.5">Your account has been temporarily suspended</p>
+   506→              </div>
+   507→
+   508→              {/* Divider */}
+   509→              <div className="mx-8 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+   510→
+   511→              {/* Alert Banner */}
+   512→              <div className="mx-6 mt-6 p-4 rounded-xl bg-gradient-to-br from-amber-500/10 to-orange-500/10 border border-amber-500/20">
+   513→                <div className="flex items-start gap-3">
+   514→                  <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/20">
+   515→                    <AlertCircle className="size-5 text-amber-400" />
+   516→                  </div>
+   517→                  <div>
+   518→                    <p className="text-sm font-semibold text-amber-300">Your account has been suspended</p>
+   519→                    <p className="text-xs text-amber-400/70 mt-1 leading-relaxed">
+   520→                      Your administrator has temporarily suspended this account. Please contact them to restore access.
+   521→                    </p>
+   522→                  </div>
+   523→                </div>
+   524→              </div>
+   525→
+   526→              {/* Account Details Card */}
+   527→              {currentUser && (
+   528→                <div className="mx-6 mt-4 rounded-xl border border-white/[0.08] overflow-hidden">
+   529→                  <div className="px-4 py-2 bg-white/[0.03] border-b border-white/[0.06]">
+   530→                    <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-widest">Account Details</span>
+   531→                  </div>
+   532→                  <div className="p-4 space-y-3">
+   533→                    <div className="flex items-center justify-between">
+   534→                      <div className="flex items-center gap-2 text-sm text-gray-400">
+   535→                        <Receipt className="size-3.5" />
+   536→                        <span>Business</span>
+   537→                      </div>
+   538→                      <span className="text-sm font-semibold text-white">
+   539→                        {currentUser.unitName}
+   540→                      </span>
+   541→                    </div>
+   542→                    <div className="h-px bg-white/[0.04]" />
+   543→                    <div className="flex items-center justify-between">
+   544→                      <div className="flex items-center gap-2 text-sm text-gray-400">
+   545→                        <Fingerprint className="size-3.5" />
+   546→                        <span>Client ID</span>
+   547→                      </div>
+   548→                      <span className="text-sm font-mono font-semibold text-white bg-white/[0.06] px-2 py-0.5 rounded">
+   549→                        {currentUser.unitCode}
+   550→                      </span>
+   551→                    </div>
+   552→                    <div className="h-px bg-white/[0.04]" />
+   553→                    <div className="flex items-center justify-between">
+   554→                      <div className="flex items-center gap-2 text-sm text-gray-400">
+   555→                        <ShieldAlert className="size-3.5" />
+   556→                        <span>Status</span>
+   557→                      </div>
+   558→                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/25">
+   559→                        <span className="size-1.5 rounded-full bg-amber-400" style={{ animation: 'blink 1.5s ease-in-out infinite' }} />
+   560→                        Suspended
+   561→                      </span>
+   562→                    </div>
+   563→                  </div>
+   564→                </div>
+   565→              )}
+   566→
+   567→              {/* Steps to Resolve */}
+   568→              <div className="mx-6 mt-4 space-y-2">
+   569→                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Steps to Resolve</p>
+   570→                <div className="flex items-start gap-3 p-3 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+   571→                  <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-[10px] font-bold text-amber-400">1</div>
+   572→                  <div>
+   573→                    <p className="text-sm text-gray-300">Contact your administrator</p>
+   574→                    <p className="text-xs text-gray-500 mt-0.5">Reach out to your system admin or IT team</p>
+   575→                  </div>
+   576→                </div>
+   577→                <div className="flex items-start gap-3 p-3 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+   578→                  <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-[10px] font-bold text-amber-400">2</div>
+   579→                  <div>
+   580→                    <p className="text-sm text-gray-300">Request account reactivation</p>
+   581→                    <p className="text-xs text-gray-500 mt-0.5">Ask for your Client ID to be reactivated</p>
+   582→                  </div>
+   583→                </div>
+   584→                <div className="flex items-start gap-3 p-3 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+   585→                  <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-[10px] font-bold text-emerald-400">3</div>
+   586→                  <div>
+   587→                    <p className="text-sm text-gray-300">Log back in</p>
+   588→                    <p className="text-xs text-gray-500 mt-0.5">Sign in again once your access is restored</p>
+   589→                  </div>
+   590→                </div>
+   591→              </div>
+   592→
+   593→              {/* Action Button */}
+   594→              <div className="px-6 pt-5 pb-6">
+   595→                <Button
+   596→                  onClick={handleLogout}
+   597→                  className="w-full h-12 bg-gradient-to-r from-gray-800 to-gray-900 hover:from-gray-700 hover:to-gray-800 text-white font-semibold text-sm gap-2.5 transition-all duration-300 shadow-lg shadow-black/30 hover:shadow-xl rounded-xl border border-white/[0.08]"
+   598→                >
+   599→                  <LogOut className="size-4" />
+   600→                  Sign Out
+   601→                </Button>
+   602→                <p className="text-center text-[11px] text-gray-600 mt-3">
+   603→                  If you believe this is an error, please contact support.
+   604→                </p>
+   605→              </div>
+   606→            </div>
+   607→          </div>
+   608→
+   609→          {/* Footer */}
+   610→          <div className="flex items-center justify-center gap-4 mt-5">
+   611→            <div className="flex items-center gap-1.5 text-[11px] text-gray-600">
+   612→              <Shield className="size-3" />
+   613→              <span>256-bit Encrypted</span>
+   614→            </div>
+   615→            <div className="w-1 h-1 rounded-full bg-gray-700" />
+   616→            <div className="flex items-center gap-1.5 text-[11px] text-gray-600">
+   617→              <Zap className="size-3" />
+   618→              <span>Eservices v3.0</span>
+   619→            </div>
+   620→          </div>
+   621→        </div>
+   622→
+   623→        {/* Animations */}
+   624→        <style dangerouslySetInnerHTML={{ __html: `
+   625→          @keyframes shimmer {
+   626→            0% { background-position: 200% 0; }
+   627→            100% { background-position: -200% 0; }
+   628→          }
+   629→          @keyframes ping-slow {
+   630→            0% { transform: scale(1); opacity: 0.4; }
+   631→            75%, 100% { transform: scale(1.6); opacity: 0; }
+   632→          }
+   633→          @keyframes blink {
+   634→            0%, 100% { opacity: 1; }
+   635→            50% { opacity: 0.3; }
+   636→          }
+   637→        ` }} />
+   638→      </div>
+   639→    )
+   640→  }
+   641→
+   642→  // ── Expired Subscription Screen ──
+   643→  if (isExpired) {
+   644→    const expDate = expiryDate
+   645→      ? new Date(expiryDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })
+   646→      : null;
+   647→
+   648→    return (
+   649→      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-950 via-gray-900 to-slate-950 p-4 relative overflow-hidden">
+   650→        {/* Background Effects */}
+   651→        <div className="absolute inset-0 pointer-events-none">
+   652→          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full bg-red-500/5 blur-[120px]" />
+   653→          <div className="absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full bg-amber-500/5 blur-[100px]" />
+   654→          <div className="absolute inset-0 opacity-[0.02]" style={{
+   655→            backgroundImage: `linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)`,
+   656→            backgroundSize: '40px 40px',
+   657→          }} />
+   658→        </div>
+   659→
+   660→        <div className="relative z-10 max-w-[480px] w-full">
+   661→          {/* Notice Card */}
+   662→          <div className="relative rounded-2xl overflow-hidden shadow-2xl shadow-black/40">
+   663→            {/* Animated top border */}
+   664→            <div className="h-1 bg-gradient-to-r from-red-500 via-orange-500 to-amber-500" style={{
+   665→              animation: 'shimmer 3s ease-in-out infinite',
+   666→              backgroundSize: '200% 100%',
+   667→            }} />
+   668→
+   669→            <div className="bg-white/[0.03] backdrop-blur-xl border border-white/[0.08] rounded-b-2xl">
+   670→              {/* Header Section */}
+   671→              <div className="relative px-8 pt-8 pb-6 text-center">
+   672→                {/* Pulsing ring icon */}
+   673→                <div className="relative inline-flex mb-5">
+   674→                  <div className="absolute inset-0 rounded-full bg-red-500/20" style={{ animation: 'ping-slow 2s cubic-bezier(0, 0, 0.2, 1) infinite' }} />
+   675→                  <div className="relative flex size-20 items-center justify-center rounded-full bg-gradient-to-br from-red-500/20 to-orange-500/20 border border-red-500/30 backdrop-blur-sm">
+   676→                    <ShieldAlert className="size-10 text-red-400" />
+   677→                  </div>
+   678→                </div>
+   679→
+   680→                <h1 className="text-2xl font-bold text-white tracking-tight">Subscription Expired</h1>
+   681→                <p className="text-sm text-gray-400 mt-1.5">Your access has been temporarily suspended</p>
+   682→              </div>
+   683→
+   684→              {/* Divider */}
+   685→              <div className="mx-8 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+   686→
+   687→              {/* Alert Banner */}
+   688→              <div className="mx-6 mt-6 p-4 rounded-xl bg-gradient-to-br from-red-500/10 to-orange-500/10 border border-red-500/20">
+   689→                <div className="flex items-start gap-3">
+   690→                  <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-red-500/20">
+   691→                    <AlertCircle className="size-5 text-red-400" />
+   692→                  </div>
+   693→                  <div>
+   694→                    <p className="text-sm font-semibold text-red-300">Your subscription has expired</p>
+   695→                    <p className="text-xs text-red-400/70 mt-1 leading-relaxed">
+   696→                      Please contact your administrator for renewal to restore full access to your account and data.
+   697→                    </p>
+   698→                  </div>
+   699→                </div>
+   700→              </div>
+   701→
+   702→              {/* Account Details Card */}
+   703→              {currentUser && (
+   704→                <div className="mx-6 mt-4 rounded-xl border border-white/[0.08] overflow-hidden">
+   705→                  <div className="px-4 py-2 bg-white/[0.03] border-b border-white/[0.06]">
+   706→                    <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-widest">Account Details</span>
+   707→                  </div>
+   708→                  <div className="p-4 space-y-3">
+   709→                    <div className="flex items-center justify-between">
+   710→                      <div className="flex items-center gap-2 text-sm text-gray-400">
+   711→                        <Receipt className="size-3.5" />
+   712→                        <span>Business</span>
+   713→                      </div>
+   714→                      <span className="text-sm font-semibold text-white">
+   715→                        {currentUser.unitName}
+   716→                      </span>
+   717→                    </div>
+   718→                    <div className="h-px bg-white/[0.04]" />
+   719→                    <div className="flex items-center justify-between">
+   720→                      <div className="flex items-center gap-2 text-sm text-gray-400">
+   721→                        <Fingerprint className="size-3.5" />
+   722→                        <span>Client ID</span>
+   723→                      </div>
+   724→                      <span className="text-sm font-mono font-semibold text-white bg-white/[0.06] px-2 py-0.5 rounded">
+   725→                        {currentUser.unitCode}
+   726→                      </span>
+   727→                    </div>
+   728→                    {expDate && (
+   729→                      <>
+   730→                        <div className="h-px bg-white/[0.04]" />
+   731→                        <div className="flex items-center justify-between">
+   732→                          <div className="flex items-center gap-2 text-sm text-gray-400">
+   733→                            <Clock className="size-3.5" />
+   734→                            <span>Expired On</span>
+   735→                          </div>
+   736→                          <span className="text-sm font-semibold text-red-400">
+   737→                            {expDate}
+   738→                          </span>
+   739→                        </div>
+   740→                      </>
+   741→                    )}
+   742→                    <div className="h-px bg-white/[0.04]" />
+   743→                    <div className="flex items-center justify-between">
+   744→                      <div className="flex items-center gap-2 text-sm text-gray-400">
+   745→                        <ShieldAlert className="size-3.5" />
+   746→                        <span>Status</span>
+   747→                      </div>
+   748→                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-red-500/15 text-red-400 border border-red-500/25">
+   749→                        <span className="size-1.5 rounded-full bg-red-400" style={{ animation: 'blink 1.5s ease-in-out infinite' }} />
+   750→                        Expired
+   751→                      </span>
+   752→                    </div>
+   753→                  </div>
+   754→                </div>
+   755→              )}
+   756→
+   757→              {/* Steps to Renew */}
+   758→              <div className="mx-6 mt-4 space-y-2">
+   759→                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Steps to Renew</p>
+   760→                <div className="flex items-start gap-3 p-3 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+   761→                  <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-[10px] font-bold text-amber-400">1</div>
+   762→                  <div>
+   763→                    <p className="text-sm text-gray-300">Contact your administrator</p>
+   764→                    <p className="text-xs text-gray-500 mt-0.5">Reach out to your system admin or IT team</p>
+   765→                  </div>
+   766→                </div>
+   767→                <div className="flex items-start gap-3 p-3 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+   768→                  <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-[10px] font-bold text-amber-400">2</div>
+   769→                  <div>
+   770→                    <p className="text-sm text-gray-300">Request subscription renewal</p>
+   771→                    <p className="text-xs text-gray-500 mt-0.5">Ask for your Client ID to be reactivated</p>
+   772→                  </div>
+   773→                </div>
+   774→                <div className="flex items-start gap-3 p-3 rounded-lg bg-white/[0.02] border border-white/[0.04]">
+   775→                  <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-[10px] font-bold text-emerald-400">3</div>
+   776→                  <div>
+   777→                    <p className="text-sm text-gray-300">Log back in</p>
+   778→                    <p className="text-xs text-gray-500 mt-0.5">Sign in again once your access is restored</p>
+   779→                  </div>
+   780→                </div>
+   781→              </div>
+   782→
+   783→              {/* Action Button */}
+   784→              <div className="px-6 pt-5 pb-6">
+   785→                <Button
+   786→                  onClick={handleLogout}
+   787→                  className="w-full h-12 bg-gradient-to-r from-gray-800 to-gray-900 hover:from-gray-700 hover:to-gray-800 text-white font-semibold text-sm gap-2.5 transition-all duration-300 shadow-lg shadow-black/30 hover:shadow-xl rounded-xl border border-white/[0.08]"
+   788→                >
+   789→                  <LogOut className="size-4" />
+   790→                  Sign Out
+   791→                </Button>
+   792→                <p className="text-center text-[11px] text-gray-600 mt-3">
+   793→                  If you believe this is an error, please contact support.
+   794→                </p>
+   795→              </div>
+   796→            </div>
+   797→          </div>
+   798→
+   799→          {/* Footer */}
+   800→          <div className="flex items-center justify-center gap-4 mt-5">
+   801→            <div className="flex items-center gap-1.5 text-[11px] text-gray-600">
+   802→              <Shield className="size-3" />
+   803→              <span>256-bit Encrypted</span>
+   804→            </div>
+   805→            <div className="w-1 h-1 rounded-full bg-gray-700" />
+   806→            <div className="flex items-center gap-1.5 text-[11px] text-gray-600">
+   807→              <Zap className="size-3" />
+   808→              <span>Eservices v3.0</span>
+   809→            </div>
+   810→          </div>
+   811→        </div>
+   812→
+   813→        {/* Animations */}
+   814→        <style dangerouslySetInnerHTML={{ __html: `
+   815→          @keyframes shimmer {
+   816→            0% { background-position: 200% 0; }
+   817→            100% { background-position: -200% 0; }
+   818→          }
+   819→          @keyframes ping-slow {
+   820→            0% { transform: scale(1); opacity: 0.4; }
+   821→            75%, 100% { transform: scale(1.6); opacity: 0; }
+   822→          }
+   823→          @keyframes blink {
+   824→            0%, 100% { opacity: 1; }
+   825→            50% { opacity: 0.3; }
+   826→          }
+   827→        ` }} />
+   828→      </div>
+   829→    );
+   830→  }
+   831→
+   832→  if (hasError) {
+   833→    return (
+   834→      <div className="flex min-h-screen items-center justify-center bg-background p-6">
+   835→        <div className="max-w-md w-full text-center space-y-6">
+   836→          <div className="flex size-16 items-center justify-center rounded-2xl bg-red-100 dark:bg-red-950/30 mx-auto">
+   837→            <AlertCircle className="size-8 text-red-500" />
+   838→          </div>
+   839→          <div className="space-y-2">
+   840→            <h2 className="text-xl font-bold text-foreground">Something went wrong</h2>
+   841→            <p className="text-sm text-muted-foreground">An unexpected error occurred. Please try refreshing the page.</p>
+   842→          </div>
+   843→          <Button onClick={() => { setHasError(false); setPageKey((prev) => prev + 1); }} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
+   844→            <RefreshCcw className="size-4" />
+   845→            Try Again
+   846→          </Button>
+   847→        </div>
+   848→      </div>
+   849→    )
+   850→  }
+   851→
+   852→  const renderPage = () => {
+   853→    let section: React.ReactNode
+   854→    switch (activePage) {
+   855→      case 'dashboard':
+   856→        section = <DashboardSection key="dashboard" dataVersion={dataVersion} onNavigate={(p: string) => handleNavigate(p as PageId)} />
+   857→        break
+   858→      case 'new-bill':
+   859→        section = (
+   860→          <BillGeneratorSection
+   861→            key={`bill-gen-${pageKey}`}
+   862→            onNavigate={(p: string) => handleNavigate(p as PageId)}
+   863→            onRefreshData={handleRefreshData}
+   864→            editInvoice={editInvoiceData}
+   865→            onClearEditInvoice={handleClearEditInvoice}
+   866→          />
+   867→        )
+   868→        break
+   869→      case 'bill-history':
+   870→        section = (
+   871→          <BillHistorySection
+   872→            key="bill-history"
+   873→            dataVersion={dataVersion}
+   874→            onNavigate={(p: string) => handleNavigate(p as PageId)}
+   875→            onEditInvoice={handleEditInvoice}
+   876→            onRefreshData={handleRefreshData}
+   877→          />
+   878→        )
+   879→        break
+   880→      case 'cash-manager':
+   881→        section = <CashManagerSection key="cash-manager" dataVersion={dataVersion} onRefreshData={handleRefreshData} />
+   882→        break
+   883→      case 'khata':
+   884→        section = <KhataSection key="khata" dataVersion={dataVersion} onRefreshData={handleRefreshData} />
+   885→        break
+   886→      case 'attendance':
+   887→        section = <AttendanceSection key="attendance" dataVersion={dataVersion} onRefreshData={handleRefreshData} />
+   888→        break
+   889→      case 'calculator':
+   890→        section = <CalculatorSection key="calculator" />
+   891→        break
+   892→      case 'item-management':
+   893→        section = <ItemManagementSection key="item-management" dataVersion={dataVersion} onRefreshData={handleRefreshData} />
+   894→        break
+   895→      case 'table-management':
+   896→        section = <TableManagementSection key="table-management" dataVersion={dataVersion} />
+   897→        break
+   898→      case 'reports':
+   899→        section = <ReportsSection key="reports" dataVersion={dataVersion} />
+   900→        break
+   901→      case 'settings':
+   902→        section = <SettingsSection key="settings" dataVersion={dataVersion} />
+   903→        break
+   904→      default:
+   905→        section = <DashboardSection key="dashboard" dataVersion={dataVersion} onNavigate={(p: string) => handleNavigate(p as PageId)} />
+   906→        break
+   907→    }
+   908→    return (
+   909→      <SectionErrorBoundary key={`${activePage}-${pageKey}`} sectionName={PAGE_DISPLAY_NAMES[activePage] || activePage}>
+   910→        {section}
+   911→      </SectionErrorBoundary>
+   912→    )
+   913→  }
+   914→
+   915→  return (
+   916→    <>
+   917→    <SidebarProvider>
+   918→      <AppSidebar activePage={activePage} onNavigate={handleNavigate} />
+   919→      <SidebarInset>
+   920→        <TopBar onNavigate={handleNavigate} onLogout={handleLogout} />
+   921→        <main className="flex-1 p-4 lg:p-6 animate-fade-in-up">
+   922→          {renderPage()}
+   923→        </main>
+   924→        <footer className="mt-auto border-t bg-background px-4 lg:px-6 py-3">
+   925→          <div className="flex items-center justify-between text-xs text-gray-400 dark:text-gray-500">
+   926→            <div className="flex items-center gap-1.5">
+   927→              <img src="/icon-192.png" alt="Eservices" className="h-3 w-3 rounded object-cover" />
+   928→              <span className="font-medium text-gray-500 dark:text-gray-400">Eservices</span>
+   929→              <span>&copy; {new Date().getFullYear()}</span>
+   930→            </div>
+   931→            <div className="flex items-center gap-3">
+   932→              <span className="flex items-center gap-1.5 text-emerald-500">
+   933→                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+   934→                Secured
+   935→              </span>
+   936→              <span className="text-gray-300 dark:text-gray-600">v3.0</span>
+   937→            </div>
+   938→          </div>
+   939→        </footer>
+   940→      </SidebarInset>
+   941→    </SidebarProvider>
+   942→
+   943→    {/* ── Toast Notifications ── */}
+   944→    <NotificationToasts />
+   945→
+   946→    {/* ── Idle Timeout Warning Dialog ── */}
+   947→    {idleWarning && typeof document !== 'undefined' && document.body && createPortal(
+   948→      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" style={{ zIndex: 9999 }}>
+   949→        {/* Backdrop */}
+   950→        <div className="fixed inset-0 bg-black/60 backdrop-blur-md" />
+   951→
+   952→        {/* Dialog */}
+   953→        <div className="relative w-full max-w-[380px] rounded-3xl bg-background border border-white/10 dark:border-white/5 shadow-[0_25px_60px_-12px_rgba(0,0,0,0.35)] animate-in fade-in-0 zoom-in-[0.97] slide-in-from-bottom-6 duration-300 overflow-hidden" style={{ zIndex: 10000 }}>
+   954→
+   955→          {/* Amber gradient header */}
+   956→          <div className="relative overflow-hidden">
+   957→            <div className="absolute inset-0 bg-gradient-to-r from-amber-500 via-orange-500 to-red-500" />
+   958→            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,255,255,0.15),transparent_60%)]" />
+   959→
+   960→            <div className="relative px-6 pt-5 pb-5">
+   961→              <div className="flex items-center gap-3">
+   962→                <div className="relative flex size-12 rounded-2xl bg-white/15 backdrop-blur-sm items-center justify-center ring-1 ring-white/20">
+   963→                  <Clock className="size-5 text-white" />
+   964→                  {/* Pulsing countdown ring */}
+   965→                  <svg className="absolute inset-0 size-12 -rotate-90" viewBox="0 0 48 48">
+   966→                    <circle cx="24" cy="24" r="20" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="2" />
+   967→                    <circle cx="24" cy="24" r="20" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeDasharray={`${(idleSecondsLeft / 60) * 125.6} 125.6`} className="transition-all duration-1000" />
+   968→                  </svg>
+   969→                </div>
+   970→                <div>
+   971→                  <h3 className="text-base font-extrabold text-white tracking-tight">Session Expiring</h3>
+   972→                  <p className="text-[11px] text-white/60 mt-0.5">Auto-logout due to inactivity</p>
+   973→                </div>
+   974→              </div>
+   975→            </div>
+   976→          </div>
+   977→
+   978→          {/* Countdown Body */}
+   979→          <div className="px-6 py-5 text-center space-y-4">
+   980→            <div className="flex flex-col items-center gap-2">
+   981→              <div className="relative flex size-20 items-center justify-center">
+   982→                <span className="text-4xl font-black text-amber-600 dark:text-amber-400 tabular-nums">{idleSecondsLeft}</span>
+   983→                <span className="absolute -bottom-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">seconds left</span>
+   984→              </div>
+   985→              <p className="text-sm text-muted-foreground">
+   986→                You've been inactive for 10 minutes.
+   987→                <br />
+   988→                <span className="text-amber-600 dark:text-amber-400 font-semibold">You'll be logged out automatically.</span>
+   989→              </p>
+   990→            </div>
+   991→
+   992→            <Button
+   993→              onClick={resetIdle}
+   994→              className="w-full h-11 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold text-sm shadow-lg shadow-emerald-500/25 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98]"
+   995→            >
+   996→              <Zap className="size-4 mr-2" />
+   997→              Stay Logged In
+   998→            </Button>
+   999→
+  1000→            <button
+  1001→              onClick={handleLogout}
+  1002→              className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors py-1"
+  1003→            >
+  1004→              Logout now
+  1005→            </button>
+  1006→          </div>
+  1007→        </div>
+  1008→      </div>,
+  1009→      document.body
+  1010→    )}
+  1011→
+  1012→    </>
+  1013→  )
+  1014→}
+  1015→

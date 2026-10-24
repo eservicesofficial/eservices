@@ -1,0 +1,402 @@
+   699→                <Label className="text-xs">Search Customer *</Label>
+   700→                <Input value={transferForm.targetName} onChange={e => { setTransferForm({ ...transferForm, targetName: e.target.value, targetCustomerId: '' }); searchTransferTargets(e.target.value) }} placeholder="Type name or mobile..." />
+   701→                {transferResults.length > 0 && (
+   702→                  <div className="border border-slate-200 dark:border-slate-700 rounded-md mt-1 max-h-32 overflow-auto">
+   703→                    {transferResults.map(c => (
+   704→                      <button key={c.id} onClick={() => setTransferForm({ ...transferForm, targetCustomerId: c.id, targetName: c.fullName })} className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+   705→                        {c.fullName} — {c.mobile} ({c.customerId})
+   706→                      </button>
+   707→                    ))}
+   708→                  </div>
+   709→                )}
+   710→              </div>
+   711→              <div><Label className="text-xs">Amount *</Label><Input type="number" value={transferForm.amount} onChange={e => setTransferForm({ ...transferForm, amount: e.target.value })} /></div>
+   712→              <div><Label className="text-xs">Description</Label><Input value={transferForm.description} onChange={e => setTransferForm({ ...transferForm, description: e.target.value })} /></div>
+   713→            </div>
+   714→            <DialogFooter>
+   715→              <Button variant="outline" onClick={() => setTransferOpen(false)}>Cancel</Button>
+   716→              <Button className="bg-purple-600 hover:bg-purple-700" onClick={() => {
+   717→                if (!transferForm.targetCustomerId || !transferForm.amount) { notify({ type: 'error', title: 'Error', message: 'Target and amount required' }); return }
+   718→                if (apiHeaders) transferWithTxn()
+   719→                else handleTransfer()
+   720→              }} disabled={isSubmitting}>
+   721→                {isSubmitting ? <Loader2 className="size-3 animate-spin" /> : 'Transfer'}
+   722→              </Button>
+   723→            </DialogFooter>
+   724→          </>
+   725→        )}
+   726→      </DialogContent>
+   727→    </Dialog>
+   728→
+   729→    {/* Shift Dialog */}
+   730→    <Dialog open={shiftOpen} onOpenChange={setShiftOpen}>
+   731→      <DialogContent className="max-w-sm">
+   732→        <DialogHeader>
+   733→          <DialogTitle>Shift Transactions</DialogTitle>
+   734→          <DialogDescription>Move {selectedEntries.size} selected entries to another folio</DialogDescription>
+   735→        </DialogHeader>
+   736→        <div className="py-2">
+   737→          <Label className="text-xs">Target Folio *</Label>
+   738→          <Select value={shiftTargetFolioId} onValueChange={setShiftTargetFolioId}>
+   739→            <SelectTrigger><SelectValue placeholder="Select folio" /></SelectTrigger>
+   740→            <SelectContent>{allFolios.filter(f => f.id !== selectedFolioId).map(f => (<SelectItem key={f.id} value={f.id}>{fmtFolioNum(f.folioNumber)} ({f.status})</SelectItem>))}</SelectContent>
+   741→          </Select>
+   742→        </div>
+   743→        <DialogFooter>
+   744→          <Button variant="outline" onClick={() => setShiftOpen(false)}>Cancel</Button>
+   745→          <Button onClick={handleShift} disabled={submitting || !shiftTargetFolioId}>{submitting ? <Loader2 className="size-3 animate-spin" /> : 'Shift'}</Button>
+   746→        </DialogFooter>
+   747→      </DialogContent>
+   748→    </Dialog>
+   749→
+   750→    {/* Split Amount Dialog */}
+   751→    <Dialog open={splitAmountOpen} onOpenChange={setSplitAmountOpen}>
+   752→      <DialogContent className="max-w-sm">
+   753→        <DialogHeader>
+   754→          <DialogTitle>Split Amount</DialogTitle>
+   755→          <DialogDescription>Split amount from selected entry to another folio</DialogDescription>
+   756→        </DialogHeader>
+   757→        <div className="grid gap-3 py-2">
+   758→          {selectedEntryObj && <div className="bg-slate-50 dark:bg-slate-800 rounded-md p-2 text-[11px]"><strong>Entry:</strong> {selectedEntryObj.description} — {fmtCur(selectedEntryObj.debit || selectedEntryObj.credit)}</div>}
+   759→          <div><Label className="text-xs">Amount *</Label><Input type="number" value={splitAmountForm.amount} onChange={e => setSplitAmountForm({ ...splitAmountForm, amount: e.target.value })} /></div>
+   760→          <div>
+   761→            <Label className="text-xs">Target Folio *</Label>
+   762→            <Select value={splitAmountForm.targetFolioId} onValueChange={v => setSplitAmountForm({ ...splitAmountForm, targetFolioId: v })}>
+   763→              <SelectTrigger><SelectValue placeholder="Select folio" /></SelectTrigger>
+   764→              <SelectContent>{allFolios.filter(f => f.id !== selectedFolioId).map(f => (<SelectItem key={f.id} value={f.id}>{fmtFolioNum(f.folioNumber)}</SelectItem>))}</SelectContent>
+   765→            </Select>
+   766→          </div>
+   767→        </div>
+   768→        <DialogFooter>
+   769→          <Button variant="outline" onClick={() => setSplitAmountOpen(false)}>Cancel</Button>
+   770→          <Button onClick={handleSplitAmount} disabled={submitting}>{submitting ? <Loader2 className="size-3 animate-spin" /> : 'Split'}</Button>
+   771→        </DialogFooter>
+   772→      </DialogContent>
+   773→    </Dialog>
+   774→
+   775→    {/* Remove Entries Alert */}
+   776→    <AlertDialog open={removeOpen} onOpenChange={setRemoveOpen}>
+   777→      <AlertDialogContent>
+   778→        <AlertDialogHeader>
+   779→          <AlertDialogTitle>Remove {selectedEntries.size} Entries?</AlertDialogTitle>
+   780→          <AlertDialogDescription>This will cancel the selected entries. This action cannot be undone.</AlertDialogDescription>
+   781→        </AlertDialogHeader>
+   782→        <AlertDialogFooter>
+   783→          <AlertDialogCancel>Cancel</AlertDialogCancel>
+   784→          <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={handleRemove} disabled={submitting}>{submitting ? <Loader2 className="size-3 animate-spin" /> : 'Remove'}</AlertDialogAction>
+   785→        </AlertDialogFooter>
+   786→      </AlertDialogContent>
+   787→    </AlertDialog>
+   788→
+   789→    {/* ══════════════════════════════════════════════════════════ */}
+   790→    {/* ─── CHECKOUT SETTLEMENT DIALOG (Enhanced) ─────────────── */}
+   791→    {/* ══════════════════════════════════════════════════════════ */}
+   792→    <Dialog open={checkoutSettlementOpen} onOpenChange={setCheckoutSettlementOpen}>
+   793→      <DialogContent className="max-w-3xl w-[95vw] sm:w-full max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
+   794→        <div className="px-4 sm:px-6 pt-5 pb-3 shrink-0">
+   795→          <DialogHeader>
+   796→            <DialogTitle className="flex items-center gap-2 text-sm sm:text-base">
+   797→              <Layers className="size-4 sm:size-5 text-emerald-600 shrink-0" />
+   798→              <span className="truncate">Checkout Settlement Overview</span>
+   799→            </DialogTitle>
+   800→            <DialogDescription className="text-[11px] sm:text-xs">
+   801→              Review and settle all outstanding balances for {detail?.fullName}
+   802→            </DialogDescription>
+   803→          </DialogHeader>
+   804→        </div>
+   805→
+   806→        {checkoutSettlementData && (
+   807→          <ScrollArea className="flex-1 px-4 sm:px-6 pb-4">
+   808→            {/* Summary Stats Row */}
+   809→            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 mb-3">
+   810→              <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-lg p-2.5 sm:p-3">
+   811→                <div className="text-[9px] sm:text-[10px] text-red-500 font-semibold uppercase tracking-wider">Total Outstanding</div>
+   812→                <div className="text-lg sm:text-xl font-bold text-red-700 dark:text-red-300 tabular-nums mt-0.5">{fmtCur(checkoutSettlementData.totalOutstanding)}</div>
+   813→              </div>
+   814→              <div className="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-lg p-2.5 sm:p-3">
+   815→                <div className="text-[9px] sm:text-[10px] text-emerald-500 font-semibold uppercase tracking-wider">Credit Balance</div>
+   816→                <div className="text-lg sm:text-xl font-bold text-emerald-700 dark:text-emerald-300 tabular-nums mt-0.5">{fmtCur(Math.abs(checkoutSettlementData.creditBalance || 0))}</div>
+   817→              </div>
+   818→              <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5 sm:p-3">
+   819→                <div className="text-[9px] sm:text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Total Folios</div>
+   820→                <div className="text-lg sm:text-xl font-bold text-slate-700 dark:text-slate-200 tabular-nums mt-0.5">{checkoutSettlementData.folios.length}</div>
+   821→              </div>
+   822→              <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-2.5 sm:p-3">
+   823→                <div className="text-[9px] sm:text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Customer</div>
+   824→                <div className="text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200 truncate mt-0.5">{checkoutSettlementData.customerName}</div>
+   825→              </div>
+   826→            </div>
+   827→
+   828→            {/* Credit Balance Highlight */}
+   829→            {checkoutSettlementData.creditBalance < 0 && (
+   830→              <div className="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-lg p-3 mb-3 flex items-center gap-3">
+   831→                <div className="w-10 h-10 rounded-full bg-emerald-100 dark:bg-emerald-900/50 flex items-center justify-center shrink-0">
+   832→                  <Wallet className="size-5 text-emerald-600 dark:text-emerald-400" />
+   833→                </div>
+   834→                <div>
+   835→                  <div className="text-xs font-bold text-emerald-700 dark:text-emerald-300">Customer has advance/credit balance</div>
+   836→                  <div className="text-[11px] text-emerald-600/80 dark:text-emerald-400/80">Available credit: {fmtCur(Math.abs(checkoutSettlementData.creditBalance))}. This will be adjusted during checkout.</div>
+   837→                </div>
+   838→              </div>
+   839→            )}
+   840→
+   841→            {/* Per-Folio Breakdown */}
+   842→            <div className="space-y-2 sm:space-y-3">
+   843→              {checkoutSettlementData.folios.map(folio => (
+   844→                <div key={folio.folioId} className={`border rounded-lg p-2.5 sm:p-3 ${
+   845→                  folio.outstandingBalance > 0
+   846→                    ? 'border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-950/20'
+   847→                    : 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/20'
+   848→                }`}>
+   849→                  <div className="flex items-center justify-between mb-2 gap-2">
+   850→                    <div className="flex items-center gap-1.5 min-w-0">
+   851→                      <span className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 shrink-0">Folio {fmtFolioNum(folio.folioNumber)}</span>
+   852→                      <span className={`text-[8px] sm:text-[9px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap ${
+   853→                        folio.outstandingBalance <= 0 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300' : 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300'
+   854→                      }`}>
+   855→                        {folio.outstandingBalance <= 0 ? 'Paid' : folio.outstandingBalance < (folio.totalDebits - folio.totalCredits) * 0.5 ? 'Partial' : 'Pending'}
+   856→                      </span>
+   857→                    </div>
+   858→                    <span className={`text-xs sm:text-sm font-bold tabular-nums shrink-0 ${
+   859→                      folio.outstandingBalance > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'
+   860→                    }`}>
+   861→                      {folio.outstandingBalance > 0 ? '+' : ''}{fmtCur(folio.outstandingBalance)}
+   862→                    </span>
+   863→                  </div>
+   864→
+   865→                  <div className="grid grid-cols-3 gap-1.5 text-[10px] sm:text-[11px] mb-2">
+   866→                    <div className="bg-white dark:bg-slate-800 rounded-md p-1.5 sm:p-2 text-center">
+   867→                      <div className="text-[8px] sm:text-[9px] text-slate-400 uppercase">Bill Amt</div>
+   868→                      <div className="font-bold text-slate-700 dark:text-slate-200 truncate">{fmtCur(folio.totalDebits)}</div>
+   869→                    </div>
+   870→                    <div className="bg-white dark:bg-slate-800 rounded-md p-1.5 sm:p-2 text-center">
+   871→                      <div className="text-[8px] sm:text-[9px] text-slate-400 uppercase">Paid Amt</div>
+   872→                      <div className="font-bold text-emerald-600 dark:text-emerald-400 truncate">{fmtCur(folio.totalCredits)}</div>
+   873→                    </div>
+   874→                    <div className="bg-white dark:bg-slate-800 rounded-md p-1.5 sm:p-2 text-center">
+   875→                      <div className="text-[8px] sm:text-[9px] text-slate-400 uppercase">Outstanding</div>
+   876→                      <div className={`font-bold truncate ${folio.outstandingBalance > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>{fmtCur(Math.abs(folio.outstandingBalance))}</div>
+   877→                    </div>
+   878→                  </div>
+   879→
+   880→                  <details className="group">
+   881→                    <summary className="text-[10px] text-slate-500 dark:text-slate-400 cursor-pointer hover:text-slate-700 dark:hover:text-slate-200 font-medium select-none">
+   882→                      ▼ {folio.entryCount} transactions
+   883→                    </summary>
+   884→                    <div className="mt-1.5 max-h-28 overflow-auto rounded-md border border-slate-100 dark:border-slate-700">
+   885→                      <div className="overflow-x-auto">
+   886→                        <table className="w-full text-[9px] sm:text-[10px] min-w-[320px]">
+   887→                          <thead>
+   888→                            <tr className="bg-slate-50 dark:bg-slate-800">
+   889→                              <th className="text-left p-1 sm:p-1.5 font-semibold text-slate-500 whitespace-nowrap">Date</th>
+   890→                              <th className="text-left p-1 sm:p-1.5 font-semibold text-slate-500 whitespace-nowrap">Type</th>
+   891→                              <th className="text-left p-1 sm:p-1.5 font-semibold text-slate-500">Description</th>
+   892→                              <th className="text-right p-1 sm:p-1.5 font-semibold text-slate-500 whitespace-nowrap">Dr</th>
+   893→                              <th className="text-right p-1 sm:p-1.5 font-semibold text-slate-500 whitespace-nowrap">Cr</th>
+   894→                              <th className="text-right p-1 sm:p-1.5 font-semibold text-slate-500 whitespace-nowrap">Bal</th>
+   895→                            </tr>
+   896→                          </thead>
+   897→                          <tbody>
+   898→                            {folio.transactions.map(tx => (
+   899→                              <tr key={tx.id} className="border-t border-slate-50 dark:border-slate-800">
+   900→                                <td className="p-1 sm:p-1.5 whitespace-nowrap">{fmtDate(tx.date)}</td>
+   901→                                <td className="p-1 sm:p-1.5 whitespace-nowrap">{tx.type}</td>
+   902→                                <td className="p-1 sm:p-1.5 truncate max-w-[100px] sm:max-w-[160px]" title={tx.description}>{tx.description}</td>
+   903→                                <td className="p-1 sm:p-1.5 text-right text-red-600 whitespace-nowrap">{tx.debit > 0 ? fmtINR(tx.debit) : ''}</td>
+   904→                                <td className="p-1 sm:p-1.5 text-right text-emerald-600 whitespace-nowrap">{tx.credit > 0 ? fmtINR(tx.credit) : ''}</td>
+   905→                                <td className={`p-1 sm:p-1.5 text-right font-bold whitespace-nowrap ${tx.balance >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{fmtINR(tx.balance)}</td>
+   906→                              </tr>
+   907→                            ))}
+   908→                          </tbody>
+   909→                        </table>
+   910→                      </div>
+   911→                    </div>
+   912→                  </details>
+   913→                </div>
+   914→              ))}
+   915→            </div>
+   916→
+   917→            {/* Settlement Payment Section */}
+   918→            {checkoutSettlementData.totalOutstanding > 0 && (
+   919→              <div className="mt-3 border border-slate-200 dark:border-slate-700 rounded-lg p-3 sm:p-4">
+   920→                <h4 className="text-[11px] sm:text-xs font-bold text-slate-700 dark:text-slate-200 mb-2 sm:mb-3">Settlement Payment</h4>
+   921→
+   922→                <Button
+   923→                  className="w-full h-9 sm:h-10 bg-emerald-600 hover:bg-emerald-700 text-white gap-2 text-xs sm:text-sm font-semibold mb-2 sm:mb-3"
+   924→                  onClick={handleAutoSettleAll}
+   925→                  disabled={submitting}
+   926→                >
+   927→                  {submitting ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}
+   928→                  Settle All ({fmtCur(checkoutSettlementData.totalOutstanding)})
+   929→                </Button>
+   930→
+   931→                <div className="flex items-center justify-between mb-2">
+   932→                  <button
+   933→                    onClick={() => { setSplitMode(!splitMode); if (!splitMode) setLocalSplitItems([{ method: 'Cash', amount: '', reference: '' }]) }}
+   934→                    className="text-[10px] sm:text-[11px] text-emerald-600 dark:text-emerald-400 hover:underline font-medium"
+   935→                  >
+   936→                    {splitMode ? '▲ Hide split payment' : '▼ Split payment across multiple modes'}
+   937→                  </button>
+   938→                </div>
+   939→
+   940→                {splitMode && (
+   941→                  <div className="border border-emerald-200 dark:border-emerald-800 rounded-lg p-2.5 sm:p-3 bg-emerald-50/50 dark:bg-emerald-950/20 mb-3">
+   942→                    {localSplitItems.map((item, idx) => (
+   943→                      <div key={idx} className="flex items-end gap-2 mb-2">
+   944→                        <div className="flex-1 min-w-0">
+   945→                          <Label className="text-[10px]">Mode</Label>
+   946→                          <Select value={item.method} onValueChange={v => updateSplitItem(idx, 'method', v)}>
+   947→                            <SelectTrigger className="h-8 text-[11px]"><SelectValue /></SelectTrigger>
+   948→                            <SelectContent>{ALL_PAYMENT_MODES.map(m => (<SelectItem key={m} value={m}>{m}</SelectItem>))}</SelectContent>
+   949→                          </Select>
+   950→                        </div>
+   951→                        <div className="w-28 shrink-0">
+   952→                          <Label className="text-[10px]">Amount</Label>
+   953→                          <Input type="number" className="h-8 text-[11px]" value={item.amount} onChange={e => updateSplitItem(idx, 'amount', e.target.value)} placeholder="0.00" />
+   954→                        </div>
+   955→                        <div className="w-20 shrink-0">
+   956→                          <Label className="text-[10px]">Ref</Label>
+   957→                          <Input className="h-8 text-[11px]" value={item.reference} onChange={e => updateSplitItem(idx, 'reference', e.target.value)} placeholder="—" />
+   958→                        </div>
+   959→                        {localSplitItems.length > 1 && (
+   960→                          <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-red-500 hover:text-red-700 shrink-0" onClick={() => removeSplitItem(idx)}>
+   961→                            <X className="size-3.5" />
+   962→                          </Button>
+   963→                        )}
+   964→                      </div>
+   965→                    ))}
+   966→                    <div className="flex items-center justify-between mt-2">
+   967→                      <button onClick={addSplitItem} className="text-[10px] text-emerald-600 dark:text-emerald-400 hover:underline font-medium flex items-center gap-1">
+   968→                        <Plus className="size-3" /> Add payment mode
+   969→                      </button>
+   970→                      <div className="text-[10px] font-semibold">
+   971→                        <span className="text-slate-500">Total: </span>
+   972→                        <span className={totalSplitAmount > checkoutSettlementData.totalOutstanding ? 'text-red-600' : 'text-emerald-600'}>{fmtCur(totalSplitAmount)}</span>
+   973→                        {splitRemaining > 0 && <span className="text-amber-600 ml-2">Remaining: {fmtCur(splitRemaining)}</span>}
+   974→                        {splitRemaining <= 0 && totalSplitAmount > 0 && <span className="text-emerald-600 ml-2">✓ Covered</span>}
+   975→                      </div>
+   976→                    </div>
+   977→                    {totalSplitAmount > 0 && Math.abs(totalSplitAmount - checkoutSettlementData.totalOutstanding) < 0.5 && (
+   978→                      <Button
+   979→                        className="w-full mt-2 h-8 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] gap-1.5"
+   980→                        disabled={submitting}
+   981→                        onClick={() => {
+   982→                          const validSplits = localSplitItems.filter(i => parseFloat(i.amount) > 0).map(i => ({
+   983→                            method: i.method, amount: parseFloat(i.amount), reference: i.reference,
+   984→                          }))
+   985→                          if (validSplits.length === 0) { notify({ type: 'error', title: 'Error', message: 'Add at least one payment' }); return }
+   986→                          setSplitPayments(validSplits)
+   987→                          handleMultiFolioSettlement({
+   988→                            amount: checkoutSettlementData.totalOutstanding,
+   989→                            mode: validSplits[0].method,
+   990→                            reference: validSplits[0].reference,
+   991→                            description: `Split settlement (${validSplits.length} modes)`,
+   992→                            autoAllocate: true,
+   993→                            splitPayments: validSplits,
+   994→                          })
+   995→                        }}
+   996→                      >
+   997→                        {submitting ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
+   998→                        Settle with Split Payment
+   999→                      </Button>
+  1000→                    )}
+  1001→                  </div>
+  1002→                )}
+  1003→
+  1004→                {!splitMode && (
+  1005→                  <div className="text-center text-[9px] sm:text-[10px] text-slate-400 my-1.5">— or settle per folio —</div>
+  1006→                )}
+  1007→
+  1008→                {!splitMode && (
+  1009→                  <div className="space-y-1.5">
+  1010→                    {checkoutSettlementData.folios.filter(f => f.outstandingBalance > 0).map(folio => (
+  1011→                      <div key={folio.folioId} className="flex items-center justify-between bg-slate-50 dark:bg-slate-800 rounded-md p-2 gap-2">
+  1012→                        <span className="text-[11px] sm:text-xs font-semibold text-slate-700 dark:text-slate-200 shrink-0">Folio {fmtFolioNum(folio.folioNumber)}</span>
+  1013→                        <div className="flex items-center gap-1.5 sm:gap-2">
+  1014→                          <span className="text-[11px] sm:text-xs font-bold text-red-600 dark:text-red-400 tabular-nums">{fmtCur(folio.outstandingBalance)}</span>
+  1015→                          <Button size="sm" className="h-7 text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white px-2 sm:px-3 shrink-0"
+  1016→                            disabled={submitting}
+  1017→                            onClick={() => handleMultiFolioSettlement({
+  1018→                              amount: folio.outstandingBalance,
+  1019→                              mode: 'Cash',
+  1020→                              reference: '',
+  1021→                              description: `Settle Folio ${fmtFolioNum(folio.folioNumber)}`,
+  1022→                              folioId: folio.folioId,
+  1023→                              autoAllocate: false,
+  1024→                            })}
+  1025→                          >Settle</Button>
+  1026→                        </div>
+  1027→                      </div>
+  1028→                    ))}
+  1029→                  </div>
+  1030→                )}
+  1031→              </div>
+  1032→            )}
+  1033→
+  1034→            {checkoutSettlementData.totalOutstanding <= 0 && (
+  1035→              <div className="mt-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-lg p-3 sm:p-4 text-center">
+  1036→                <CheckCircle2 className="size-6 sm:size-8 text-emerald-500 mx-auto mb-2" />
+  1037→                <div className="text-xs sm:text-sm font-bold text-emerald-700 dark:text-emerald-300">All Folios Settled</div>
+  1038→                <div className="text-[10px] sm:text-xs text-emerald-600/70 mt-1">No outstanding balances. Proceed with checkout.</div>
+  1039→                {checkoutSettlementData.creditBalance < 0 && (
+  1040→                  <div className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">Credit balance of {fmtCur(Math.abs(checkoutSettlementData.creditBalance))} will be carried forward.</div>
+  1041→                )}
+  1042→                <Button className="mt-2 sm:mt-3 h-8 sm:h-9 bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-2"
+  1043→                  disabled={submitting}
+  1044→                  onClick={() => { setCheckoutSettlementOpen(false); handleCheckout() }}
+  1045→                >
+  1046→                  Proceed to Checkout
+  1047→                </Button>
+  1048→              </div>
+  1049→            )}
+  1050→          </ScrollArea>
+  1051→        )}
+  1052→
+  1053→        <div className="px-4 sm:px-6 py-3 border-t border-slate-200 dark:border-slate-700 shrink-0">
+  1054→          <Button variant="outline" size="sm" className="w-full" onClick={() => setCheckoutSettlementOpen(false)}>Close</Button>
+  1055→        </div>
+  1056→      </DialogContent>
+  1057→    </Dialog>
+  1058→
+  1059→    {/* Checkout Alert */}
+  1060→    <AlertDialog open={checkoutOpen} onOpenChange={setCheckoutOpen}>
+  1061→      <AlertDialogContent>
+  1062→        <AlertDialogHeader>
+  1063→          <AlertDialogTitle>Checkout Customer?</AlertDialogTitle>
+  1064→          <AlertDialogDescription>This will close the folio for {detail?.fullName}. Current balance: {fmtCur(bal)}. Make sure all settlements are complete.</AlertDialogDescription>
+  1065→        </AlertDialogHeader>
+  1066→        <AlertDialogFooter>
+  1067→          <AlertDialogCancel>Cancel</AlertDialogCancel>
+  1068→            <AlertDialogAction className="bg-orange-600 hover:bg-orange-700" onClick={handleCheckout} disabled={submitting}>
+  1069→            {submitting ? <Loader2 className="size-3 animate-spin" /> : 'Checkout'}
+  1070→          </AlertDialogAction>
+  1071→        </AlertDialogFooter>
+  1072→      </AlertDialogContent>
+  1073→    </AlertDialog>
+  1074→
+  1075→    {/* ══════════════════════════════════════════════════════════ */}
+  1076→    {/* ─── POST-CHECKOUT SUCCESS DIALOG ──────────────────────── */}
+  1077→    {/* ══════════════════════════════════════════════════════════ */}
+  1078→    <Dialog open={postCheckoutOpen} onOpenChange={setPostCheckoutOpen}>
+  1079→      <DialogContent className="max-w-md w-[92vw]">
+  1080→        <div className="flex flex-col items-center justify-center py-4 gap-3">
+  1081→          {/* Success Icon */}
+  1082→          <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center animate-in zoom-in duration-500">
+  1083→            <CheckCircle2 className="size-8 text-emerald-600 dark:text-emerald-400" />
+  1084→          </div>
+  1085→          <div className="text-center">
+  1086→            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Checkout Complete</h3>
+  1087→            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{detail?.fullName} has been checked out successfully</p>
+  1088→          </div>
+  1089→          {detail && (
+  1090→            <div className="w-full bg-slate-50 dark:bg-slate-800 rounded-xl p-3 border border-slate-200 dark:border-slate-700">
+  1091→              <div className="flex justify-between items-center text-xs">
+  1092→                <span className="text-slate-500 dark:text-slate-400">Final Balance</span>
+  1093→                <span className={`font-bold text-sm tabular-nums ${bal > 0 ? 'text-red-600' : bal < 0 ? 'text-emerald-600' : 'text-slate-500'}`}>
+  1094→                  {bal > 0 ? '+' : bal < 0 ? '-' : ''}{fmtCur(bal)}
+  1095→                </span>
+  1096→              </div>
+  1097→              {bal < 0 && (
+  1098→                <div className="text-[10px] text-amber-600 dark:text-amber-400 mt-1.5 flex items-center gap-1">
+
+[showing lines 699-1098 of 1821; use offset=1099 with limit to continue reading]

@@ -1,0 +1,668 @@
+  1160→              </PopoverContent>
+  1161→            </Popover>
+  1162→            <Button variant="outline" className="w-full h-10 gap-2 text-sm" onClick={() => setPostCheckoutOpen(false)}>
+  1163→              <ArrowLeft className="size-4" />Close
+  1164→            </Button>
+  1165→          </div>
+  1166→        </div>
+  1167→      </DialogContent>
+  1168→    </Dialog>
+  1169→
+  1170→    {/* Delete / Archive Alert */}
+  1171→    <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+  1172→      <AlertDialogContent>
+  1173→        <AlertDialogHeader>
+  1174→          <AlertDialogTitle>Archive Customer?</AlertDialogTitle>
+  1175→          <AlertDialogDescription>Archive {detail?.fullName}? Their data will be preserved but hidden from active lists.</AlertDialogDescription>
+  1176→        </AlertDialogHeader>
+  1177→        <AlertDialogFooter>
+  1178→          <AlertDialogCancel>Cancel</AlertDialogCancel>
+  1179→          <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={handleDelete} disabled={submitting}>{submitting ? <Loader2 className="size-3 animate-spin" /> : 'Archive'}</AlertDialogAction>
+  1180→        </AlertDialogFooter>
+  1181→      </AlertDialogContent>
+  1182→    </AlertDialog>
+  1183→
+  1184→    {/* Voucher / Payment History Dialog */}
+  1185→    <Dialog open={voucherOpen} onOpenChange={(v) => { if (!v) setSelectedVoucherIds(new Set()); setVoucherOpen(v) }}>
+  1186→      <DialogContent className="max-w-xl max-h-[85vh] flex flex-col">
+  1187→        <DialogHeader>
+  1188→          <DialogTitle className="flex items-center gap-2"><FileCheck2 className="size-4 text-emerald-600" />Voucher / Payment History</DialogTitle>
+  1189→          <DialogDescription>Select payments to print vouchers for</DialogDescription>
+  1190→        </DialogHeader>
+  1191→        <ScrollArea className="flex-1 max-h-64">
+  1192→          {paymentEntries.length === 0 ? (
+  1193→            <div className="py-8 text-center text-muted-foreground text-xs">No payment entries found</div>
+  1194→          ) : (
+  1195→            <table className="w-full text-[11px]">
+  1196→              <thead><tr className="border-b dark:border-slate-700">
+  1197→                <th className="p-2 w-8"><Checkbox checked={selectedVoucherIds.size === paymentEntries.length && paymentEntries.length > 0} onCheckedChange={(c) => { if (c) setSelectedVoucherIds(new Set(paymentEntries.map(e => e.id))); else setSelectedVoucherIds(new Set()) }} /></th>
+  1198→                <th className="text-left p-2">Date</th><th className="text-left p-2">Description</th><th className="text-right p-2">Amount</th><th className="text-left p-2">Mode</th>
+  1199→              </tr></thead>
+  1200→              <tbody>
+  1201→                {paymentEntries.map(e => (
+  1202→                  <tr key={e.id} className={`border-b border-slate-100 dark:border-slate-800 ${selectedVoucherIds.has(e.id) ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''}`}>
+  1203→                    <td className="p-2"><Checkbox checked={selectedVoucherIds.has(e.id)} onCheckedChange={(c) => { const s = new Set(selectedVoucherIds); if (c) s.add(e.id); else s.delete(e.id); setSelectedVoucherIds(s) }} /></td>
+  1204→                    <td className="p-2">{fmtDate(e.date)}</td>
+  1205→                    <td className="p-2">{e.description}</td>
+  1206→                    <td className="p-2 text-right font-semibold text-emerald-600">{fmtCur(e.credit)}</td>
+  1207→                    <td className="p-2"><Badge variant="outline" className="text-[9px]">{e.paymentMode || '—'}</Badge></td>
+  1208→                  </tr>
+  1209→                ))}
+  1210→              </tbody>
+  1211→            </table>
+  1212→          )}
+  1213→        </ScrollArea>
+  1214→        <DialogFooter>
+  1215→          {selectedVoucherIds.size > 0 && <span className="text-[10px] text-slate-500 mr-2">{selectedVoucherIds.size} selected</span>}
+  1216→          <Popover>
+  1217→            <PopoverTrigger asChild>
+  1218→              <Button variant="outline" size="sm" disabled={paymentEntries.length === 0} className="gap-1.5">
+  1219→                <Printer className="size-3.5" />Print <ChevronDown className="size-3" />
+  1220→              </Button>
+  1221→            </PopoverTrigger>
+  1222→            <PopoverContent className="w-44 p-1" side="top">
+  1223→              <button onClick={() => { const sel = selectedVoucherIds.size > 0 ? paymentEntries.filter(e => selectedVoucherIds.has(e.id)) : undefined; setVoucherOpen(false); printVoucherHistory(sel) }} className="flex items-center gap-2 w-full px-3 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md">
+  1224→                <Printer className="size-3.5 text-slate-500" /><div className="text-left"><div className="font-medium">A4 Print</div><div className="text-[9px] text-slate-400">Standard paper</div></div>
+  1225→              </button>
+  1226→              <button onClick={() => { setVoucherOpen(false); onThermalPrintVoucher?.() }} className="flex items-center gap-2 w-full px-3 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md">
+  1227→                <Flame className="size-3.5 text-orange-500" /><div className="text-left"><div className="font-medium">Thermal Print</div><div className="text-[9px] text-slate-400">Receipt printer</div></div>
+  1228→              </button>
+  1229→            </PopoverContent>
+  1230→          </Popover>
+  1231→          <Button variant="outline" size="sm" onClick={() => setVoucherOpen(false)}>Close</Button>
+  1232→        </DialogFooter>
+  1233→      </DialogContent>
+  1234→    </Dialog>
+  1235→
+  1236→    {/* ══════════════════════════════════════════════════════════ */}
+  1237→    {/* ─── INVOICE DIALOG (Redesigned) ───────────────────────── */}
+  1238→    {/* ══════════════════════════════════════════════════════════ */}
+  1239→    <Dialog open={invoiceOpen} onOpenChange={setInvoiceOpen}>
+  1240→      <DialogContent className="max-w-2xl w-[95vw] max-h-[90vh] flex flex-col">
+  1241→        <ScrollArea className="flex-1 min-h-0">
+  1242→          {/* Invoice Header */}
+  1243→          <div className="bg-gradient-to-r from-emerald-600 to-emerald-700 px-5 sm:px-6 pt-5 pb-4 rounded-t-lg">
+  1244→            <div className="flex items-start justify-between gap-3">
+  1245→              <div className="min-w-0">
+  1246→                <DialogTitle className="flex items-center gap-2 text-white text-sm sm:text-base">
+  1247→                  <Stamp className="size-4 sm:size-5 shrink-0" />
+  1248→                  Tax Invoice
+  1249→                </DialogTitle>
+  1250→                <DialogDescription className="text-emerald-100 text-[11px] sm:text-xs mt-1">
+  1251→                  Professional invoice for this transaction
+  1252→                </DialogDescription>
+  1253→              </div>
+  1254→              {/* Invoice Number */}
+  1255→              <div className="bg-white/15 backdrop-blur-sm rounded-lg px-3 py-2 text-right shrink-0">
+  1256→                {invNumLoading ? (
+  1257→                  <div className="flex items-center gap-1.5 text-white/80 text-[11px]">
+  1258→                    <Loader2 className="size-3 animate-spin" />Generating...
+  1259→                  </div>
+  1260→                ) : invoiceNumber ? (
+  1261→                  <div>
+  1262→                    <div className="text-[9px] text-emerald-100 uppercase tracking-wider font-semibold">Invoice No</div>
+  1263→                    <div className="text-sm sm:text-base font-mono font-bold text-white">{invoiceNumber}</div>
+  1264→                  </div>
+  1265→                ) : (
+  1266→                  <button
+  1267→                    onClick={fetchInvoiceNumber}
+  1268→                    className="text-[10px] text-white/80 hover:text-white flex items-center gap-1 font-medium"
+  1269→                  >
+  1270→                    <Hash className="size-3" />Generate No.
+  1271→                  </button>
+  1272→                )}
+  1273→              </div>
+  1274→            </div>
+  1275→          </div>
+  1276→
+  1277→          <div className="px-5 sm:px-6 py-4 space-y-4">
+  1278→            {/* Business & Customer Info */}
+  1279→            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+  1280→              {/* Business Details */}
+  1281→              <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-3 sm:p-4 border border-slate-200 dark:border-slate-700">
+  1282→                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-2">From (Business)</div>
+  1283→                <div className="text-xs font-bold text-slate-800 dark:text-slate-100 mb-1">Your Business</div>
+  1284→                <div className="space-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+  1285→                  <div className="flex items-center gap-1.5">
+  1286→                    <Building2 className="size-3 text-emerald-500" />
+  1287→                    <span className="font-mono text-[10px]">GSTIN: —</span>
+  1288→                  </div>
+  1289→                </div>
+  1290→              </div>
+  1291→
+  1292→              {/* Customer Details */}
+  1293→              <div className="bg-emerald-50 dark:bg-emerald-950/20 rounded-xl p-3 sm:p-4 border border-emerald-200 dark:border-emerald-800">
+  1294→                <div className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-2">Bill To (Customer)</div>
+  1295→                <div className="text-xs font-bold text-slate-800 dark:text-slate-100">{detail?.fullName}</div>
+  1296→                {detail?.mobile && <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{detail.mobile}</div>}
+  1297→                {detail?.gstNumber && (
+  1298→                  <div className="flex items-center gap-1.5 mt-1.5">
+  1299→                    <Building2 className="size-3 text-emerald-500" />
+  1300→                    <span className="font-mono text-[10px] text-slate-600 dark:text-slate-300 font-semibold">GSTIN: {detail.gstNumber}</span>
+  1301→                  </div>
+  1302→                )}
+  1303→                {!detail?.gstNumber && (
+  1304→                  <div className="text-[10px] text-slate-400 mt-1 italic">No GSTIN on file</div>
+  1305→                )}
+  1306→              </div>
+  1307→            </div>
+  1308→
+  1309→            {/* Date Range Filter */}
+  1310→            <div className="bg-white dark:bg-slate-800/50 rounded-xl p-3 border border-slate-200 dark:border-slate-700">
+  1311→              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-2">Invoice Period</div>
+  1312→              <div className="grid grid-cols-2 gap-3">
+  1313→                <div><Label className="text-[10px]">From</Label><Input type="date" className="h-8 text-xs" value={invoiceFrom} onChange={e => setInvoiceFrom(e.target.value)} /></div>
+  1314→                <div><Label className="text-[10px]">To</Label><Input type="date" className="h-8 text-xs" value={invoiceTo} onChange={e => setInvoiceTo(e.target.value)} /></div>
+  1315→              </div>
+  1316→              <Button variant="outline" size="sm" className="mt-2 h-7 text-[10px] gap-1.5" onClick={() => { if (detail && selectedFolioId) fetchFolioStatement(selectedFolioId) }} disabled={!selectedFolioId}>
+  1317→                <FileText className="size-3" />Fetch Statement
+  1318→              </Button>
+  1319→            </div>
+  1320→
+  1321→            {/* Invoice Data Display */}
+  1322→            {invoiceLoading && (
+  1323→              <div className="flex items-center justify-center py-8 gap-2 text-slate-400">
+  1324→                <Loader2 className="size-4 animate-spin" />
+  1325→                <span className="text-xs">Loading invoice data...</span>
+  1326→              </div>
+  1327→            )}
+  1328→
+  1329→            {invoiceData && !invoiceLoading && (
+  1330→              <>
+  1331→                {/* Line Items Table */}
+  1332→                <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+  1333→                  <div className="bg-slate-50 dark:bg-slate-800 px-3 py-2">
+  1334→                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+  1335→                      Line Items ({gstData?.entryCount || 0} charge{gstData && gstData.entryCount !== 1 ? 's' : ''})
+  1336→                    </span>
+  1337→                  </div>
+  1338→                  <div className="overflow-x-auto">
+  1339→                    <table className="w-full text-[11px]">
+  1340→                      <thead>
+  1341→                        <tr className="border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30">
+  1342→                          <th className="text-left px-3 py-2 text-slate-500 font-semibold text-[10px]">#</th>
+  1343→                          <th className="text-left px-3 py-2 text-slate-500 font-semibold text-[10px]">Description</th>
+  1344→                          <th className="text-right px-3 py-2 text-slate-500 font-semibold text-[10px] whitespace-nowrap">Amount</th>
+  1345→                          <th className="text-right px-3 py-2 text-slate-500 font-semibold text-[10px] whitespace-nowrap">Tax</th>
+  1346→                          <th className="text-right px-3 py-2 text-slate-500 font-semibold text-[10px] whitespace-nowrap">Discount</th>
+  1347→                          <th className="text-right px-3 py-2 text-slate-500 font-semibold text-[10px] whitespace-nowrap">Total</th>
+  1348→                        </tr>
+  1349→                      </thead>
+  1350→                      <tbody>
+  1351→                        {(invoiceData.entries as any[]).filter((e: any) => e.debit > 0).map((entry: any, idx: number) => (
+  1352→                          <tr key={entry.id} className="border-b border-slate-50 dark:border-slate-800 last:border-b-0 hover:bg-slate-50/50 dark:hover:bg-slate-800/20">
+  1353→                            <td className="px-3 py-2 text-slate-400">{idx + 1}</td>
+  1354→                            <td className="px-3 py-2 text-slate-700 dark:text-slate-300 max-w-[200px] truncate" title={entry.description}>{entry.description}</td>
+  1355→                            <td className="px-3 py-2 text-right tabular-nums">{fmtINR(entry.debit - (entry.tax || 0) - (entry.discount || 0))}</td>
+  1356→                            <td className="px-3 py-2 text-right text-amber-600 tabular-nums">{entry.tax > 0 ? fmtINR(entry.tax) : '—'}</td>
+  1357→                            <td className="px-3 py-2 text-right text-teal-600 tabular-nums">{entry.discount > 0 ? fmtINR(entry.discount) : '—'}</td>
+  1358→                            <td className="px-3 py-2 text-right font-bold tabular-nums text-slate-800 dark:text-slate-100">{fmtINR(entry.debit)}</td>
+  1359→                          </tr>
+  1360→                        ))}
+  1361→                      </tbody>
+  1362→                    </table>
+  1363→                  </div>
+  1364→                </div>
+  1365→
+  1366→                {/* GST Summary */}
+  1367→                {gstData && gstData.totalTax > 0 && (
+  1368→                  <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3 sm:p-4">
+  1369→                    <div className="flex items-center gap-2 mb-3">
+  1370→                      <Landmark className="size-4 text-amber-600 dark:text-amber-400" />
+  1371→                      <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 uppercase tracking-wider">GST Summary</span>
+  1372→                    </div>
+  1373→                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+  1374→                      <div className="bg-white dark:bg-slate-800 rounded-lg p-2.5 text-center">
+  1375→                        <div className="text-[9px] text-slate-400 uppercase font-semibold">Taxable Amt</div>
+  1376→                        <div className="text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200 tabular-nums mt-0.5">{fmtINR(gstData.taxableAmount)}</div>
+  1377→                      </div>
+  1378→                      <div className="bg-white dark:bg-slate-800 rounded-lg p-2.5 text-center">
+  1379→                        <div className="text-[9px] text-slate-400 uppercase font-semibold">CGST</div>
+  1380→                        <div className="text-xs sm:text-sm font-bold text-amber-700 dark:text-amber-300 tabular-nums mt-0.5">{fmtINR(gstData.cgst)}</div>
+  1381→                      </div>
+  1382→                      <div className="bg-white dark:bg-slate-800 rounded-lg p-2.5 text-center">
+  1383→                        <div className="text-[9px] text-slate-400 uppercase font-semibold">SGST</div>
+  1384→                        <div className="text-xs sm:text-sm font-bold text-amber-700 dark:text-amber-300 tabular-nums mt-0.5">{fmtINR(gstData.sgst)}</div>
+  1385→                      </div>
+  1386→                      <div className="bg-white dark:bg-slate-800 rounded-lg p-2.5 text-center">
+  1387→                        <div className="text-[9px] text-slate-400 uppercase font-semibold">Total Tax</div>
+  1388→                        <div className="text-xs sm:text-sm font-bold text-amber-700 dark:text-amber-300 tabular-nums mt-0.5">{fmtINR(gstData.totalTax)}</div>
+  1389→                      </div>
+  1390→                    </div>
+  1391→                  </div>
+  1392→                )}
+  1393→
+  1394→                {/* Advance / Payment Summary */}
+  1395→                <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-xl p-3 sm:p-4">
+  1396→                  <div className="flex items-center gap-2 mb-3">
+  1397→                    <Wallet className="size-4 text-blue-600 dark:text-blue-400" />
+  1398→                    <span className="text-[10px] font-bold text-blue-700 dark:text-blue-300 uppercase tracking-wider">Advance & Payment Details</span>
+  1399→                  </div>
+  1400→                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+  1401→                    <div className="bg-white dark:bg-slate-800 rounded-lg p-2.5 text-center">
+  1402→                      <div className="text-[9px] text-slate-400 uppercase font-semibold">Opening Bal</div>
+  1403→                      <div className={`text-xs sm:text-sm font-bold tabular-nums mt-0.5 ${(invoiceData.openingBalance || 0) >= 0 ? 'text-slate-700 dark:text-slate-200' : 'text-emerald-600'}`}>
+  1404→                        {fmtINR(invoiceData.openingBalance || 0)}
+  1405→                      </div>
+  1406→                    </div>
+  1407→                    <div className="bg-white dark:bg-slate-800 rounded-lg p-2.5 text-center">
+  1408→                      <div className="text-[9px] text-slate-400 uppercase font-semibold">Total Charges</div>
+  1409→                      <div className="text-xs sm:text-sm font-bold text-red-600 dark:text-red-400 tabular-nums mt-0.5">{fmtINR(gstData?.totalCharges || 0)}</div>
+  1410→                    </div>
+  1411→                    <div className="bg-white dark:bg-slate-800 rounded-lg p-2.5 text-center">
+  1412→                      <div className="text-[9px] text-slate-400 uppercase font-semibold">Payments</div>
+  1413→                      <div className="text-xs sm:text-sm font-bold text-emerald-600 dark:text-emerald-400 tabular-nums mt-0.5">{fmtINR(gstData?.totalPayments || 0)}</div>
+  1414→                    </div>
+  1415→                    <div className="bg-white dark:bg-slate-800 rounded-lg p-2.5 text-center">
+  1416→                      <div className="text-[9px] text-slate-400 uppercase font-semibold">Credit/Advance</div>
+  1417→                      <div className={`text-xs sm:text-sm font-bold tabular-nums mt-0.5 ${(gstData?.advancePayment || 0) > 0 ? 'text-emerald-600' : 'text-slate-500'}`}>
+  1418→                        {gstData?.advancePayment ? fmtINR(gstData.advancePayment) : '₹0.00'}
+  1419→                      </div>
+  1420→                    </div>
+  1421→                  </div>
+  1422→                  {detail && detail.openingBalance != null && detail.openingBalance !== 0 && (
+  1423→                    <div className="mt-2 text-[10px] text-slate-500 dark:text-slate-400">
+  1424→                      Opening balance of {fmtINR(Math.abs(detail.openingBalance))} carried forward from previous period
+  1425→                    </div>
+  1426→                  )}
+  1427→                </div>
+  1428→
+  1429→                {/* Grand Total */}
+  1430→                <div className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30 border border-emerald-200 dark:border-emerald-800 rounded-xl p-3 sm:p-4">
+  1431→                  <div className="flex items-center justify-between gap-3">
+  1432→                    <div>
+  1433→                      <div className="text-[9px] text-emerald-600 dark:text-emerald-400 uppercase tracking-wider font-bold">Grand Total</div>
+  1434→                      <div className="text-xl sm:text-2xl font-bold text-emerald-700 dark:text-emerald-300 tabular-nums mt-0.5">
+  1435→                        {fmtINR(gstData?.totalCharges || 0)}
+  1436→                      </div>
+  1437→                    </div>
+  1438→                    <div className="text-right">
+  1439→                      <div className="text-[9px] text-slate-400">Discount</div>
+  1440→                      <div className="text-xs font-bold text-teal-600 dark:text-teal-400 tabular-nums">-{fmtINR(gstData?.totalDiscount || 0)}</div>
+  1441→                    </div>
+  1442→                    <div className="text-right">
+  1443→                      <div className="text-[9px] text-slate-400">Closing Bal</div>
+  1444→                      <div className={`text-xs font-bold tabular-nums ${(invoiceData.closingBalance || 0) > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+  1445→                        {fmtINR(invoiceData.closingBalance || 0)}
+  1446→                      </div>
+  1447→                    </div>
+  1448→                  </div>
+  1449→                </div>
+  1450→              </>
+  1451→            )}
+  1452→
+  1453→            {!invoiceData && !invoiceLoading && (
+  1454→              <div className="text-center py-6 text-slate-400">
+  1455→                <FileText className="size-8 mx-auto mb-2 opacity-40" />
+  1456→                <p className="text-xs">Select a date range and click "Fetch Statement" to preview the invoice</p>
+  1457→              </div>
+  1458→            )}
+  1459→          </div>
+  1460→        </ScrollArea>
+  1461→
+  1462→        {/* Footer */}
+  1463→        <div className="px-5 sm:px-6 py-3 border-t border-slate-200 dark:border-slate-700 flex flex-wrap gap-2 shrink-0">
+  1464→          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setInvoiceOpen(false)}>
+  1465→            <X className="size-3" />Cancel
+  1466→          </Button>
+  1467→          <div className="flex-1" />
+  1468→          <Popover>
+  1469→            <PopoverTrigger asChild>
+  1470→              <Button className="bg-emerald-600 hover:bg-emerald-700 gap-1.5" disabled={!invoiceData}>
+  1471→                {invoiceLoading ? <Loader2 className="size-3 animate-spin" /> : <Printer className="size-3" />}
+  1472→                Print Invoice <ChevronDown className="size-3" />
+  1473→              </Button>
+  1474→            </PopoverTrigger>
+  1475→            <PopoverContent className="w-44 p-1" side="top">
+  1476→              <button onClick={() => { setInvoiceOpen(false); printInvoice() }} className="flex items-center gap-2 w-full px-3 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md">
+  1477→                <Printer className="size-3.5 text-slate-500" /><div className="text-left"><div className="font-medium">A4 Print Invoice</div><div className="text-[9px] text-slate-400">Standard paper</div></div>
+  1478→              </button>
+  1479→              <button onClick={() => { setInvoiceOpen(false); onThermalPrintInvoice?.() }} className="flex items-center gap-2 w-full px-3 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md">
+  1480→                <Flame className="size-3.5 text-orange-500" /><div className="text-left"><div className="font-medium">Thermal Print</div><div className="text-[9px] text-slate-400">Receipt printer</div></div>
+  1481→              </button>
+  1482→            </PopoverContent>
+  1483→          </Popover>
+  1484→        </div>
+  1485→      </DialogContent>
+  1486→    </Dialog>
+  1487→
+  1488→    {/* Document Dialog */}
+  1489→    <Dialog open={docOpen} onOpenChange={setDocOpen}>
+  1490→      <DialogContent className="max-w-sm">
+  1491→        <DialogHeader><DialogTitle className="flex items-center gap-2"><FileUp className="size-4 text-emerald-600" />Documents</DialogTitle></DialogHeader>
+  1492→        <div className="space-y-3 py-2">
+  1493→          <div className="grid grid-cols-2 gap-2">
+  1494→            <div><Label className="text-xs">Type</Label><Select value={docForm.type} onValueChange={v => setDocForm({ ...docForm, type: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Aadhaar">Aadhaar</SelectItem><SelectItem value="PAN">PAN</SelectItem><SelectItem value="GST">GST</SelectItem><SelectItem value="Voter ID">Voter ID</SelectItem><SelectItem value="Passport">Passport</SelectItem><SelectItem value="Driving License">Driving License</SelectItem><SelectItem value="Other">Other</SelectItem></SelectContent></Select></div>
+  1495→            <div><Label className="text-xs">Name *</Label><Input value={docForm.name} onChange={e => setDocForm({ ...docForm, name: e.target.value })} /></div>
+  1496→          </div>
+  1497→          <div><Label className="text-xs">URL</Label><Input value={docForm.url} onChange={e => setDocForm({ ...docForm, url: e.target.value })} /></div>
+  1498→          <div><Label className="text-xs">Notes</Label><Input value={docForm.notes} onChange={e => setDocForm({ ...docForm, notes: e.target.value })} /></div>
+  1499→        </div>
+  1500→        <div className="max-h-48 overflow-auto border border-slate-100 dark:border-slate-700 rounded-lg mt-2">
+  1501→          {detail?.documents.length === 0 ? (
+  1502→            <div className="py-4 text-center text-muted-foreground text-[10px]">No documents uploaded yet</div>
+  1503→          ) : detail?.documents.map(doc => (
+  1504→            <div key={doc.id} className="flex items-center justify-between px-2.5 py-2 text-[11px] border-b border-slate-50 dark:border-slate-800 last:border-b-0">
+  1505→              <div className="min-w-0">
+  1506→                <div className="font-medium text-slate-700 dark:text-slate-300 truncate">{doc.name}</div>
+  1507→                <div className="text-[9px] text-slate-400 mt-0.5">{doc.type} — {fmtDate(doc.createdAt)}</div>
+  1508→              </div>
+  1509→              <button onClick={() => handleDeleteDoc(doc.id)} className="text-red-500 hover:text-red-700 text-[10px] shrink-0 ml-2">Delete</button>
+  1510→            </div>
+  1511→          ))}
+  1512→        </div>
+  1513→        <DialogFooter>
+  1514→          <Button variant="outline" onClick={() => setDocOpen(false)}>Cancel</Button>
+  1515→          <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleAddDoc} disabled={submitting}>{submitting ? <Loader2 className="size-3 animate-spin" /> : 'Add'}</Button>
+  1516→        </DialogFooter>
+  1517→      </DialogContent>
+  1518→    </Dialog>
+  1519→
+  1520→    {/* Note Dialog */}
+  1521→    <Dialog open={noteOpen} onOpenChange={setNoteOpen}>
+  1522→      <DialogContent className="max-w-sm">
+  1523→        <DialogHeader><DialogTitle className="flex items-center gap-2"><StickyNote className="size-4 text-emerald-600" />Notes</DialogTitle></DialogHeader>
+  1524→        <div className="space-y-3 py-2">
+  1525→          <div><Label className="text-xs">Type</Label><Select value={noteForm.type} onValueChange={v => setNoteForm({ ...noteForm, type: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Internal">Internal</SelectItem><SelectItem value="Customer">Customer</SelectItem></SelectContent></Select></div>
+  1526→          <div><Label className="text-xs">Content *</Label><Textarea value={noteForm.content} onChange={e => setNoteForm({ ...noteForm, content: e.target.value })} rows={3} /></div>
+  1527→        </div>
+  1528→        <div className="max-h-48 overflow-auto border border-slate-100 dark:border-slate-700 rounded-lg mt-2">
+  1529→          {detail?.notes.length === 0 ? (
+  1530→            <div className="py-4 text-center text-muted-foreground text-[10px]">No notes added yet</div>
+  1531→          ) : detail?.notes.map(note => (
+  1532→            <div key={note.id} className="px-2.5 py-2 text-[11px] border-b border-slate-50 dark:border-slate-800 last:border-b-0">
+  1533→              <div className="flex justify-between items-start gap-2">
+  1534→                <span className="font-medium text-slate-700 dark:text-slate-300 break-all">{note.content}</span>
+  1535→                <button onClick={() => handleDeleteNote(note.id)} className="text-red-500 hover:text-red-700 text-[10px] shrink-0">Delete</button>
+  1536→              </div>
+  1537→              <span className="text-[9px] text-slate-400">{note.type} — {note.userName || ''} — {fmtDate(note.createdAt)}</span>
+  1538→            </div>
+  1539→          ))}
+  1540→        </div>
+  1541→        <DialogFooter>
+  1542→          <Button variant="outline" onClick={() => setNoteOpen(false)}>Cancel</Button>
+  1543→          <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleAddNote} disabled={submitting}>{submitting ? <Loader2 className="size-3 animate-spin" /> : 'Add'}</Button>
+  1544→        </DialogFooter>
+  1545→      </DialogContent>
+  1546→    </Dialog>
+  1547→
+  1548→    {/* Delete Folio Confirmation */}
+  1549→    <AlertDialog open={deleteFolioOpen} onOpenChange={setDeleteFolioOpen}>
+  1550→      <AlertDialogContent>
+  1551→        <AlertDialogHeader>
+  1552→          <AlertDialogTitle>Delete Empty Folio?</AlertDialogTitle>
+  1553→          <AlertDialogDescription>Permanently delete this empty folio? This cannot be undone.</AlertDialogDescription>
+  1554→        </AlertDialogHeader>
+  1555→        <AlertDialogFooter>
+  1556→          <AlertDialogCancel>Cancel</AlertDialogCancel>
+  1557→          <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={handleDeleteFolio} disabled={submitting}>{submitting ? <Loader2 className="size-3 animate-spin" /> : 'Delete Folio'}</AlertDialogAction>
+  1558→        </AlertDialogFooter>
+  1559→      </AlertDialogContent>
+  1560→    </AlertDialog>
+  1561→
+  1562→    {/* Tags Dialog */}
+  1563→    <Dialog open={tagsOpen} onOpenChange={setTagsOpen}>
+  1564→      <DialogContent className="max-w-sm">
+  1565→        <DialogHeader><DialogTitle className="flex items-center gap-2"><Tag className="size-4 text-emerald-600" />Customer Tags</DialogTitle></DialogHeader>
+  1566→        <div className="flex flex-wrap gap-2 py-3">
+  1567→          {ALL_TAGS.map(tag => {
+  1568→            const active = customerTags.includes(tag)
+  1569→            return (
+  1570→              <button key={tag} onClick={() => handleToggleTag(tag)}
+  1571→                className={`text-[11px] font-medium px-3 py-1.5 rounded-full border transition-all
+  1572→                  ${active ? TAG_COLORS[tag] || TAG_COLORS.Regular : 'bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-700 hover:border-slate-400'}`}
+  1573→              >
+  1574→                {active && '✓ '}{tag}
+  1575→              </button>
+  1576→            )
+  1577→          })}
+  1578→        </div>
+  1579→      </DialogContent>
+  1580→    </Dialog>
+  1581→
+  1582→    {/* ══════════════════════════════════════════════════════════ */}
+  1583→    {/* ─── HISTORY DIALOG (per-customer checkout history) ──── */}
+  1584→    {/* ══════════════════════════════════════════════════════════ */}
+  1585→    <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+  1586→      <DialogContent className="max-w-3xl w-[95vw] max-h-[85vh] flex flex-col p-0 gap-0 overflow-hidden">
+  1587→        <div className="px-5 sm:px-6 pt-5 pb-3 shrink-0 bg-white dark:bg-slate-900">
+  1588→          <DialogHeader>
+  1589→            <DialogTitle className="flex items-center gap-2 text-sm sm:text-base">
+  1590→              <History className="size-4 sm:size-5 text-teal-600 shrink-0" />
+  1591→              <span className="truncate">{detail?.fullName} — Checkout History</span>
+  1592→            </DialogTitle>
+  1593→            <DialogDescription className="text-[11px] sm:text-xs">
+  1594→              Previous checkout records and bills for this customer
+  1595→            </DialogDescription>
+  1596→          </DialogHeader>
+  1597→        </div>
+  1598→
+  1599→        <ScrollArea className="flex-1 px-5 sm:px-6 pb-4">
+  1600→          {historyLoading ? (
+  1601→            <div className="flex items-center justify-center py-12 gap-2 text-slate-400">
+  1602→              <Loader2 className="size-5 animate-spin" />
+  1603→              <span className="text-sm">Loading history...</span>
+  1604→            </div>
+  1605→          ) : !customerHistory || customerHistory.historicalFolios.length === 0 ? (
+  1606→            <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+  1607→              <History className="size-10 opacity-30 mb-3" />
+  1608→              <p className="text-sm font-medium">No checkout history found</p>
+  1609→              <p className="text-xs mt-1">Previous folios will appear here after checkout</p>
+  1610→            </div>
+  1611→          ) : (
+  1612→            <div className="space-y-3 mt-2">
+  1613→              {customerHistory.historicalFolios.map((folio: HistoricalFolio) => {
+  1614→                const isExpanded = expandedFolioId === folio.folioId
+  1615→                const entries = expandedFolioEntries[folio.folioId]
+  1616→                return (
+  1617→                  <div key={folio.id} className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+  1618→                    {/* Folio Header Row */}
+  1619→                    <button
+  1620→                      onClick={() => toggleFolioEntries(folio.folioId)}
+  1621→                      className="w-full flex items-center justify-between px-3 sm:px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors text-left"
+  1622→                    >
+  1623→                      <div className="flex items-center gap-2.5 min-w-0">
+  1624→                        <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded shrink-0">#{folio.visitNumber}</span>
+  1625→                        <div className="min-w-0">
+  1626→                          <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">Folio {folio.folioId}</span>
+  1627→                          <div className="text-[10px] text-slate-400 mt-0.5">{folio.startDate} → {folio.endDate || '—'}</div>
+  1628→                        </div>
+  1629→                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium shrink-0 ${STATUS_BADGE[folio.status] || 'bg-slate-100 text-slate-500'}`}>{folio.status}</span>
+  1630→                      </div>
+  1631→                      <div className="flex items-center gap-2 shrink-0">
+  1632→                        {folio.entryCount > 0 && (
+  1633→                          <button
+  1634→                            onClick={(e) => { e.stopPropagation(); onPrintHistoryFolio?.({ entries: folio.entries || entries || [], openingBalance: folio.openingBalance, closingBalance: folio.closingBalance }) }}
+  1635→                            className="flex items-center gap-1 text-[10px] text-orange-600 dark:text-orange-400 hover:text-orange-700 dark:hover:text-orange-300 font-medium transition-colors"
+  1636→                          >
+  1637→                            <Stamp className="size-3" />Final Invoice
+  1638→                          </button>
+  1639→                        )}
+  1640→                        <ChevronDown className={`size-4 text-slate-400 shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+  1641→                      </div>
+  1642→                    </button>
+  1643→
+  1644→                    {/* Folio Summary */}
+  1645→                    <div className="grid grid-cols-4 gap-1.5 px-3 sm:px-4 pb-2 text-center">
+  1646→                      <div className="bg-slate-50 dark:bg-slate-800 rounded-md p-1.5">
+  1647→                        <div className="text-[8px] text-slate-400 uppercase">Entries</div>
+  1648→                        <div className="text-[11px] font-bold text-slate-700 dark:text-slate-200">{folio.entryCount}</div>
+  1649→                      </div>
+  1650→                      <div className="bg-slate-50 dark:bg-slate-800 rounded-md p-1.5">
+  1651→                        <div className="text-[8px] text-slate-400 uppercase">Debit</div>
+  1652→                        <div className="text-[11px] font-bold text-red-600">{fmtCur(folio.totalDebit)}</div>
+  1653→                      </div>
+  1654→                      <div className="bg-slate-50 dark:bg-slate-800 rounded-md p-1.5">
+  1655→                        <div className="text-[8px] text-slate-400 uppercase">Credit</div>
+  1656→                        <div className="text-[11px] font-bold text-emerald-600">{fmtCur(folio.totalCredit)}</div>
+  1657→                      </div>
+  1658→                      <div className="bg-slate-50 dark:bg-slate-800 rounded-md p-1.5">
+  1659→                        <div className="text-[8px] text-slate-400 uppercase">Balance</div>
+  1660→                        <div className={`text-[11px] font-bold ${folio.finalBalance > 0 ? 'text-red-600' : 'text-emerald-600'}`}>{fmtCur(folio.finalBalance)}</div>
+  1661→                      </div>
+  1662→                    </div>
+  1663→
+  1664→                    {/* Print Bill button (when expanded) */}
+  1665→                    {isExpanded && entries && entries.length > 0 && (
+  1666→                      <div className="px-3 sm:px-4 pb-2">
+  1667→                        <button
+  1668→                          onClick={(e) => { e.stopPropagation(); onPrintHistoryFolio?.({ entries, openingBalance: folio.openingBalance, closingBalance: folio.closingBalance }) }}
+  1669→                          className="flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 font-medium transition-colors"
+  1670→                        >
+  1671→                          <Printer className="size-3" />Print Bill
+  1672→                        </button>
+  1673→                      </div>
+  1674→                    )}
+  1675→
+  1676→                    {/* Expanded Entries */}
+  1677→                    {isExpanded && entries && entries.length > 0 && (
+  1678→                      <div className="border-t border-slate-100 dark:border-slate-800 max-h-60 overflow-auto">
+  1679→                        <table className="w-full text-[10px]">
+  1680→                          <thead>
+  1681→                            <tr className="bg-slate-50 dark:bg-slate-800">
+  1682→                              <th className="text-left px-2 py-1 font-semibold text-slate-500">#</th>
+  1683→                              <th className="text-left px-2 py-1 font-semibold text-slate-500">Date</th>
+  1684→                              <th className="text-left px-2 py-1 font-semibold text-slate-500">Type</th>
+  1685→                              <th className="text-left px-2 py-1 font-semibold text-slate-500">Desc</th>
+  1686→                              <th className="text-right px-2 py-1 font-semibold text-slate-500">Dr</th>
+  1687→                              <th className="text-right px-2 py-1 font-semibold text-slate-500">Cr</th>
+  1688→                              <th className="text-right px-2 py-1 font-semibold text-slate-500">Bal</th>
+  1689→                            </tr>
+  1690→                          </thead>
+  1691→                          <tbody>
+  1692→                            {entries.map((e: any, i: number) => (
+  1693→                              <tr key={e.id} className="border-t border-slate-50 dark:border-slate-800">
+  1694→                                <td className="px-2 py-1 text-slate-400">{i + 1}</td>
+  1695→                                <td className="px-2 py-1 whitespace-nowrap">{fmtDate(e.date)}</td>
+  1696→                                <td className="px-2 py-1"><span className={`text-[8px] px-1 py-0.5 rounded font-medium ${TYPE_ICON[e.type] || 'bg-gray-100 text-gray-600'}`}>{e.type}</span></td>
+  1697→                                <td className="px-2 py-1 truncate max-w-[120px]">{stripInternalDescriptions(e.description)}</td>
+  1698→                                <td className="px-2 py-1 text-right text-red-600">{e.debit > 0 ? fmtINR(e.debit) : ''}</td>
+  1699→                                <td className="px-2 py-1 text-right text-emerald-600">{e.credit > 0 ? fmtINR(e.credit) : ''}</td>
+  1700→                                <td className={`px-2 py-1 text-right font-bold ${e.balance > 0 ? 'text-red-600' : e.balance < 0 ? 'text-emerald-600' : 'text-slate-500'}`}>{fmtINR(e.balance)}</td>
+  1701→                              </tr>
+  1702→                            ))}
+  1703→                          </tbody>
+  1704→                        </table>
+  1705→                      </div>
+  1706→                    )}
+  1707→                  </div>
+  1708→                )
+  1709→              })}
+  1710→            </div>
+  1711→          )}
+  1712→        </ScrollArea>
+  1713→
+  1714→        <div className="px-5 sm:px-6 py-3 border-t border-slate-200 dark:border-slate-700 shrink-0">
+  1715→          <Button variant="outline" size="sm" className="w-full" onClick={() => setHistoryOpen(false)}>Close</Button>
+  1716→        </div>
+  1717→      </DialogContent>
+  1718→    </Dialog>
+  1719→
+  1720→    {/* ══════════════════════════════════════════════════════════ */}
+  1721→    {/* ─── DETAILS SHEET (slides in from right) ─────────────────── */}
+  1722→    {/* ══════════════════════════════════════════════════════════ */}
+  1723→    {detail && (
+  1724→      <Sheet open={detailsSheetOpen} onOpenChange={setDetailsSheetOpen}>
+  1725→        <SheetContent className="w-[320px] sm:w-[360px] p-0 overflow-y-auto">
+  1726→          <SheetHeader className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 sticky top-0 z-10">
+  1727→            <SheetTitle className="flex items-center gap-2 text-sm font-bold">
+  1728→              <Eye className="size-4 text-slate-500 dark:text-slate-400" /> Customer Details
+  1729→            </SheetTitle>
+  1730→          </SheetHeader>
+  1731→          <div className="p-4 space-y-4">
+  1732→            {/* Guest Info */}
+  1733→            <div className="space-y-2.5">
+  1734→              <h4 className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Guest Information</h4>
+  1735→              <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-3 space-y-2 border border-slate-100 dark:border-slate-700">
+  1736→                <div className="flex items-center gap-3">
+  1737→                  <div className="w-10 h-10 rounded-full bg-slate-800 dark:bg-slate-600 flex items-center justify-center text-sm font-bold text-white">{detail.fullName.charAt(0).toUpperCase()}</div>
+  1738→                  <div>
+  1739→                    <p className="text-sm font-bold text-slate-800 dark:text-slate-200">{detail.fullName}</p>
+  1740→                    <p className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">{detail.customerId}</p>
+  1741→                  </div>
+  1742→                </div>
+  1743→              </div>
+  1744→              <div className="grid grid-cols-2 gap-2">
+  1745→                <div className="text-[11px]"><span className="text-slate-500 dark:text-slate-400">Type</span><div><span className={`font-semibold text-[10px] px-2 py-0.5 rounded-md ${TYPE_BADGE[detail.customerType] || TYPE_BADGE.Retail}`}>{detail.customerType}</span></div></div>
+  1746→                <div className="text-[11px]"><span className="text-slate-500 dark:text-slate-400">Status</span><div><span className={`font-semibold text-[10px] px-2 py-0.5 rounded-md ${STATUS_BADGE[detail.status] || STATUS_BADGE.Active}`}>{detail.status}</span></div></div>
+  1747→                {detail.mobile && <div className="text-[11px]"><span className="text-slate-500 dark:text-slate-400">Mobile</span><div className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1"><Phone className="size-3 text-slate-400" />{detail.mobile}</div></div>}
+  1748→                {detail.email && <div className="text-[11px]"><span className="text-slate-500 dark:text-slate-400">Email</span><div className="font-semibold text-slate-700 dark:text-slate-300 text-[10px] truncate">{detail.email}</div></div>}
+  1749→              </div>
+  1750→              {/* GST, PAN, Aadhaar Details */}
+  1751→              {(detail.gstNumber || detail.panNumber || detail.aadhaarNumber) && (
+  1752→                <div className="mt-2 pt-2 border-t border-slate-200 dark:border-slate-600">
+  1753→                  <div className="grid grid-cols-1 gap-1.5">
+  1754→                    {detail.gstNumber && <div className="flex items-center gap-2 text-[11px] bg-emerald-50 dark:bg-emerald-900/20 rounded-lg px-2.5 py-1.5 border border-emerald-100 dark:border-emerald-800/50"><span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">GSTIN</span><span className="font-mono font-semibold text-slate-700 dark:text-slate-300 text-[10px]">{detail.gstNumber}</span></div>}
+  1755→                    {detail.panNumber && <div className="flex items-center gap-2 text-[11px]"><span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">PAN</span><span className="font-mono font-semibold text-slate-700 dark:text-slate-300 text-[10px]">{detail.panNumber}</span></div>}
+  1756→                    {detail.aadhaarNumber && <div className="flex items-center gap-2 text-[11px]"><span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Aadhaar</span><span className="font-mono font-semibold text-slate-700 dark:text-slate-300 text-[10px]">{detail.aadhaarNumber}</span></div>}
+  1757→                  </div>
+  1758→                </div>
+  1759→              )}
+  1760→              {/* Advance / Credit Balance */}
+  1761→              {bal < 0 && (
+  1762→                <div className="mt-2 flex items-center gap-2 text-[11px] bg-green-50 dark:bg-green-900/20 rounded-lg px-2.5 py-1.5 border border-green-200 dark:border-green-800/50">
+  1763→                  <Wallet className="size-3.5 text-green-600 dark:text-green-400" />
+  1764→                  <span className="font-bold text-green-700 dark:text-green-300">Advance: {fmtCur(Math.abs(bal))}</span>
+  1765→                </div>
+  1766→              )}
+  1767→            </div>
+  1768→
+  1769→            <Separator className="bg-slate-100 dark:bg-slate-700" />
+  1770→
+  1771→            {/* Folio Info */}
+  1772→            <div className="space-y-2.5">
+  1773→              <h4 className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Folio</h4>
+  1774→              <div className="grid grid-cols-2 gap-2 text-[11px]">
+  1775→                <div><span className="text-slate-500 dark:text-slate-400">Folio No</span><div className="font-mono font-semibold text-slate-700 dark:text-slate-300">{fmtFolioNum(detail.activeFolio?.folioNumber)}</div></div>
+  1776→                <div><span className="text-slate-500 dark:text-slate-400">Status</span><div><span className={`font-semibold text-[10px] px-2 py-0.5 rounded-md ${detail.activeFolio?.status === 'Active' ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'}`}>{detail.activeFolio?.status || '—'}</span></div></div>
+  1777→                <div><span className="text-slate-500 dark:text-slate-400">Total Folios</span><div className="font-semibold text-slate-700 dark:text-slate-300">{allFolios.length}</div></div>
+  1778→              </div>
+  1779→            </div>
+  1780→
+  1781→            <Separator className="bg-slate-100 dark:bg-slate-700" />
+  1782→
+  1783→            {/* Balance Card */}
+  1784→            <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-3 space-y-2 border border-slate-100 dark:border-slate-700">
+  1785→              <h4 className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Balance Summary</h4>
+  1786→              <div className="flex justify-between items-center text-[11px]">
+  1787→                <span className="text-slate-500 dark:text-slate-400">Current Balance</span>
+  1788→                <span className={`font-bold text-base tabular-nums ${bal > 0 ? 'text-red-600' : bal < 0 ? 'text-green-600' : 'text-slate-500 dark:text-slate-400'}`}>
+  1789→                  {bal > 0 ? '+' : bal < 0 ? '-' : ''}{fmtCur(bal)}
+  1790→                </span>
+  1791→              </div>
+  1792→              <div className="grid grid-cols-2 gap-2">
+  1793→                <div className="bg-white dark:bg-slate-700 rounded-lg p-2 text-center">
+  1794→                  <div className="text-[9px] text-slate-400 dark:text-slate-500">Revenue</div>
+  1795→                  <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{fmtCur(detail.lifetimeRevenue)}</div>
+  1796→                </div>
+  1797→                <div className="bg-white dark:bg-slate-700 rounded-lg p-2 text-center">
+  1798→                  <div className="text-[9px] text-slate-400 dark:text-slate-500">Payments</div>
+  1799→                  <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{fmtCur(detail.lifetimePayments)}</div>
+  1800→                </div>
+  1801→                <div className="bg-white dark:bg-slate-700 rounded-lg p-2 text-center">
+  1802→                  <div className="text-[9px] text-slate-400 dark:text-slate-500">Refunds</div>
+  1803→                  <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{fmtCur(detail.lifetimeRefunds)}</div>
+  1804→                </div>
+  1805→                <div className="bg-white dark:bg-slate-700 rounded-lg p-2 text-center">
+  1806→                  <div className="text-[9px] text-slate-400 dark:text-slate-500">Transactions</div>
+  1807→                  <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{detail.totalTransactions}</div>
+  1808→                </div>
+  1809→              </div>
+  1810→            </div>
+  1811→
+  1812→            <Separator className="bg-slate-100 dark:bg-slate-700" />
+  1813→
+  1814→            {/* Visits */}
+  1815→            <div className="space-y-2.5">
+  1816→              <h4 className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Activity</h4>
+  1817→              <div className="text-[11px]"><span className="text-slate-500 dark:text-slate-400">Total Visits</span><div className="font-semibold text-slate-700 dark:text-slate-300">{detail.totalVisits}</div></div>
+  1818→              {detail.lastVisitDate && <div className="text-[11px]"><span className="text-slate-500 dark:text-slate-400">Last Visit</span><div className="font-semibold text-slate-700 dark:text-slate-300">{relTime(detail.lastVisitDate)}</div></div>}
+  1819→              {detail.lastTxnDate && <div className="text-[11px]"><span className="text-slate-500 dark:text-slate-400">Last Txn</span><div className="font-semibold text-slate-700 dark:text-slate-300">{relTime(detail.lastTxnDate)}</div></div>}
+  1820→            </div>
+  1821→          </div>
+  1822→        </SheetContent>
+  1823→      </Sheet>
+  1824→    )}
+  1825→    </>
+  1826→  )
+  1827→}

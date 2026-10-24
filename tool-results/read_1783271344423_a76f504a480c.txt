@@ -1,0 +1,502 @@
+     1→'use client'
+     2→
+     3→import React from 'react'
+     4→
+     5→// Safe JSON parse: handles cases where server returns HTML instead of JSON
+     6→const safeJson = async (res: Response): Promise<Record<string, unknown>> => {
+     7→  try { return await res.json() } catch { return { error: `Server error (${res.status})` } }
+     8→}
+     9→
+    10→import {
+    11→  UserPlus, Edit3, CircleDollarSign, Landmark, ArrowDownLeft, ArrowRightLeft,
+    12→  Trash2, FileCheck2, FileText, FileUp, StickyNote, Tag, Loader2, Eye, Phone,
+    13→  Layers, Wallet, CreditCard, Building2, BedDouble, Bitcoin, QrCode, CheckCircle2, Printer,
+    14→  Flame, Hash, Stamp, Receipt, IndianRupee, CircleCheck, PartyPopper, ArrowLeft, Plus, X,
+    15→  History, ChevronDown, LogOut, Lock,
+    16→} from 'lucide-react'
+    17→import { Button } from '@/components/ui/button'
+    18→import { Input } from '@/components/ui/input'
+    19→import { Badge } from '@/components/ui/badge'
+    20→import { Label } from '@/components/ui/label'
+    21→import { Separator } from '@/components/ui/separator'
+    22→import { Textarea } from '@/components/ui/textarea'
+    23→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+    24→import {
+    25→  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+    26→} from '@/components/ui/dialog'
+    27→import {
+    28→  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+    29→  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+    30→} from '@/components/ui/alert-dialog'
+    31→import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+    32→import { ScrollArea } from '@/components/ui/scroll-area'
+    33→import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+    34→import { Checkbox } from '@/components/ui/checkbox'
+    35→import { fmtCur, fmtDate, fmtINR, fmtDateTime, relTime, TYPE_BADGE, STATUS_BADGE, ALL_TAGS, TAG_COLORS, fmtFolioNum, ALL_PAYMENT_MODES, stripInternalDescriptions, TYPE_ICON } from './customer-folio-helpers'
+    36→import { notify } from '@/lib/notification-store'
+    37→import type {
+    38→  CustomerDetail, Folio, Customer, CustomerForm, ChargeForm, PaymentForm,
+    39→  RefundForm, TransferForm, DiscountForm, DocForm, NoteForm, SplitAmountForm,
+    40→  CheckoutRecord, CustomerHistory,
+    41→} from './customer-folio-types'
+    42→
+    43→// ─── Document type color map ───
+    44→const DOC_TYPE_COLORS: Record<string, string> = {
+    45→  Aadhaar: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300',
+    46→  PAN: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300',
+    47→  GST: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300',
+    48→  Agreement: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300',
+    49→  Receipt: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300',
+    50→  Invoice: 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300',
+    51→  Contract: 'bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300',
+    52→  Photo: 'bg-pink-100 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300',
+    53→  'ID Proof': 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300',
+    54→  'Address Proof': 'bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300',
+    55→  Medical: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300',
+    56→  Custom: 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400',
+    57→}
+    58→
+    59→// ─── Note type color map ───
+    60→const NOTE_TYPE_COLORS: Record<string, string> = {
+    61→  Internal: 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300',
+    62→  Customer: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300',
+    63→  Staff: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300',
+    64→  Private: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300',
+    65→  Complaint: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300',
+    66→  Feedback: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300',
+    67→  FollowUp: 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300',
+    68→}
+    69→
+    70→// ─── Props interface for all dialogs ───
+    71→interface DialogsProps {
+    72→  detail: CustomerDetail | null
+    73→  allFolios: Folio[]
+    74→  selectedEntries: Set<string>
+    75→  submitting: boolean
+    76→  settlingMode: boolean
+    77→  selectedFolioId: string | null
+    78→  bal: number
+    79→  selectedEntryObj: any
+    80→  isActive: boolean
+    81→  isCheckedOut: boolean
+    82→  invoiceData: any
+    83→  invoiceLoading: boolean
+    84→  folioStatementData: any
+    85→  customerTags: string[]
+    86→  transferResults: Customer[]
+    87→  paymentEntries: any[]
+    88→
+    89→  // Dialog open states
+    90→  addOpen: boolean; editOpen: boolean; chargeOpen: boolean; paymentOpen: boolean
+    91→  refundOpen: boolean; transferOpen: boolean; discountOpen: boolean; docOpen: boolean
+    92→  noteOpen: boolean; tagsOpen: boolean; checkoutOpen: boolean; deleteOpen: boolean
+    93→  splitAmountOpen: boolean; shiftOpen: boolean; removeOpen: boolean; voucherOpen: boolean
+    94→  invoiceOpen: boolean; detailsSheetOpen: boolean
+    95→
+    96→  // Form values
+    97→  form: CustomerForm; chargeForm: ChargeForm; paymentForm: PaymentForm
+    98→  refundForm: RefundForm; transferForm: TransferForm; discountForm: DiscountForm
+    99→  docForm: DocForm; noteForm: NoteForm; splitAmountForm: SplitAmountForm
+   100→  invoiceFrom: string; invoiceTo: string
+   101→  shiftTargetFolioId: string; duplicate: Customer | null
+   102→
+   103→  deleteFolioOpen: boolean; folioToDelete: string | null
+   104→  setDeleteFolioOpen: (v: boolean) => void; handleDeleteFolio: () => void
+   105→
+   106→  // Setters
+   107→  setAddOpen: (v: boolean) => void; setEditOpen: (v: boolean) => void
+   108→  setChargeOpen: (v: boolean) => void; setPaymentOpen: (v: boolean) => void
+   109→  setRefundOpen: (v: boolean) => void; setTransferOpen: (v: boolean) => void
+   110→  setDiscountOpen: (v: boolean) => void; setDocOpen: (v: boolean) => void
+   111→  setNoteOpen: (v: boolean) => void; setTagsOpen: (v: boolean) => void
+   112→  setCheckoutOpen: (v: boolean) => void; setDeleteOpen: (v: boolean) => void
+   113→  setSplitAmountOpen: (v: boolean) => void; setShiftOpen: (v: boolean) => void
+   114→  setRemoveOpen: (v: boolean) => void; setVoucherOpen: (v: boolean) => void
+   115→  setInvoiceOpen: (v: boolean) => void; setDetailsSheetOpen: (v: boolean) => void
+   116→  setForm: (f: CustomerForm) => void; setChargeForm: (f: ChargeForm) => void
+   117→  setPaymentForm: (f: PaymentForm) => void; setRefundForm: (f: RefundForm) => void
+   118→  setTransferForm: (f: TransferForm) => void; setDiscountForm: (f: DiscountForm) => void
+   119→  setDocForm: (f: DocForm) => void; setNoteForm: (f: NoteForm) => void
+   120→  setSplitAmountForm: (f: SplitAmountForm) => void
+   121→  setInvoiceFrom: (v: string) => void; setInvoiceTo: (v: string) => void
+   122→  setShiftTargetFolioId: (v: string) => void
+   123→  setDuplicate: (v: Customer | null) => void
+   124→
+   125→  // Handlers
+   126→  handleCreate: () => void; handleUpdate: () => void; handleCharge: () => void
+   127→  handlePayment: () => void; handleSettle: () => void; handleRefund: () => void
+   128→  handleDiscount: () => void; handleTransfer: () => void; handleShift: () => void
+   129→  handleSplitAmount: () => void; handleRemove: () => void; handleCheckout: () => void
+   130→  handleDelete: () => void; handleAddDoc: () => void; handleAddNote: () => void
+   131→  handleToggleTag: (tagName: string) => void; handleDeleteDoc: (docId: string) => void
+   132→  handleDeleteNote: (noteId: string) => void
+   133→  fetchInvoiceData: () => void; fetchFolioStatement: (folioId: string) => void
+   134→  printInvoice: () => void; printCompleteInvoice: () => void; printSingleFolio: () => void; printVoucherHistory: (entries?: any[]) => void
+   135→  closeDialogs: () => void
+   136→  searchTransferTargets: (q: string) => void
+   137→
+   138→  // Enhanced props (optional — for TXN numbers, invoice generation, post-checkout)
+   139→  apiHeaders?: Record<string, string>
+   140→  onRefresh?: () => void
+   141→  canDelete?: boolean
+   142→  isAdmin?: boolean
+   143→  onPrintReceipt?: () => void
+   144→  onThermalPrintReceipt?: () => void
+   145→  onThermalPrintInvoice?: () => void
+   146→  onThermalPrintVoucher?: () => void
+   147→  lastCreatedDocNo?: string | null
+   148→  lastCreatedType?: string | null
+   149→
+   150→  // History
+   151→  historyOpen: boolean
+   152→  setHistoryOpen: (v: boolean) => void
+   153→  onPrintHistoryFolio?: (folioData: { entries: any[]; openingBalance: number; closingBalance: number }) => void
+   154→}
+   155→
+   156→// ─── StatBox for checkout history summary ───
+   157→function StatBox({ label, value, color = 'text-foreground' }: { label: string; value: string; color?: string }) {
+   158→  return (
+   159→    <div className="bg-muted/50 rounded-md p-1.5 text-center">
+   160→      <div className="text-[8px] text-muted-foreground uppercase">{label}</div>
+   161→      <div className={`text-[11px] font-bold ${color}`}>{value}</div>
+   162→    </div>
+   163→  )
+   164→}
+   165→
+   166→export function CustomerFolioDialogs({
+   167→  detail, allFolios, selectedEntries, submitting, settlingMode,
+   168→  selectedFolioId, bal, selectedEntryObj, isActive, isCheckedOut,
+   169→  invoiceData, invoiceLoading, folioStatementData, customerTags,
+   170→  transferResults, paymentEntries,
+   171→  addOpen, editOpen, chargeOpen, paymentOpen, refundOpen, transferOpen,
+   172→  discountOpen, docOpen, noteOpen, tagsOpen, checkoutOpen, deleteOpen,
+   173→  splitAmountOpen, shiftOpen, removeOpen, voucherOpen, invoiceOpen,
+   174→  detailsSheetOpen,
+   175→  form, chargeForm, paymentForm, refundForm, transferForm, discountForm,
+   176→  docForm, noteForm, splitAmountForm, invoiceFrom, invoiceTo,
+   177→  shiftTargetFolioId, duplicate,
+   178→  setAddOpen, setEditOpen, setChargeOpen, setPaymentOpen, setRefundOpen,
+   179→  setTransferOpen, setDiscountOpen, setDocOpen, setNoteOpen, setTagsOpen,
+   180→  setCheckoutOpen, setDeleteOpen, setSplitAmountOpen, setShiftOpen,
+   181→  setRemoveOpen, setVoucherOpen, setInvoiceOpen, setDetailsSheetOpen,
+   182→  setForm, setChargeForm, setPaymentForm, setRefundForm, setTransferForm,
+   183→  setDiscountForm, setDocForm, setNoteForm, setSplitAmountForm,
+   184→  setInvoiceFrom, setInvoiceTo, setShiftTargetFolioId, setDuplicate,
+   185→  handleCreate, handleUpdate, handleCharge, handlePayment, handleSettle,
+   186→  handleRefund, handleDiscount, handleTransfer, handleShift, handleSplitAmount,
+   187→  handleRemove, handleCheckout, handleDelete, handleAddDoc, handleAddNote,
+   188→  handleToggleTag, handleDeleteDoc, handleDeleteNote,
+   189→  fetchInvoiceData, fetchFolioStatement, printInvoice, printCompleteInvoice, printSingleFolio, printVoucherHistory,
+   190→  closeDialogs, searchTransferTargets,
+   191→  deleteFolioOpen, folioToDelete,
+   192→  setDeleteFolioOpen, handleDeleteFolio,
+   193→  // Enhanced props
+   194→  apiHeaders, onRefresh, canDelete = false, isAdmin = false, onPrintReceipt, onThermalPrintReceipt,
+   195→  onThermalPrintInvoice, onThermalPrintVoucher,
+   196→  lastCreatedDocNo, lastCreatedType,
+   197→  // History
+   198→  historyOpen, setHistoryOpen, onPrintHistoryFolio,
+   199→}: DialogsProps) {
+   200→
+   201→  // ─── Internal State ───
+   202→  const [invoiceNumber, setInvoiceNumber] = React.useState('')
+   203→  const [invNumLoading, setInvNumLoading] = React.useState(false)
+   204→  const [localSubmitting, setLocalSubmitting] = React.useState(false)
+   205→  const [entrySuccess, setEntrySuccess] = React.useState<{ show: boolean; docNo: string; type: string } | null>(null)
+   206→  const [postCheckoutOpen, setPostCheckoutOpen] = React.useState(false)
+   207→  // ─── History state ───
+   208→  const [historyLoading, setHistoryLoading] = React.useState(false)
+   209→  const [customerHistory, setCustomerHistory] = React.useState<CustomerHistory | null>(null)
+   210→  const [expandedFolioId, setExpandedFolioId] = React.useState<string | null>(null)
+   211→  const [selectedVoucherIds, setSelectedVoucherIds] = React.useState<Set<string>>(new Set())
+   212→
+   213→  // Fetch history for the CURRENT customer
+   214→  React.useEffect(() => {
+   215→    if (historyOpen && detail && apiHeaders) {
+   216→      fetchCustomerHistory()
+   217→    } else if (!historyOpen) {
+   218→      setCustomerHistory(null)
+   219→      setExpandedFolioId(null)
+   220→    }
+   221→  }, [historyOpen, detail?.id])
+   222→
+   223→  const fetchCustomerHistory = React.useCallback(async () => {
+   224→    if (!detail || !apiHeaders) return
+   225→    try {
+   226→      setHistoryLoading(true)
+   227→      const res = await fetch(`/api/folio/customers/${detail.id}/history`, { headers: apiHeaders })
+   228→      if (res.ok) {
+   229→        const data = await res.json() as CustomerHistory
+   230→        setCustomerHistory(data)
+   231→      }
+   232→    } catch { /* ignore */ } finally { setHistoryLoading(false) }
+   233→  }, [detail?.id, apiHeaders])
+   234→
+   235→  // ─── Print helpers for checkout records ───
+   236→  const printCheckoutFolioBill = (co: CheckoutRecord) => {
+   237→    if (!co.transactions.length) return
+   238→    const w = window.open('', '_blank')
+   239→    if (!w) return
+   240→    const rows = co.transactions.map((e, i) => `<tr><td>${i+1}</td><td>${e.date}</td><td>${e.type}</td><td>${e.description}</td><td style="text-align:right">${e.debit > 0 ? e.debit.toLocaleString('en-IN') : ''}</td><td style="text-align:right">${e.credit > 0 ? e.credit.toLocaleString('en-IN') : ''}</td><td style="text-align:right;font-weight:bold">${(e.balance||0).toLocaleString('en-IN')}</td></tr>`).join('')
+   241→    w.document.write(`<!DOCTYPE html><html><head><title>Folio Bill - ${co.checkoutNumber}</title><style>body{font-family:system-ui;margin:20px;color:#1e293b;}table{border-collapse:collapse;width:100%;}th,td{padding:4px 8px;border-bottom:1px solid #e2e8f0;font-size:11px;}th{background:#f1f5f9;text-transform:uppercase;font-size:10px;letter-spacing:0.5px;}h2{margin:0 0 4px;}p{margin:0 0 12px;color:#64748b;font-size:11px;}.summary{display:flex;gap:12px;margin-bottom:12px;}.summary div{padding:6px 12px;background:#f1f5f9;border-radius:6px;font-size:11px;}@media print{body{margin:0;}}</style></head><body><h2>Folio Bill</h2><p>${co.customerName} | ${co.customerIdRef} | ${co.checkoutNumber} | ${co.invoiceNumber}</p><div class="summary"><div>Charges: <strong>₹${co.totalCharges.toLocaleString('en-IN')}</strong></div><div>Payments: <strong>₹${co.totalPayments.toLocaleString('en-IN')}</strong></div><div>Tax: <strong>₹${co.totalTax.toLocaleString('en-IN')}</strong></div><div>Discount: <strong>₹${co.totalDiscount.toLocaleString('en-IN')}</strong></div><div>Closing: <strong>₹${co.closingBalance.toLocaleString('en-IN')}</strong></div></div><table><thead><tr><th>#</th><th>Date</th><th>Type</th><th>Description</th><th style="text-align:right">Debit</th><th style="text-align:right">Credit</th><th style="text-align:right">Balance</th></tr></thead><tbody>${rows}</tbody></table></body></html>`)
+   242→    w.document.close(); w.print()
+   243→  }
+   244→
+   245→  const printCheckoutInvoice = (co: CheckoutRecord) => {
+   246→    if (!co.transactions.length) return
+   247→    const w = window.open('', '_blank')
+   248→    if (!w) return
+   249→    const txnRows = co.transactions.map((e, i) => `<tr><td>${i+1}</td><td>${e.date}</td><td>${e.type}</td><td>${e.description}</td><td>${e.paymentMode||'—'}</td><td style="text-align:right">${e.debit > 0 ? '₹'+e.debit.toLocaleString('en-IN') : ''}</td><td style="text-align:right">${e.credit > 0 ? '₹'+e.credit.toLocaleString('en-IN') : ''}</td><td style="text-align:right;font-weight:bold">₹${(e.balance||0).toLocaleString('en-IN')}</td></tr>`).join('')
+   250→    const settleRows = co.settlements.length > 0 ? `<h3 style="margin:16px 0 8px;font-size:13px;">Settlements</h3><table><thead><tr><th>Date</th><th>Mode</th><th>Reference</th><th style="text-align:right">Amount</th><th>By</th></tr></thead><tbody>${co.settlements.map(s => `<tr><td>${String(s.createdAt||'').split('T')[0]}</td><td>${s.mode}</td><td>${s.reference||'—'}</td><td style="text-align:right;font-weight:bold">₹${s.amount.toLocaleString('en-IN')}</td><td>${s.userName||'—'}</td></tr>`).join('')}</tbody></table>` : ''
+   251→    const payModes = Object.entries(co.paymentBreakdown).map(([m,a]) => `<span style="display:inline-block;padding:4px 10px;background:#f0fdf4;border-radius:6px;font-size:11px;margin:2px;">${m}: ₹${a.toLocaleString('en-IN')}</span>`).join('')
+   252→    w.document.write(`<!DOCTYPE html><html><head><title>Final Checkout Invoice - ${co.invoiceNumber}</title><style>body{font-family:system-ui;margin:20px;color:#1e293b;max-width:800px;margin:0 auto;padding:20px;}table{border-collapse:collapse;width:100%;}th,td{padding:5px 8px;border-bottom:1px solid #e2e8f0;font-size:11px;}th{background:#f1f5f9;text-transform:uppercase;font-size:10px;letter-spacing:0.5px;}h2{margin:0 0 2px;font-size:18px;}h3{margin:12px 0 6px;font-size:13px;}.subtitle{color:#64748b;font-size:11px;margin:0 0 16px;}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;}.grid-item{padding:10px 14px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;}.grid-item label{display:block;font-size:9px;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;margin-bottom:2px;}.grid-item value{font-size:13px;font-weight:600;}.totals{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px;}.total-box{padding:8px 12px;border-radius:8px;text-align:center;}.total-box label{display:block;font-size:9px;text-transform:uppercase;color:#64748b;}.total-box value{display:block;font-size:14px;font-weight:700;margin-top:2px;}.green{background:#f0fdf4;color:#16a34a;}.red{background:#fef2f2;color:#dc2626;}.blue{background:#eff6ff;color:#2563eb;}.amber{background:#fffbeb;color:#d97706;}.purple{background:#faf5ff;color:#9333ea;}@media print{body{margin:0;padding:10px;}}</style></head><body><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;"><div><h2>FINAL CHECKOUT INVOICE</h2><p class="subtitle">Invoice: ${co.invoiceNumber} | Checkout: ${co.checkoutNumber}</p></div><div style="text-align:right;font-size:11px;color:#64748b;">Generated: ${new Date(co.checkoutDate).toLocaleString('en-IN')}</div></div><div class="grid"><div class="grid-item"><label>Customer</label><value>${co.customerName}</value></div><div class="grid-item"><label>Customer ID</label><value>${co.customerIdRef}</value></div><div class="grid-item"><label>Mobile</label><value>${co.customerMobile || '—'}</value></div><div class="grid-item"><label>Type</label><value>${co.customerType}</value></div><div class="grid-item"><label>Address</label><value>${co.customerAddress || '—'}</value></div><div class="grid-item"><label>Visit #</label><value>${co.visitNumber}</value></div></div><div class="totals"><div class="total-box red"><label>Total Charges</label><value>₹${co.totalCharges.toLocaleString('en-IN')}</value></div><div class="total-box green"><label>Total Payments</label><value>₹${co.totalPayments.toLocaleString('en-IN')}</value></div><div class="total-box amber"><label>Total Tax</label><value>₹${co.totalTax.toLocaleString('en-IN')}</value></div><div class="total-box purple"><label>Total Discount</label><value>₹${co.totalDiscount.toLocaleString('en-IN')}</value></div><div class="total-box blue"><label>Settlements</label><value>₹${co.totalSettlements.toLocaleString('en-IN')}</value></div><div class="total-box blue"><label>Refunds</label><value>₹${co.totalRefunds.toLocaleString('en-IN')}</value></div><div class="total-box ${co.openingBalance !== 0 ? 'amber' : ''}"><label>Opening Bal</label><value>₹${co.openingBalance.toLocaleString('en-IN')}</value></div><div class="total-box ${co.closingBalance > 0 ? 'red' : 'green'}"><label>Closing Bal</label><value>₹${co.closingBalance.toLocaleString('en-IN')}</value></div></div>${payModes ? `<div style="margin-bottom:16px;"><label style="font-size:9px;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;">Payment Mode Breakdown</label><div style="margin-top:4px;">${payModes}</div></div>` : ''}<h3>All Transactions (${co.transactions.length})</h3><table><thead><tr><th>#</th><th>Date</th><th>Type</th><th>Description</th><th>Mode</th><th style="text-align:right">Debit</th><th style="text-align:right">Credit</th><th style="text-align:right">Balance</th></tr></thead><tbody>${txnRows}</tbody></table>${settleRows}${co.remarks ? `<div style="margin-top:16px;padding:10px;background:#f8fafc;border-radius:8px;font-size:11px;"><strong>Remarks:</strong> ${co.remarks}</div>` : ''}<div style="margin-top:24px;padding-top:12px;border-top:1px solid #e2e8f0;font-size:10px;color:#64748b;">Checked out by: ${co.checkoutUser} | This is a computer-generated invoice.</div></body></html>`)
+   253→    w.document.close(); w.print()
+   254→  }
+   255→
+   256→  // ─── Track checkout transition ───
+   257→  const wasCheckedOut = React.useRef(isCheckedOut)
+   258→  React.useEffect(() => {
+   259→    if (isCheckedOut && !wasCheckedOut.current) {
+   260→      setPostCheckoutOpen(true)
+   261→    }
+   262→    wasCheckedOut.current = isCheckedOut
+   263→  }, [isCheckedOut])
+   264→
+   265→  // ─── Show TXN number when lastCreatedDocNo changes ───
+   266→  React.useEffect(() => {
+   267→    if (lastCreatedDocNo && lastCreatedType) {
+   268→      setEntrySuccess({ show: true, docNo: lastCreatedDocNo, type: lastCreatedType })
+   269→      const timer = setTimeout(() => setEntrySuccess(null), 4000)
+   270→      return () => clearTimeout(timer)
+   271→    }
+   272→  }, [lastCreatedDocNo, lastCreatedType])
+   273→
+   274→  // ─── Items for charge selector (Req 5) ───
+   275→  const [items, setItems] = React.useState<{ id: string; name: string; price: number }[]>([])
+   276→  const [itemsLoading, setItemsLoading] = React.useState(false)
+   277→  React.useEffect(() => {
+   278→    if (chargeOpen && apiHeaders) {
+   279→      setItemsLoading(true)
+   280→      fetch('/api/items', { headers: apiHeaders }).then(r => r.ok ? r.json() : []).then((list: any[]) => {
+   281→        setItems((list || []).map((it: any) => ({ id: it.id, name: it.name, price: it.price || 0 })))
+   282→      }).catch(() => {}).finally(() => setItemsLoading(false))
+   283→    }
+   284→  }, [chargeOpen, apiHeaders])
+   285→
+   286→  // Handle item selection
+   287→  const handleItemSelect = React.useCallback((itemId: string) => {
+   288→    const item = items.find(it => it.id === itemId)
+   289→    if (item) {
+   290→      setChargeForm({
+   291→        ...chargeForm,
+   292→        selectedItem: itemId,
+   293→        selectedItemPrice: String(item.price),
+   294→        description: item.name,
+   295→        amount: item.price > 0 ? String(item.price) : chargeForm.amount,
+   296→      })
+   297→    }
+   298→  }, [items, chargeForm])
+   299→
+   300→  // ─── Fetch invoice number ───
+   301→  const fetchInvoiceNumber = React.useCallback(async () => {
+   302→    if (!detail || !apiHeaders) return
+   303→    try {
+   304→      setInvNumLoading(true)
+   305→      const res = await fetch(`/api/folio/customers/${detail.id}/invoice-number`, {
+   306→        method: 'POST',
+   307→        headers: apiHeaders,
+   308→      })
+   309→      if (res.ok) {
+   310→        const data = await res.json()
+   311→        setInvoiceNumber(data.invoiceNumber)
+   312→      }
+   313→    } catch { /* ignore */ } finally { setInvNumLoading(false) }
+   314→  }, [detail?.id, apiHeaders])
+   315→
+   316→  // ─── Fetch invoice number when invoice dialog opens ───
+   317→  React.useEffect(() => {
+   318→    if (invoiceOpen && detail && apiHeaders && !invoiceNumber) {
+   319→      fetchInvoiceNumber()
+   320→    }
+   321→  }, [invoiceOpen, detail?.id, apiHeaders])
+   322→
+   323→  React.useEffect(() => {
+   324→    if (invoiceOpen && !invoiceData && detail && selectedFolioId) {
+   325→      fetchInvoiceData()
+   326→    }
+   327→  }, [invoiceOpen])
+   328→
+   329→  // ─── Entry creation with TXN tracking ───
+   330→  const createEntryWithTxn = React.useCallback(async (type: string, data: any) => {
+   331→    if (!detail || !selectedFolioId || !apiHeaders) {
+   332→      return null
+   333→    }
+   334→    try {
+   335→      setLocalSubmitting(true)
+   336→      const res = await fetch(`/api/folio/customers/${detail.id}/ledger`, {
+   337→        method: 'POST',
+   338→        headers: { ...apiHeaders, 'Content-Type': 'application/json' },
+   339→        body: JSON.stringify({ type, folioId: selectedFolioId, ...data }),
+   340→      })
+   341→      if (res.ok) {
+   342→        const entry = await res.json()
+   343→        const docNo = entry?.docNo || ''
+   344→        setEntrySuccess({ show: true, docNo, type })
+   345→        notify({ type: 'success', title: `${type} ${docNo}`, message: `${type} entry ${docNo} created successfully` })
+   346→        closeDialogs()
+   347→        onRefresh?.()
+   348→        setTimeout(() => setEntrySuccess(null), 4000)
+   349→        return entry
+   350→      } else {
+   351→        const e = await safeJson(res)
+   352→        notify({ type: 'error', title: 'Error', message: (e.error as string) || 'Failed' })
+   353→        return null
+   354→      }
+   355→    } catch {
+   356→      notify({ type: 'error', title: 'Error', message: 'Network error' })
+   357→      return null
+   358→    } finally {
+   359→      setLocalSubmitting(false)
+   360→    }
+   361→  }, [detail?.id, selectedFolioId, apiHeaders, closeDialogs, onRefresh])
+   362→
+   363→  // ─── Settlement with TXN tracking ───
+   364→  const settleWithTxn = React.useCallback(async () => {
+   365→    if (!detail || !paymentForm.amount || !apiHeaders) {
+   366→      handleSettle()
+   367→      return
+   368→    }
+   369→    try {
+   370→      setLocalSubmitting(true)
+   371→      // When master folio is selected, use autoAllocate to distribute across all folios
+   372→      const isMaster = selectedFolioId === 'master'
+   373→      const payload = isMaster
+   374→        ? { amount: parseFloat(paymentForm.amount), mode: paymentForm.mode, reference: paymentForm.reference, description: paymentForm.description || `Settlement via ${paymentForm.mode}`, autoAllocate: true }
+   375→        : { amount: parseFloat(paymentForm.amount), mode: paymentForm.mode, reference: paymentForm.reference, description: paymentForm.description || `Settlement via ${paymentForm.mode}`, folioId: selectedFolioId }
+   376→      const res = await fetch(`/api/folio/customers/${detail.id}/settle`, {
+   377→        method: 'POST',
+   378→        headers: { ...apiHeaders, 'Content-Type': 'application/json' },
+   379→        body: JSON.stringify(payload),
+   380→      })
+   381→      if (res.ok) {
+   382→        const data = await res.json()
+   383→        // Auto-allocate may return settledFolios array instead of single ledgerEntry
+   384→        const docNo = data?.ledgerEntry?.docNo || (data?.settledFolios?.[0] ? 'Multi-Folio' : '')
+   385→        setEntrySuccess({ show: true, docNo, type: 'Settlement' })
+   386→        notify({ type: 'success', title: `Settlement ${docNo}`, message: data.message || `Settlement ${docNo} processed successfully` })
+   387→        closeDialogs()
+   388→        onRefresh?.()
+   389→        setTimeout(() => setEntrySuccess(null), 4000)
+   390→      } else {
+   391→        const e = await safeJson(res)
+   392→        notify({ type: 'error', title: 'Settlement Failed', message: (e.error as string) || 'Failed to process settlement' })
+   393→      }
+   394→    } catch {
+   395→      notify({ type: 'error', title: 'Error', message: 'Network error' })
+   396→    } finally {
+   397→      setLocalSubmitting(false)
+   398→    }
+   399→  }, [detail?.id, selectedFolioId, apiHeaders, paymentForm, handleSettle, closeDialogs, onRefresh])
+   400→
+   401→  // ─── Transfer with TXN tracking ───
+   402→  const transferWithTxn = React.useCallback(async () => {
+   403→    if (!detail || !transferForm.targetCustomerId || !apiHeaders) {
+   404→      handleTransfer()
+   405→      return
+   406→    }
+   407→    try {
+   408→      setLocalSubmitting(true)
+   409→      // If entries are selected, transfer only those; otherwise pure balance transfer
+   410→      const selectedEntryIds = selectedEntries.size > 0 ? Array.from(selectedEntries) : undefined
+   411→      const res = await fetch(`/api/folio/customers/${detail.id}/transfer`, {
+   412→        method: 'POST',
+   413→        headers: { ...apiHeaders, 'Content-Type': 'application/json' },
+   414→        body: JSON.stringify({
+   415→          targetCustomerId: transferForm.targetCustomerId,
+   416→          amount: parseFloat(transferForm.amount) || 0,
+   417→          description: transferForm.description,
+   418→          entryIds: selectedEntryIds,
+   419→        }),
+   420→      })
+   421→      if (res.ok) {
+   422→        const data = await res.json()
+   423→        const docNo = data?.source?.entry?.docNo || ''
+   424→        setEntrySuccess({ show: true, docNo, type: 'Transfer' })
+   425→        notify({ type: 'success', title: `Transfer ${docNo}`, message: data.message || `Transfer ${docNo} processed successfully` })
+   426→        closeDialogs()
+   427→        onRefresh?.()
+   428→        setTimeout(() => setEntrySuccess(null), 4000)
+   429→      } else {
+   430→        const e = await safeJson(res)
+   431→        notify({ type: 'error', title: 'Error', message: (e.error as string) || 'Failed' })
+   432→      }
+   433→    } catch {
+   434→      notify({ type: 'error', title: 'Error', message: 'Network error' })
+   435→    } finally {
+   436→      setLocalSubmitting(false)
+   437→    }
+   438→  }, [detail?.id, apiHeaders, transferForm, handleTransfer, closeDialogs, onRefresh])
+   439→
+   440→  // ─── Computed GST data from invoiceData ───
+   441→  const gstData = React.useMemo(() => {
+   442→    if (!invoiceData?.entries) return null
+   443→    const entries = invoiceData.entries as any[]
+   444→    const taxableEntries = entries.filter((e: any) => e.debit > 0)
+   445→    const taxableAmount = taxableEntries.reduce((sum: number, e: any) => sum + (e.debit || 0) - (e.tax || 0) - (e.discount || 0), 0)
+   446→    const totalTax = entries.reduce((sum: number, e: any) => sum + (e.tax || 0), 0)
+   447→    const totalDiscount = entries.reduce((sum: number, e: any) => sum + (e.discount || 0), 0)
+   448→    const totalCharges = entries.reduce((sum: number, e: any) => sum + (e.debit || 0), 0)
+   449→    const cgst = totalTax / 2
+   450→    const sgst = totalTax / 2
+   451→    const totalPayments = entries.reduce((sum: number, e: any) => sum + (e.credit || 0), 0)
+   452→    const advancePayment = bal < 0 ? Math.abs(bal) : 0
+   453→    return { taxableAmount, totalTax, totalDiscount, totalCharges, cgst, sgst, totalPayments, advancePayment, entryCount: taxableEntries.length }
+   454→  }, [invoiceData, bal])
+   455→
+   456→  // ─── Active submitting state (local or prop) ───
+   457→  const isSubmitting = localSubmitting || submitting
+   458→
+   459→  // ─── Entry success banner component ───
+   460→  const EntrySuccessBanner = () => {
+   461→    if (!entrySuccess?.show) return null
+   462→    return (
+   463→      <div className="fixed bottom-4 right-4 z-[100] animate-in slide-in-from-bottom-2 fade-in duration-300">
+   464→        <div className="bg-emerald-600 text-white rounded-xl shadow-lg px-4 py-3 flex items-center gap-3 min-w-[260px]">
+   465→          <div className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center shrink-0">
+   466→            <CircleCheck className="size-4 text-white" />
+   467→          </div>
+   468→          <div className="min-w-0">
+   469→            <div className="text-xs font-bold">{entrySuccess.type} Created</div>
+   470→            <div className="text-[11px] text-emerald-100 flex items-center gap-1 mt-0.5">
+   471→              <Hash className="size-3" />
+   472→              <span className="font-mono font-bold">{entrySuccess.docNo}</span>
+   473→            </div>
+   474→          </div>
+   475→        </div>
+   476→      </div>
+   477→    )
+   478→  }
+   479→
+   480→  // ─── Tax calculation preview ───
+   481→  const TaxPreview = ({ chargeForm }: { chargeForm: ChargeForm }) => {
+   482→    if (!chargeForm.taxEnabled || !chargeForm.amount || parseFloat(chargeForm.amount) <= 0) return null
+   483→    const taxPct = parseFloat(chargeForm.tax) || 0
+   484→    const amt = parseFloat(chargeForm.amount) || 0
+   485→    if (taxPct <= 0) return null
+   486→    if (chargeForm.taxType === 'exclude') {
+   487→      const taxAmt = amt * (taxPct / 100)
+   488→      const total = amt + taxAmt
+   489→      return <div className="pl-6 bg-emerald-50 dark:bg-emerald-900/20 rounded-md p-2 text-[11px] space-y-0.5"><div className="text-muted-foreground">Base: <span className="font-semibold text-foreground">₹{amt.toLocaleString('en-IN')}</span></div><div className="text-muted-foreground">Tax ({taxPct}%): <span className="font-semibold text-emerald-600">+₹{taxAmt.toFixed(2)}</span></div><div className="font-bold">Total Charge: ₹{total.toFixed(2)}</div></div>
+   490→    }
+   491→    const taxAmt = amt - (amt / (1 + taxPct / 100))
+   492→    const base = amt - taxAmt
+   493→    return <div className="pl-6 bg-emerald-50 dark:bg-emerald-900/20 rounded-md p-2 text-[11px] space-y-0.5"><div className="text-muted-foreground">Total (incl. tax): <span className="font-semibold text-foreground">₹{amt.toLocaleString('en-IN')}</span></div><div className="text-muted-foreground">Base Amount: <span className="font-semibold">₹{base.toFixed(2)}</span></div><div className="text-muted-foreground">Tax ({taxPct}%): <span className="font-semibold text-emerald-600">₹{taxAmt.toFixed(2)}</span></div></div>
+   494→  }
+   495→
+   496→  // ─── Per-entry-type success wrapper ───
+   497→  const SuccessOverlay = ({ docNo, type, label }: { docNo: string; type: string; label: string }) => (
+   498→    <div className="flex flex-col items-center justify-center py-6 gap-3">
+   499→      <div className="w-14 h-14 rounded-2xl bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center">
+   500→        <PartyPopper className="size-7 text-emerald-600 dark:text-emerald-400" />
+
+[showing lines 1-500 of 1831; use offset=501 with limit to continue reading]

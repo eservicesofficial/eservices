@@ -1,0 +1,502 @@
+     1→'use client'
+     2→
+     3→import React, { useState, useMemo } from 'react'
+     4→import { Button } from '@/components/ui/button'
+     5→import { Input } from '@/components/ui/input'
+     6→import { Label } from '@/components/ui/label'
+     7→import { Textarea } from '@/components/ui/textarea'
+     8→import { Badge } from '@/components/ui/badge'
+     9→import { Card, CardContent } from '@/components/ui/card'
+    10→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+    11→import {
+    12→  FileText, Plus, Trash2, Search, ExternalLink, Eye, StickyNote, X, Lock, Loader2,
+    13→  Pencil, Check, User, Clock, File, Shield, MessageSquare, AlertTriangle, Star,
+    14→  ChevronDown, ChevronUp, Phone, Mail, Building2, CreditCard, Image, FileSpreadsheet,
+    15→  FileCheck, FileCode, Archive, Receipt,
+    16→} from 'lucide-react'
+    17→import { CustomerDetail, CustomerNote, CustomerDocument } from './customer-folio-types'
+    18→import { fmtDate, fmtDateTime, relTime } from './customer-folio-helpers'
+    19→import { notify } from '@/lib/notification-store'
+    20→
+    21→const NOTE_TYPES = ['Internal', 'Customer', 'Staff', 'Private', 'Complaint', 'Feedback', 'FollowUp'] as const
+    22→const DOC_TYPES = ['Aadhaar', 'PAN', 'GST', 'Agreement', 'Receipt', 'Invoice', 'Contract', 'Photo', 'ID Proof', 'Address Proof', 'Medical', 'Custom'] as const
+    23→
+    24→const NOTE_COLORS: Record<string, string> = {
+    25→  Internal: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+    26→  Customer: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
+    27→  Staff: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+    28→  Private: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+    29→  Complaint: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
+    30→  Feedback: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
+    31→  FollowUp: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300',
+    32→}
+    33→
+    34→const NOTE_BG: Record<string, string> = {
+    35→  Internal: 'bg-slate-50/80 dark:bg-slate-900/40',
+    36→  Customer: 'bg-emerald-50/60 dark:bg-emerald-950/20',
+    37→  Staff: 'bg-blue-50/60 dark:bg-blue-950/20',
+    38→  Private: 'bg-red-50/60 dark:bg-red-950/20',
+    39→  Complaint: 'bg-orange-50/60 dark:bg-orange-950/20',
+    40→  Feedback: 'bg-purple-50/60 dark:bg-purple-950/20',
+    41→  FollowUp: 'bg-cyan-50/60 dark:bg-cyan-950/20',
+    42→}
+    43→
+    44→const NOTE_BORDER: Record<string, string> = {
+    45→  Internal: 'border-l-slate-400', Customer: 'border-l-emerald-500', Staff: 'border-l-blue-500',
+    46→  Private: 'border-l-red-500', Complaint: 'border-l-orange-500', Feedback: 'border-l-purple-500', FollowUp: 'border-l-cyan-500',
+    47→}
+    48→
+    49→const NOTE_ICONS: Record<string, React.ElementType> = {
+    50→  Internal: MessageSquare, Customer: User, Staff: Shield, Private: Lock,
+    51→  Complaint: AlertTriangle, Feedback: Star, FollowUp: Clock,
+    52→}
+    53→
+    54→const DOC_COLORS: Record<string, string> = {
+    55→  Aadhaar: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+    56→  PAN: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300',
+    57→  GST: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300',
+    58→  Agreement: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
+    59→  Receipt: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+    60→  Invoice: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300',
+    61→  Contract: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300',
+    62→  Photo: 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-300',
+    63→  'ID Proof': 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300',
+    64→  'Address Proof': 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300',
+    65→  Medical: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+    66→  Custom: 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400',
+    67→}
+    68→
+    69→const DOC_ICONS: Record<string, React.ElementType> = {
+    70→  Aadhaar: CreditCard, PAN: FileCheck, GST: FileSpreadsheet,
+    71→  Agreement: FileText, Receipt: Receipt, Invoice: FileText,
+    72→  Contract: File, Photo: Image, 'ID Proof': Shield,
+    73→  'Address Proof': Building2, Medical: AlertTriangle, Custom: Archive,
+    74→}
+    75→
+    76→const DOC_BORDER: Record<string, string> = {
+    77→  Aadhaar: 'border-l-blue-500', PAN: 'border-l-purple-500', GST: 'border-l-orange-500',
+    78→  Agreement: 'border-l-emerald-500', Receipt: 'border-l-amber-500', Invoice: 'border-l-cyan-500',
+    79→  Contract: 'border-l-rose-500', Photo: 'border-l-pink-500', 'ID Proof': 'border-l-indigo-500',
+    80→  'Address Proof': 'border-l-teal-500', Medical: 'border-l-red-500', Custom: 'border-l-slate-400',
+    81→}
+    82→
+    83→interface Props {
+    84→  detail: CustomerDetail | null; submitting: boolean; isAdmin: boolean
+    85→  canManageDocs: boolean; canDeleteDocs: boolean; token: string | null; onRefresh: () => void
+    86→  initialTab?: 'notes' | 'docs'
+    87→}
+    88→
+    89→export function CustomerFolioNotesDocs({ detail, submitting, isAdmin, canManageDocs, canDeleteDocs, token, onRefresh, initialTab = 'notes' }: Props) {
+    90→  const [tab, setTab] = useState<'notes' | 'docs'>(initialTab)
+    91→  const [noteSearch, setNoteSearch] = useState('')
+    92→  const [noteTypeFilter, setNoteTypeFilter] = useState('All')
+    93→  const [docSearch, setDocSearch] = useState('')
+    94→  const [docTypeFilter, setDocTypeFilter] = useState('All')
+    95→  const [showNoteForm, setShowNoteForm] = useState(false)
+    96→  const [showDocForm, setShowDocForm] = useState(false)
+    97→  const [addLoading, setAddLoading] = useState(false)
+    98→  const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
+    99→  const [editContent, setEditContent] = useState('')
+   100→
+   101→  // Note form
+   102→  const [noteType, setNoteType] = useState('Internal')
+   103→  const [noteContent, setNoteContent] = useState('')
+   104→  const [notePrivate, setNotePrivate] = useState(false)
+   105→
+   106→  // Doc form
+   107→  const [docType, setDocType] = useState('Custom')
+   108→  const [docName, setDocName] = useState('')
+   109→  const [docUrl, setDocUrl] = useState('')
+   110→  const [docNotes, setDocNotes] = useState('')
+   111→  const [docFileSize, setDocFileSize] = useState('')
+   112→
+   113→  // Expanded note for long content
+   114→  const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set())
+   115→  const toggleNoteExpand = (id: string) => {
+   116→    setExpandedNotes(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
+   117→  }
+   118→
+   119→  const authHdrs = token ? { Authorization: `Bearer ${token}` } : {}
+   120→
+   121→  // Filter notes: hide private from non-admin, apply search/type filter
+   122→  const visibleNotes = useMemo(() => {
+   123→    let notes = (detail?.notes || [])
+   124→    if (!isAdmin) notes = notes.filter(n => !n.isPrivate)
+   125→    if (noteTypeFilter !== 'All') notes = notes.filter(n => n.type === noteTypeFilter)
+   126→    if (noteSearch) { const q = noteSearch.toLowerCase(); notes = notes.filter(n => n.content.toLowerCase().includes(q) || n.type.toLowerCase().includes(q)) }
+   127→    return notes
+   128→  }, [detail?.notes, isAdmin, noteTypeFilter, noteSearch])
+   129→
+   130→  const visibleDocs = useMemo(() => {
+   131→    let docs = (detail?.documents || [])
+   132→    if (docTypeFilter !== 'All') docs = docs.filter(d => d.type === docTypeFilter)
+   133→    if (docSearch) { const q = docSearch.toLowerCase(); docs = docs.filter(d => d.name.toLowerCase().includes(q) || d.type.toLowerCase().includes(q) || (d.notes || '').toLowerCase().includes(q)) }
+   134→    return docs
+   135→  }, [detail?.documents, docTypeFilter, docSearch])
+   136→
+   137→  // Stats
+   138→  const noteStats = useMemo(() => {
+   139→    const all = detail?.notes || []
+   140→    const byType: Record<string, number> = {}
+   141→    for (const n of all) { if (!n.isPrivate || isAdmin) byType[n.type] = (byType[n.type] || 0) + 1 }
+   142→    return byType
+   143→  }, [detail?.notes, isAdmin])
+   144→
+   145→  const docStats = useMemo(() => {
+   146→    const all = detail?.documents || []
+   147→    const byType: Record<string, number> = {}
+   148→    for (const d of all) byType[d.type] = (byType[d.type] || 0) + 1
+   149→    return byType
+   150→  }, [detail?.documents])
+   151→
+   152→  const resetNoteForm = () => { setNoteType('Internal'); setNoteContent(''); setNotePrivate(false); setShowNoteForm(false) }
+   153→  const resetDocForm = () => { setDocType('Custom'); setDocName(''); setDocUrl(''); setDocNotes(''); setDocFileSize(''); setShowDocForm(false) }
+   154→
+   155→  const addNote = async () => {
+   156→    if (!detail?.id || !noteContent.trim()) return
+   157→    try {
+   158→      setAddLoading(true)
+   159→      const res = await fetch(`/api/folio/customers/${detail.id}/notes`, {
+   160→        method: 'POST', headers: { ...authHdrs, 'Content-Type': 'application/json' },
+   161→        body: JSON.stringify({ type: noteType, content: noteContent.trim(), isPrivate: isAdmin && notePrivate })
+   162→      })
+   163→      if (res.ok) { notify({ type: 'success', title: 'Note added' }); resetNoteForm(); onRefresh() }
+   164→    } catch { /* ignore */ } finally { setAddLoading(false) }
+   165→  }
+   166→
+   167→  const updateNote = async (noteId: string) => {
+   168→    if (!detail?.id || !editContent.trim()) return
+   169→    try {
+   170→      setAddLoading(true)
+   171→      const res = await fetch(`/api/folio/customers/${detail.id}/notes/${noteId}`, {
+   172→        method: 'PUT', headers: { ...authHdrs, 'Content-Type': 'application/json' },
+   173→        body: JSON.stringify({ content: editContent.trim() })
+   174→      })
+   175→      if (res.ok) { notify({ type: 'success', title: 'Note updated' }); setEditingNoteId(null); setEditContent(''); onRefresh() }
+   176→      else notify({ type: 'error', title: 'Error', message: 'Failed to update note' })
+   177→    } catch { notify({ type: 'error', title: 'Error', message: 'Network error' }) } finally { setAddLoading(false) }
+   178→  }
+   179→
+   180→  const addDoc = async () => {
+   181→    if (!detail?.id || !docName.trim()) return
+   182→    try {
+   183→      setAddLoading(true)
+   184→      const res = await fetch(`/api/folio/customers/${detail.id}/documents`, {
+   185→        method: 'POST', headers: { ...authHdrs, 'Content-Type': 'application/json' },
+   186→        body: JSON.stringify({ type: docType, name: docName.trim(), url: docUrl.trim(), notes: docNotes.trim(), fileSize: parseInt(docFileSize) || 0, mimeType: '' })
+   187→      })
+   188→      if (res.ok) { notify({ type: 'success', title: 'Document added' }); resetDocForm(); onRefresh() }
+   189→    } catch { /* ignore */ } finally { setAddLoading(false) }
+   190→  }
+   191→
+   192→  const deleteNote = async (id: string) => {
+   193→    if (!detail) return
+   194→    try {
+   195→      await fetch(`/api/folio/customers/${detail.id}/notes/${id}`, { method: 'DELETE', headers: authHdrs })
+   196→      notify({ type: 'success', title: 'Deleted' }); onRefresh()
+   197→    } catch { /* ignore */ }
+   198→  }
+   199→
+   200→  const deleteDoc = async (id: string) => {
+   201→    if (!detail) return
+   202→    try {
+   203→      await fetch(`/api/folio/customers/${detail.id}/documents/${id}`, { method: 'DELETE', headers: authHdrs })
+   204→      notify({ type: 'success', title: 'Deleted' }); onRefresh()
+   205→    } catch { /* ignore */ }
+   206→  }
+   207→
+   208→  const fmtSize = (bytes: number) => {
+   209→    if (bytes < 1024) return `${bytes} B`
+   210→    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+   211→    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+   212→  }
+   213→
+   214→  const totalNotes = detail?.notes ? (isAdmin ? detail.notes.length : detail.notes.filter(n => !n.isPrivate).length) : 0
+   215→  const totalDocs = detail?.documents?.length || 0
+   216→
+   217→  return (
+   218→    <div className="flex flex-col h-full">
+   219→      {/* ── Header Tabs ── */}
+   220→      <div className="flex items-center gap-1 p-3 pb-0">
+   221→        <button
+   222→          onClick={() => setTab('notes')}
+   223→          className={`flex items-center gap-2 px-4 py-2 rounded-t-lg text-xs font-semibold transition-all border-b-2 ${
+   224→            tab === 'notes'
+   225→              ? 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-300 border-emerald-500'
+   226→              : 'text-muted-foreground border-transparent hover:text-foreground hover:bg-muted/50'
+   227→          }`}
+   228→        >
+   229→          <StickyNote className="size-4" />
+   230→          Notes
+   231→          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${tab === 'notes' ? 'bg-emerald-200 dark:bg-emerald-800 text-emerald-800 dark:text-emerald-200' : 'bg-muted text-muted-foreground'}`}>
+   232→            {totalNotes}
+   233→          </span>
+   234→        </button>
+   235→        <button
+   236→          onClick={() => setTab('docs')}
+   237→          className={`flex items-center gap-2 px-4 py-2 rounded-t-lg text-xs font-semibold transition-all border-b-2 ${
+   238→            tab === 'docs'
+   239→              ? 'bg-blue-50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300 border-blue-500'
+   240→              : 'text-muted-foreground border-transparent hover:text-foreground hover:bg-muted/50'
+   241→          }`}
+   242→        >
+   243→          <FileText className="size-4" />
+   244→          Documents
+   245→          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${tab === 'docs' ? 'bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-200' : 'bg-muted text-muted-foreground'}`}>
+   246→            {totalDocs}
+   247→          </span>
+   248→        </button>
+   249→      </div>
+   250→
+   251→      {/* ── NOTES TAB ── */}
+   252→      {tab === 'notes' && (
+   253→        <div className="flex-1 min-h-0 flex flex-col p-3 pt-2">
+   254→          {/* Type Stats Chips */}
+   255→          {Object.keys(noteStats).length > 0 && (
+   256→            <div className="flex items-center gap-1.5 flex-wrap mb-2">
+   257→              {Object.entries(noteStats).map(([type, count]) => (
+   258→                <button
+   259→                  key={type}
+   260→                  onClick={() => setNoteTypeFilter(noteTypeFilter === type ? 'All' : type)}
+   261→                  className={`text-[10px] px-2 py-0.5 rounded-full font-medium transition-all border ${
+   262→                    noteTypeFilter === type
+   263→                      ? `${NOTE_COLORS[type] || 'bg-muted text-muted-foreground'} border-current/20 ring-1 ring-current/20`
+   264→                      : 'bg-muted/50 text-muted-foreground border-transparent hover:bg-muted'
+   265→                  }`}
+   266→                >
+   267→                  {type} ({count})
+   268→                </button>
+   269→              ))}
+   270→              {noteTypeFilter !== 'All' && (
+   271→                <button onClick={() => setNoteTypeFilter('All')} className="text-[10px] px-1.5 py-0.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+   272→                  <X className="size-3 inline" /> Clear
+   273→                </button>
+   274→              )}
+   275→            </div>
+   276→          )}
+   277→
+   278→          {/* Search + Add */}
+   279→          <div className="flex items-center gap-2 mb-3">
+   280→            <div className="relative flex-1 min-w-[160px]">
+   281→              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+   282→              <Input placeholder="Search notes..." className="h-8 pl-8 text-xs" value={noteSearch} onChange={e => setNoteSearch(e.target.value)} />
+   283→            </div>
+   284→            {(isAdmin || canManageDocs) && (
+   285→              <Button size="sm" className="h-8 gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-700 shrink-0" onClick={() => setShowNoteForm(!showNoteForm)}>
+   286→                {showNoteForm ? <X className="size-3.5" /> : <Plus className="size-3.5" />}
+   287→                {showNoteForm ? 'Cancel' : 'New Note'}
+   288→              </Button>
+   289→            )}
+   290→          </div>
+   291→
+   292→          {/* Add Note Form */}
+   293→          {showNoteForm && (
+   294→            <Card className="border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/20 mb-3 shadow-sm">
+   295→              <CardContent className="p-3 space-y-2.5">
+   296→                <div className="flex items-center gap-2 flex-wrap">
+   297→                  <div className="min-w-[120px]">
+   298→                    <Label className="text-[10px] text-muted-foreground font-medium">Note Type</Label>
+   299→                    <Select value={noteType} onValueChange={setNoteType}>
+   300→                      <SelectTrigger className="h-8 text-xs mt-0.5"><SelectValue /></SelectTrigger>
+   301→                      <SelectContent>{NOTE_TYPES.map(t => <SelectItem key={t} value={t}><span>{t}</span></SelectItem>)}</SelectContent>
+   302→                    </Select>
+   303→                  </div>
+   304→                  {isAdmin && (
+   305→                    <div className="flex items-center gap-1.5 pt-5">
+   306→                      <input type="checkbox" checked={notePrivate} onChange={e => setNotePrivate(e.target.checked)} className="rounded border-slate-300" id="note-private-adv" />
+   307→                      <Label htmlFor="note-private-adv" className="text-[11px] flex items-center gap-1 cursor-pointer">
+   308→                        <Lock className="size-3 text-red-500" /> Private (Admin only)
+   309→                      </Label>
+   310→                    </div>
+   311→                  )}
+   312→                </div>
+   313→                <div>
+   314→                  <Label className="text-[10px] text-muted-foreground font-medium">Content *</Label>
+   315→                  <Textarea value={noteContent} onChange={e => setNoteContent(e.target.value)} rows={3} placeholder="Write your note..." className="text-xs mt-0.5 resize-none" maxLength={2000} />
+   316→                  <p className="text-[9px] text-muted-foreground text-right mt-0.5">{noteContent.length}/2000</p>
+   317→                </div>
+   318→                <div className="flex justify-end gap-2">
+   319→                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={resetNoteForm}>Discard</Button>
+   320→                  <Button size="sm" className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700" disabled={addLoading || !noteContent.trim()} onClick={addNote}>
+   321→                    {addLoading ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" />} Add Note
+   322→                  </Button>
+   323→                </div>
+   324→              </CardContent>
+   325→            </Card>
+   326→          )}
+   327→
+   328→          {/* Notes List */}
+   329→          <div className="flex-1 min-h-0 overflow-y-auto space-y-1.5 pr-1">
+   330→            {visibleNotes.length === 0 ? (
+   331→              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+   332→                <div className="w-16 h-16 rounded-2xl bg-muted/50 flex items-center justify-center mb-3">
+   333→                  <StickyNote className="size-7 opacity-30" />
+   334→                </div>
+   335→                <p className="text-sm font-medium">No notes found</p>
+   336→                <p className="text-xs mt-1">{noteSearch || noteTypeFilter !== 'All' ? 'Try adjusting your filters' : 'Click "New Note" to add one'}</p>
+   337→              </div>
+   338→            ) : visibleNotes.map((note, idx) => {
+   339→              const isEditing = editingNoteId === note.id
+   340→              const isExpanded = expandedNotes.has(note.id)
+   341→              const isLong = note.content.length > 200
+   342→              const NoteIcon = NOTE_ICONS[note.type] || MessageSquare
+   343→              return (
+   344→                <div
+   345→                  key={note.id}
+   346→                  className={`border-l-[3px] ${NOTE_BORDER[note.type] || 'border-l-slate-300'} rounded-r-xl p-3 ${NOTE_BG[note.type] || ''} hover:shadow-sm transition-all group`}
+   347→                >
+   348→                  <div className="flex items-start gap-2.5">
+   349→                    {/* Icon */}
+   350→                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${NOTE_COLORS[note.type] || 'bg-muted text-muted-foreground'}`}>
+   351→                      <NoteIcon className="size-3.5" />
+   352→                    </div>
+   353→
+   354→                    {/* Content */}
+   355→                    <div className="min-w-0 flex-1">
+   356→                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+   357→                        <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-semibold ${NOTE_COLORS[note.type] || ''}`}>{note.type}</span>
+   358→                        {note.isPrivate && <Badge variant="outline" className="text-[9px] h-4 px-1.5 text-red-500 border-red-200 dark:border-red-800 gap-0.5"><Lock className="size-2.5" />Private</Badge>}
+   359→                      </div>
+   360→
+   361→                      {isEditing ? (
+   362→                        <div className="space-y-2">
+   363→                          <Textarea value={editContent} onChange={e => setEditContent(e.target.value)} rows={3} className="text-xs resize-none" maxLength={2000} />
+   364→                          <div className="flex gap-1.5">
+   365→                            <Button size="sm" className="h-6 text-[10px] gap-1 bg-emerald-600 hover:bg-emerald-700" disabled={addLoading || !editContent.trim()} onClick={() => updateNote(note.id)}>
+   366→                              <Check className="size-3" />Save
+   367→                            </Button>
+   368→                            <Button variant="outline" size="sm" className="h-6 text-[10px]" onClick={() => { setEditingNoteId(null); setEditContent('') }}>Cancel</Button>
+   369→                          </div>
+   370→                        </div>
+   371→                      ) : (
+   372→                        <>
+   373→                          <p className="text-xs text-foreground leading-relaxed break-words">
+   374→                            {isLong && !isExpanded ? note.content.slice(0, 200) + '...' : note.content}
+   375→                          </p>
+   376→                          {isLong && (
+   377→                            <button onClick={() => toggleNoteExpand(note.id)} className="text-[10px] text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 mt-0.5 flex items-center gap-0.5 font-medium">
+   378→                              {isExpanded ? <><ChevronUp className="size-3" />Show less</> : <><ChevronDown className="size-3" />Show more</>}
+   379→                            </button>
+   380→                          )}
+   381→                        </>
+   382→                      )}
+   383→
+   384→                      <div className="flex items-center gap-3 mt-1.5 text-[10px] text-muted-foreground">
+   385→                        {note.userName && <span className="flex items-center gap-0.5"><User className="size-2.5" />{note.userName}</span>}
+   386→                        <span className="flex items-center gap-0.5"><Clock className="size-2.5" />{relTime(note.createdAt)}</span>
+   387→                      </div>
+   388→                    </div>
+   389→
+   390→                    {/* Actions */}
+   391→                    {!isEditing && (isAdmin || canManageDocs) && (
+   392→                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+   393→                        <button
+   394→                          onClick={() => { setEditingNoteId(note.id); setEditContent(note.content) }}
+   395→                          className="p-1 rounded-md text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-colors"
+   396→                          title="Edit note"
+   397→                        >
+   398→                          <Pencil className="size-3" />
+   399→                        </button>
+   400→                        <button
+   401→                          onClick={() => deleteNote(note.id)}
+   402→                          className="p-1 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+   403→                          title="Delete note"
+   404→                        >
+   405→                          <Trash2 className="size-3" />
+   406→                        </button>
+   407→                      </div>
+   408→                    )}
+   409→                  </div>
+   410→                </div>
+   411→              )
+   412→            })}
+   413→          </div>
+   414→        </div>
+   415→      )}
+   416→
+   417→      {/* ── DOCUMENTS TAB ── */}
+   418→      {tab === 'docs' && (
+   419→        <div className="flex-1 min-h-0 flex flex-col p-3 pt-2">
+   420→          {/* Type Stats Chips */}
+   421→          {Object.keys(docStats).length > 0 && (
+   422→            <div className="flex items-center gap-1.5 flex-wrap mb-2">
+   423→              {Object.entries(docStats).map(([type, count]) => (
+   424→                <button
+   425→                  key={type}
+   426→                  onClick={() => setDocTypeFilter(docTypeFilter === type ? 'All' : type)}
+   427→                  className={`text-[10px] px-2 py-0.5 rounded-full font-medium transition-all border ${
+   428→                    docTypeFilter === type
+   429→                      ? `${DOC_COLORS[type] || 'bg-muted text-muted-foreground'} border-current/20 ring-1 ring-current/20`
+   430→                      : 'bg-muted/50 text-muted-foreground border-transparent hover:bg-muted'
+   431→                  }`}
+   432→                >
+   433→                  {type} ({count})
+   434→                </button>
+   435→              ))}
+   436→              {docTypeFilter !== 'All' && (
+   437→                <button onClick={() => setDocTypeFilter('All')} className="text-[10px] px-1.5 py-0.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+   438→                  <X className="size-3 inline" /> Clear
+   439→                </button>
+   440→              )}
+   441→            </div>
+   442→          )}
+   443→
+   444→          {/* Search + Add */}
+   445→          <div className="flex items-center gap-2 mb-3">
+   446→            <div className="relative flex-1 min-w-[160px]">
+   447→              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+   448→              <Input placeholder="Search documents..." className="h-8 pl-8 text-xs" value={docSearch} onChange={e => setDocSearch(e.target.value)} />
+   449→            </div>
+   450→            {canManageDocs && (
+   451→              <Button size="sm" className="h-8 gap-1.5 text-xs bg-blue-600 hover:bg-blue-700 shrink-0" onClick={() => setShowDocForm(!showDocForm)}>
+   452→                {showDocForm ? <X className="size-3.5" /> : <Plus className="size-3.5" />}
+   453→                {showDocForm ? 'Cancel' : 'New Document'}
+   454→              </Button>
+   455→            )}
+   456→          </div>
+   457→
+   458→          {/* Add Doc Form */}
+   459→          {showDocForm && (
+   460→            <Card className="border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20 mb-3 shadow-sm">
+   461→              <CardContent className="p-3 space-y-2.5">
+   462→                <div className="grid grid-cols-2 gap-2">
+   463→                  <div>
+   464→                    <Label className="text-[10px] text-muted-foreground font-medium">Document Type</Label>
+   465→                    <Select value={docType} onValueChange={setDocType}>
+   466→                      <SelectTrigger className="h-8 text-xs mt-0.5"><SelectValue /></SelectTrigger>
+   467→                      <SelectContent>{DOC_TYPES.map(t => <SelectItem key={t} value={t}><span>{t}</span></SelectItem>)}</SelectContent>
+   468→                    </Select>
+   469→                  </div>
+   470→                  <div>
+   471→                    <Label className="text-[10px] text-muted-foreground font-medium">File Size (bytes)</Label>
+   472→                    <Input type="number" className="h-8 text-xs mt-0.5" value={docFileSize} onChange={e => setDocFileSize(e.target.value)} placeholder="Optional" />
+   473→                  </div>
+   474→                </div>
+   475→                <div>
+   476→                  <Label className="text-[10px] text-muted-foreground font-medium">Document Name *</Label>
+   477→                  <Input className="h-8 text-xs mt-0.5" value={docName} onChange={e => setDocName(e.target.value)} placeholder="e.g. Aadhaar Card - Front" />
+   478→                </div>
+   479→                <div>
+   480→                  <Label className="text-[10px] text-muted-foreground font-medium">URL / Link</Label>
+   481→                  <Input className="h-8 text-xs mt-0.5" value={docUrl} onChange={e => setDocUrl(e.target.value)} placeholder="https://..." />
+   482→                </div>
+   483→                <div>
+   484→                  <Label className="text-[10px] text-muted-foreground font-medium">Notes</Label>
+   485→                  <Textarea value={docNotes} onChange={e => setDocNotes(e.target.value)} rows={2} className="text-xs mt-0.5 resize-none" placeholder="Optional notes about this document..." />
+   486→                </div>
+   487→                <div className="flex justify-end gap-2">
+   488→                  <Button variant="outline" size="sm" className="h-7 text-xs" onClick={resetDocForm}>Discard</Button>
+   489→                  <Button size="sm" className="h-7 text-xs bg-blue-600 hover:bg-blue-700" disabled={addLoading || !docName.trim()} onClick={addDoc}>
+   490→                    {addLoading ? <Loader2 className="size-3 animate-spin" /> : <Plus className="size-3" />} Add Document
+   491→                  </Button>
+   492→                </div>
+   493→              </CardContent>
+   494→            </Card>
+   495→          )}
+   496→
+   497→          {/* Documents Grid */}
+   498→          <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+   499→            {visibleDocs.length === 0 ? (
+   500→              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+
+[showing lines 1-500 of 566; use offset=501 with limit to continue reading]

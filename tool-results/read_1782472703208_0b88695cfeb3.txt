@@ -1,0 +1,845 @@
+     1→'use client'
+     2→
+     3→import React, { useState, useCallback, useMemo, useRef, useEffect, type RefObject } from 'react'
+     4→import {
+     5→  FileBarChart, Download, Printer, Loader2, BarChart3, Users, IndianRupee,
+     6→  CreditCard, Receipt, Crown, HandCoins, RotateCcw, Calculator,
+     7→  CalendarDays, Filter, AlertCircle, X, FileSpreadsheet,
+     8→} from 'lucide-react'
+     9→import {
+    10→  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+    11→} from '@/components/ui/dialog'
+    12→import { Button } from '@/components/ui/button'
+    13→import {
+    14→  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
+    15→} from '@/components/ui/select'
+    16→import { Input } from '@/components/ui/input'
+    17→import { Badge } from '@/components/ui/badge'
+    18→import { Skeleton } from '@/components/ui/skeleton'
+    19→import {
+    20→  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+    21→} from '@/components/ui/table'
+    22→import { Separator } from '@/components/ui/separator'
+    23→import { ScrollArea } from '@/components/ui/scroll-area'
+    24→import { notify } from '@/lib/notification-store'
+    25→import { fmtCur, fmtDate, fmtINR, fmtDateTime } from './customer-folio-helpers'
+    26→
+    27→// ─── Report Types ───
+    28→type ReportType = 'summary' | 'outstanding' | 'payments' | 'transactions' | 'vip' | 'settlements' | 'refunds' | 'gst'
+    29→
+    30→interface ReportOption {
+    31→  value: ReportType
+    32→  label: string
+    33→  icon: React.ElementType
+    34→  description: string
+    35→}
+    36→
+    37→const REPORT_OPTIONS: ReportOption[] = [
+    38→  { value: 'summary', label: 'Customer Summary', icon: Users, description: 'All customers with balance, type, status' },
+    39→  { value: 'outstanding', label: 'Outstanding Report', icon: IndianRupee, description: 'Customers with positive balance (dues)' },
+    40→  { value: 'payments', label: 'Payment History', icon: CreditCard, description: 'All payments grouped by date' },
+    41→  { value: 'transactions', label: 'Transaction Report', icon: Receipt, description: 'All charges, payments & adjustments' },
+    42→  { value: 'vip', label: 'VIP Customers', icon: Crown, description: 'VIP/Premium customer analytics' },
+    43→  { value: 'settlements', label: 'Settlement Report', icon: HandCoins, description: 'All folio settlements' },
+    44→  { value: 'refunds', label: 'Refund Report', icon: RotateCcw, description: 'All refund transactions' },
+    45→  { value: 'gst', label: 'GST Report', icon: Calculator, description: 'Tax/GST breakdown by entry' },
+    46→]
+    47→
+    48→// ─── Column Definitions ───
+    49→interface ColDef {
+    50→  key: string
+    51→  label: string
+    52→  align?: 'left' | 'right' | 'center'
+    53→  format?: 'currency' | 'date' | 'datetime' | 'badge' | 'amount' | 'tags'
+    54→  badgeMap?: Record<string, string>
+    55→  width?: string
+    56→}
+    57→
+    58→const REPORT_COLUMNS: Record<ReportType, ColDef[]> = {
+    59→  summary: [
+    60→    { key: 'customerId', label: 'ID', width: '90px' },
+    61→    { key: 'fullName', label: 'Customer' },
+    62→    { key: 'mobile', label: 'Mobile', width: '120px' },
+    63→    { key: 'customerType', label: 'Type', format: 'badge', width: '90px' },
+    64→    { key: 'status', label: 'Status', format: 'badge', width: '90px' },
+    65→    { key: 'balance', label: 'Balance', format: 'currency', align: 'right', width: '110px' },
+    66→    { key: 'creditLimit', label: 'Credit Limit', format: 'currency', align: 'right', width: '110px' },
+    67→    { key: 'totalVisits', label: 'Visits', align: 'center', width: '70px' },
+    68→    { key: 'totalTransactions', label: 'Txns', align: 'center', width: '70px' },
+    69→  ],
+    70→  outstanding: [
+    71→    { key: 'customerId', label: 'ID', width: '90px' },
+    72→    { key: 'fullName', label: 'Customer' },
+    73→    { key: 'mobile', label: 'Mobile', width: '120px' },
+    74→    { key: 'customerType', label: 'Type', format: 'badge', width: '90px' },
+    75→    { key: 'balance', label: 'Outstanding', format: 'currency', align: 'right', width: '120px' },
+    76→    { key: 'creditLimit', label: 'Credit Limit', format: 'currency', align: 'right', width: '110px' },
+    77→    { key: 'overdue', label: 'Overdue', format: 'badge', width: '90px' },
+    78→    { key: 'lastTxnDate', label: 'Last Txn', format: 'date', width: '100px' },
+    79→  ],
+    80→  payments: [
+    81→    { key: 'date', label: 'Date', format: 'date', width: '100px' },
+    82→    { key: 'customerName', label: 'Customer' },
+    83→    { key: 'customerId', label: 'ID', width: '90px' },
+    84→    { key: 'description', label: 'Description' },
+    85→    { key: 'amount', label: 'Amount', format: 'currency', align: 'right', width: '120px' },
+    86→    { key: 'paymentMode', label: 'Mode', format: 'badge', width: '120px' },
+    87→    { key: 'recordedBy', label: 'By', width: '100px' },
+    88→  ],
+    89→  transactions: [
+    90→    { key: 'date', label: 'Date', format: 'date', width: '100px' },
+    91→    { key: 'customerName', label: 'Customer' },
+    92→    { key: 'type', label: 'Type', format: 'badge', width: '90px' },
+    93→    { key: 'description', label: 'Description' },
+    94→    { key: 'invoiceNo', label: 'Inv #', width: '90px' },
+    95→    { key: 'debit', label: 'Debit', format: 'currency', align: 'right', width: '110px' },
+    96→    { key: 'credit', label: 'Credit', format: 'currency', align: 'right', width: '110px' },
+    97→    { key: 'balance', label: 'Balance', format: 'currency', align: 'right', width: '110px' },
+    98→  ],
+    99→  vip: [
+   100→    { key: 'customerId', label: 'ID', width: '90px' },
+   101→    { key: 'fullName', label: 'Customer' },
+   102→    { key: 'mobile', label: 'Mobile', width: '120px' },
+   103→    { key: 'tags', label: 'Tags', format: 'tags', width: '120px' },
+   104→    { key: 'lifetimeSpend', label: 'Lifetime Spend', format: 'currency', align: 'right', width: '130px' },
+   105→    { key: 'balance', label: 'Balance', format: 'currency', align: 'right', width: '110px' },
+   106→    { key: 'totalVisits', label: 'Visits', align: 'center', width: '70px' },
+   107→    { key: 'status', label: 'Status', format: 'badge', width: '90px' },
+   108→  ],
+   109→  settlements: [
+   110→    { key: 'date', label: 'Date', format: 'datetime', width: '140px' },
+   111→    { key: 'customerName', label: 'Customer' },
+   112→    { key: 'customerId', label: 'ID', width: '90px' },
+   113→    { key: 'amount', label: 'Amount', format: 'currency', align: 'right', width: '120px' },
+   114→    { key: 'mode', label: 'Mode', format: 'badge', width: '120px' },
+   115→    { key: 'reference', label: 'Reference', width: '100px' },
+   116→    { key: 'description', label: 'Description' },
+   117→    { key: 'recordedBy', label: 'By', width: '100px' },
+   118→  ],
+   119→  refunds: [
+   120→    { key: 'date', label: 'Date', format: 'date', width: '100px' },
+   121→    { key: 'customerName', label: 'Customer' },
+   122→    { key: 'customerId', label: 'ID', width: '90px' },
+   123→    { key: 'description', label: 'Reason' },
+   124→    { key: 'refundAmount', label: 'Refund Amt', format: 'currency', align: 'right', width: '120px' },
+   125→    { key: 'balanceAfter', label: 'Balance', format: 'currency', align: 'right', width: '110px' },
+   126→    { key: 'invoiceNo', label: 'Inv #', width: '90px' },
+   127→    { key: 'processedBy', label: 'By', width: '100px' },
+   128→  ],
+   129→  gst: [
+   130→    { key: 'date', label: 'Date', format: 'date', width: '100px' },
+   131→    { key: 'customerName', label: 'Customer' },
+   132→    { key: 'customerGst', label: 'Customer GST', width: '140px' },
+   133→    { key: 'type', label: 'Type', format: 'badge', width: '90px' },
+   134→    { key: 'description', label: 'Description' },
+   135→    { key: 'baseAmount', label: 'Base Amt', format: 'currency', align: 'right', width: '110px' },
+   136→    { key: 'tax', label: 'Tax/GST', format: 'currency', align: 'right', width: '110px' },
+   137→    { key: 'discount', label: 'Discount', format: 'currency', align: 'right', width: '100px' },
+   138→    { key: 'totalAmount', label: 'Total', format: 'currency', align: 'right', width: '110px' },
+   139→  ],
+   140→}
+   141→
+   142→// ─── Badge color maps ───
+   143→const TYPE_BADGE_MAP: Record<string, string> = {
+   144→  Retail: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+   145→  Wholesale: 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300',
+   146→  Supplier: 'bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300',
+   147→  Corporate: 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300',
+   148→  VIP: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-300',
+   149→  Charge: 'bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-400',
+   150→  Payment: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400',
+   151→  Refund: 'bg-orange-50 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400',
+   152→  Discount: 'bg-teal-50 text-teal-700 dark:bg-teal-900/40 dark:text-teal-400',
+   153→  Settlement: 'bg-sky-50 text-sky-700 dark:bg-sky-900/40 dark:text-sky-400',
+   154→  Transfer: 'bg-violet-50 text-violet-700 dark:bg-violet-900/40 dark:text-violet-400',
+   155→  Opening: 'bg-gray-50 text-gray-700 dark:bg-gray-800 dark:text-gray-400',
+   156→  Cash: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400',
+   157→  UPI: 'bg-violet-50 text-violet-700 dark:bg-violet-900/40 dark:text-violet-400',
+   158→  'Credit Card': 'bg-sky-50 text-sky-700 dark:bg-sky-900/40 dark:text-sky-400',
+   159→  'Debit Card': 'bg-cyan-50 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-400',
+   160→  'Bank Transfer': 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-400',
+   161→  Wallet: 'bg-pink-50 text-pink-700 dark:bg-pink-900/40 dark:text-pink-400',
+   162→  Mixed: 'bg-fuchsia-50 text-fuchsia-700 dark:bg-fuchsia-900/40 dark:text-fuchsia-400',
+   163→  Active: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300',
+   164→  Settled: 'bg-teal-100 text-teal-700 dark:bg-teal-900/50 dark:text-teal-300',
+   165→  CheckedOut: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+   166→  Archived: 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300',
+   167→  'true': 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300',
+   168→  'false': 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
+   169→  Cheque: 'bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400',
+   170→  'Bill to Staff': 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+   171→  'Bill to Company': 'bg-stone-100 text-stone-700 dark:bg-stone-800 dark:text-stone-300',
+   172→  'Room Charge': 'bg-rose-50 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400',
+   173→  Other: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+   174→  'BTC (Bitcoin)': 'bg-orange-100 text-orange-600 dark:bg-orange-900/50 dark:text-orange-300',
+   175→  'Other Cryptocurrency': 'bg-yellow-100 text-yellow-600 dark:bg-yellow-900/50 dark:text-yellow-300',
+   176→}
+   177→
+   178→const TAG_BADGE_MAP: Record<string, string> = {
+   179→  VIP: 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/50 dark:text-yellow-300 dark:border-yellow-700',
+   180→  Premium: 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/50 dark:text-purple-300 dark:border-purple-700',
+   181→  Regular: 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700',
+   182→  Wholesale: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/50 dark:text-amber-300 dark:border-amber-700',
+   183→  Supplier: 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/50 dark:text-orange-300 dark:border-orange-700',
+   184→}
+   185→
+   186→// ─── CSV Export with proper headers ───
+   187→function downloadCSV(data: Record<string, any>[], columns: ColDef[], filename: string) {
+   188→  if (!data.length) return
+   189→  const headers = columns.map(c => c.label)
+   190→  const csvRows = data.map(row =>
+   191→    columns.map(col => {
+   192→      const val = row[col.key]
+   193→      if (Array.isArray(val)) return `"${val.join(', ').replace(/"/g, '""')}"`
+   194→      if (col.format === 'currency' || col.format === 'amount') return Number(val) || 0
+   195→      return `"${String(val ?? '').replace(/"/g, '""')}"`
+   196→    }).join(',')
+   197→  )
+   198→  const csv = [headers.join(','), ...csvRows].join('\n')
+   199→  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+   200→  const url = URL.createObjectURL(blob)
+   201→  const a = document.createElement('a')
+   202→  a.href = url
+   203→  a.download = `${filename}.csv`
+   204→  document.body.appendChild(a)
+   205→  a.click()
+   206→  document.body.removeChild(a)
+   207→  URL.revokeObjectURL(url)
+   208→}
+   209→
+   210→// ─── Format cell value ───
+   211→function formatCellValue(value: unknown, col: ColDef): React.ReactNode {
+   212→  if (value === null || value === undefined || value === '') return <span className="text-muted-foreground">—</span>
+   213→  const strVal = String(value)
+   214→
+   215→  switch (col.format) {
+   216→    case 'currency':
+   217→      return <span className="font-medium tabular-nums">{fmtINR(Number(value))}</span>
+   218→    case 'date':
+   219→      return <span className="tabular-nums">{fmtDate(strVal)}</span>
+   220→    case 'datetime':
+   221→      return <span className="tabular-nums text-xs">{fmtDateTime(strVal)}</span>
+   222→    case 'amount':
+   223→      return <span className="font-medium tabular-nums">{fmtCur(Number(value))}</span>
+   224→    case 'tags': {
+   225→      const tags = Array.isArray(value) ? value : [value]
+   226→      return (
+   227→        <div className="flex flex-wrap gap-1">
+   228→          {tags.map((tag: string, i: number) => (
+   229→            <Badge key={i} variant="outline" className={`text-[10px] px-1.5 py-0 ${TAG_BADGE_MAP[tag] || ''}`}>
+   230→              {tag}
+   231→            </Badge>
+   232→          ))}
+   233→        </div>
+   234→      )
+   235→    }
+   236→    case 'badge':
+   237→      return (
+   238→        <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${TYPE_BADGE_MAP[strVal] || 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'}`}>
+   239→          {strVal}
+   240→        </Badge>
+   241→      )
+   242→    default:
+   243→      return <span className="text-xs">{strVal}</span>
+   244→  }
+   245→}
+   246→
+   247→// ─── Loading Skeleton ───
+   248→function TableSkeleton({ cols }: { cols: number }) {
+   249→  return (
+   250→    <div className="space-y-2 p-4">
+   251→      {Array.from({ length: 8 }).map((_, i) => (
+   252→        <div key={i} className="flex gap-3">
+   253→          {Array.from({ length: cols }).map((_, j) => (
+   254→            <Skeleton key={j} className="h-5 flex-1" />
+   255→          ))}
+   256→        </div>
+   257→      ))}
+   258→    </div>
+   259→  )
+   260→}
+   261→
+   262→// ─── Summary Card ───
+   263→function SummaryCard({ label, value, icon: Icon, color }: {
+   264→  label: string; value: string | number; icon: React.ElementType; color: string
+   265→}) {
+   266→  return (
+   267→    <div className={`rounded-lg border p-3 flex flex-col gap-1 ${color}`}>
+   268→      <div className="flex items-center gap-1.5">
+   269→        <Icon className="size-3.5 opacity-60" />
+   270→        <span className="text-[10px] font-medium uppercase tracking-wide opacity-70">{label}</span>
+   271→      </div>
+   272→      <span className="text-base font-bold leading-tight">{value}</span>
+   273→    </div>
+   274→  )
+   275→}
+   276→
+   277→// ─── PDF Report CSS (print-ready, reuses PRINT_CSS style) ───
+   278→const REPORT_PRINT_CSS = `
+   279→@page { size: A4 landscape; margin: 10mm; }
+   280→body { font-family: system-ui, -apple-system, sans-serif; padding: 0; max-width: 100%; margin: 0; color: #1a1a1a; font-size: 11px; }
+   281→.report-header { text-align: center; margin-bottom: 16px; padding-bottom: 14px; border-bottom: 2px solid #16a34a; }
+   282→.report-header h1 { margin: 0 0 2px 0; font-size: 20px; font-weight: 800; color: #16a34a; letter-spacing: 0.5px; }
+   283→.report-header .biz-address { font-size: 11px; color: #555; margin: 2px 0; }
+   284→.report-header .gst-line { font-size: 10px; color: #888; margin-top: 4px; font-weight: 600; }
+   285→.report-meta { display: flex; justify-content: space-between; align-items: center; margin: 8px 0 12px 0; font-size: 11px; color: #555; }
+   286→.report-meta .date-range { font-weight: 600; color: #333; }
+   287→.summary-box { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+   288→.summary-item { flex: 1; min-width: 120px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 8px 10px; text-align: center; }
+   289→.summary-item .s-label { font-size: 9px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+   290→.summary-item .s-value { font-size: 15px; font-weight: 800; margin-top: 2px; color: #111; }
+   291→table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+   292→th { background: #16a34a; color: #fff; padding: 7px 8px; font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; text-align: left; white-space: nowrap; }
+   293→td { font-size: 10px; padding: 5px 8px; border-bottom: 1px solid #f0f0f0; }
+   294→tr:nth-child(even) { background: #f8faf8; }
+   295→tr:hover { background: #f0fdf4; }
+   296→.align-right { text-align: right; }
+   297→.align-center { text-align: center; }
+   298→.report-footer { text-align: center; margin-top: 20px; padding-top: 10px; border-top: 1px solid #e5e7eb; color: #999; font-size: 9px; line-height: 1.6; }
+   299→@media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+   300→`
+   301→
+   302→// ─── Build PDF HTML ───
+   303→function buildReportPdfHtml(
+   304→  reportTitle: string,
+   305→  reportType: ReportType,
+   306→  fromDate: string,
+   307→  toDate: string,
+   308→  summary: Record<string, any>,
+   309→  data: Record<string, any>[],
+   310→  columns: ColDef[],
+   311→  settings: Record<string, string>,
+   312→) {
+   313→  const bizName = settings.shopName || 'Eservices'
+   314→  const bizAddress = settings.shopAddress || ''
+   315→  const gstNumber = settings.gstNumber || settings.gstin || ''
+   316→
+   317→  // Summary items
+   318→  const summaryItems = Object.entries(summary)
+   319→    .filter(([, v]) => typeof v === 'number' || typeof v === 'string')
+   320→    .map(([k, v]) => {
+   321→      const label = k.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase())
+   322→      const display = typeof v === 'number' ? '₹' + v.toLocaleString('en-IN', { maximumFractionDigits: 2 }) : v
+   323→      return `<div class="summary-item"><div class="s-label">${label}</div><div class="s-value">${display}</div></div>`
+   324→    })
+   325→    .join('')
+   326→
+   327→  // Table header
+   328→  const ths = columns.map(c => {
+   329→    const align = c.align === 'right' ? 'align-right' : c.align === 'center' ? 'align-center' : ''
+   330→    return `<th class="${align}">${c.label}</th>`
+   331→  }).join('')
+   332→
+   333→  // Table rows
+   334→  const trs = data.map((row, idx) => {
+   335→    const cells = columns.map(col => {
+   336→      let val = row[col.key]
+   337→      if (Array.isArray(val)) val = val.join(', ')
+   338→      if (col.format === 'currency' || col.format === 'amount') {
+   339→        val = '₹' + (Number(val) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })
+   340→      } else if (col.format === 'date' && val) {
+   341→        val = fmtDate(String(val))
+   342→      } else if (col.format === 'datetime' && val) {
+   343→        val = fmtDateTime(String(val))
+   344→      }
+   345→      const align = col.align === 'right' ? 'align-right' : col.align === 'center' ? 'align-center' : ''
+   346→      return `<td class="${align}">${val ?? '—'}</td>`
+   347→    }).join('')
+   348→    return `<tr>${cells}</tr>`
+   349→  }).join('')
+   350→
+   351→  const dateRange = (fromDate || toDate)
+   352→    ? `${fromDate || 'All time'} to ${toDate || 'Today'}`
+   353→    : 'All Time'
+   354→
+   355→  return `<!DOCTYPE html>
+   356→<html><head><title>${reportTitle}</title>
+   357→<style>${REPORT_PRINT_CSS}</style>
+   358→</head><body>
+   359→  <div class="report-header">
+   360→    <h1>${bizName}</h1>
+   361→    ${bizAddress ? `<div class="biz-address">${bizAddress}</div>` : ''}
+   362→    ${gstNumber ? `<div class="gst-line">GSTIN: ${gstNumber}</div>` : ''}
+   363→  </div>
+   364→
+   365→  <h2 style="margin:0 0 4px 0;font-size:16px;font-weight:700;color:#333">${reportTitle}</h2>
+   366→  <div class="report-meta">
+   367→    <span class="date-range">Period: ${dateRange}</span>
+   368→    <span>Generated: ${new Date().toLocaleString('en-IN')}</span>
+   369→  </div>
+   370→
+   371→  ${summaryItems ? `<div class="summary-box">${summaryItems}</div>` : ''}
+   372→
+   373→  <table>
+   374→    <thead><tr>${ths}</tr></thead>
+   375→    <tbody>${trs}</tbody>
+   376→  </table>
+   377→
+   378→  <div class="report-footer">
+   379→    ${reportTitle} &middot; ${data.length} records &middot; Generated by ${bizName}
+   380→  </div>
+   381→</body></html>`
+   382→}
+   383→
+   384→// ─── Props ───
+   385→interface CustomerFolioReportsProps {
+   386→  onClose: () => void
+   387→  hdrRef: RefObject<Record<string, string>>
+   388→  canAccess: boolean
+   389→}
+   390→
+   391→export function CustomerFolioReports({ onClose, hdrRef, canAccess }: CustomerFolioReportsProps) {
+   392→  const [reportType, setReportType] = useState<ReportType>('summary')
+   393→  const [fromDate, setFromDate] = useState('')
+   394→  const [toDate, setToDate] = useState('')
+   395→  const [loading, setLoading] = useState(false)
+   396→  const [reportData, setReportData] = useState<any>(null)
+   397→  const [error, setError] = useState<string | null>(null)
+   398→  const [settings, setSettings] = useState<Record<string, string>>({})
+   399→  const settingsFetched = useRef(false)
+   400→
+   401→  // Fetch business settings for PDF header
+   402→  useEffect(() => {
+   403→    if (settingsFetched.current) return
+   404→    settingsFetched.current = true
+   405→    fetch('/api/settings', { headers: hdrRef.current })
+   406→      .then(r => r.ok ? r.json() : {})
+   407→      .then(s => setSettings(s))
+   408→      .catch(() => {})
+   409→  }, [hdrRef])
+   410→
+   411→  const columns = useMemo(() => REPORT_COLUMNS[reportType], [reportType])
+   412→  const selectedOption = useMemo(() => REPORT_OPTIONS.find(o => o.value === reportType)!, [reportType])
+   413→
+   414→  // Generate report
+   415→  const generateReport = useCallback(async () => {
+   416→    if (!canAccess) {
+   417→      notify({ type: 'error', title: 'Access Denied', message: 'You do not have permission to view reports' })
+   418→      return
+   419→    }
+   420→
+   421→    setLoading(true)
+   422→    setError(null)
+   423→    setReportData(null)
+   424→
+   425→    try {
+   426→      const params = new URLSearchParams({ type: reportType })
+   427→      if (fromDate) params.set('from', fromDate)
+   428→      if (toDate) params.set('to', toDate)
+   429→
+   430→      const res = await fetch(`/api/folio/reports?${params}`, { headers: hdrRef.current })
+   431→      if (!res.ok) {
+   432→        const errData = await res.json().catch(() => ({}))
+   433→        throw new Error(errData.error || `Request failed (${res.status})`)
+   434→      }
+   435→
+   436→      const data = await res.json()
+   437→      setReportData(data)
+   438→
+   439→      if (!data.data || data.data.length === 0) {
+   440→        notify({ type: 'info', title: 'No Data', message: 'No records found for the selected criteria' })
+   441→      }
+   442→    } catch (err: any) {
+   443→      const msg = err.message || 'Failed to generate report'
+   444→      setError(msg)
+   445→      notify({ type: 'error', title: 'Report Error', message: msg })
+   446→    } finally {
+   447→      setLoading(false)
+   448→    }
+   449→  }, [reportType, fromDate, toDate, canAccess, hdrRef])
+   450→
+   451→  // Download CSV (enhanced with proper column headers)
+   452→  const handleDownloadCSV = useCallback(() => {
+   453→    if (!reportData?.data?.length) {
+   454→      notify({ type: 'warning', title: 'No Data', message: 'Generate a report first' })
+   455→      return
+   456→    }
+   457→    const dateStr = new Date().toISOString().split('T')[0]
+   458→    downloadCSV(reportData.data, columns, `${reportType}-report-${dateStr}`)
+   459→    notify({ type: 'success', title: 'Downloaded', message: 'Excel (CSV) file downloaded successfully' })
+   460→  }, [reportData, columns, reportType])
+   461→
+   462→  // Download PDF (opens in new window for printing)
+   463→  const handleDownloadPDF = useCallback(() => {
+   464→    if (!reportData?.data?.length) {
+   465→      notify({ type: 'warning', title: 'No Data', message: 'Generate a report first' })
+   466→      return
+   467→    }
+   468→    const html = buildReportPdfHtml(
+   469→      selectedOption.label,
+   470→      reportType,
+   471→      fromDate,
+   472→      toDate,
+   473→      reportData.summary || {},
+   474→      reportData.data,
+   475→      columns,
+   476→      settings,
+   477→    )
+   478→
+   479→    const w = window.open('', '_blank')
+   480→    if (!w) {
+   481→      notify({ type: 'error', title: 'Error', message: 'Please allow popups to print' })
+   482→      return
+   483→    }
+   484→
+   485→    w.document.write(html)
+   486→    w.document.close()
+   487→    // Short delay to ensure the document is rendered before printing
+   488→    setTimeout(() => w.print(), 300)
+   489→  }, [reportData, reportType, selectedOption, fromDate, toDate, columns, settings])
+   490→
+   491→  // Print (same as PDF — opens print dialog)
+   492→  const handlePrint = handleDownloadPDF
+   493→
+   494→  // Summary cards config per report type
+   495→  const summaryCards = useMemo(() => {
+   496→    if (!reportData?.summary) return []
+   497→    const s = reportData.summary
+   498→    switch (reportType) {
+   499→      case 'summary':
+   500→        return [
+   501→          { label: 'Total Customers', value: s.totalCustomers ?? 0, icon: Users, color: 'bg-slate-50 border-slate-200 dark:bg-slate-900/50 dark:border-slate-700' },
+   502→          { label: 'Total Balance', value: fmtINR(s.totalBalance ?? 0), icon: IndianRupee, color: 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800' },
+   503→          { label: 'Outstanding', value: fmtINR(s.totalOutstanding ?? 0), icon: CreditCard, color: 'bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-800' },
+   504→          { label: 'With Dues', value: s.outstandingCount ?? 0, icon: AlertCircle, color: 'bg-amber-50 border-amber-200 dark:bg-amber-900/30 dark:border-amber-800' },
+   505→          { label: 'Active', value: s.activeCount ?? 0, icon: BarChart3, color: 'bg-green-50 border-green-200 dark:bg-green-900/30 dark:border-green-800' },
+   506→          { label: 'Settled', value: s.settledCount ?? 0, icon: HandCoins, color: 'bg-teal-50 border-teal-200 dark:bg-teal-900/30 dark:border-teal-800' },
+   507→        ]
+   508→      case 'outstanding':
+   509→        return [
+   510→          { label: 'Customers with Due', value: s.totalCustomersWithDue ?? 0, icon: Users, color: 'bg-slate-50 border-slate-200 dark:bg-slate-900/50 dark:border-slate-700' },
+   511→          { label: 'Total Outstanding', value: fmtINR(s.totalOutstanding ?? 0), icon: IndianRupee, color: 'bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-800' },
+   512→          { label: 'Avg Outstanding', value: fmtINR(s.avgOutstanding ?? 0), icon: BarChart3, color: 'bg-amber-50 border-amber-200 dark:bg-amber-900/30 dark:border-amber-800' },
+   513→          { label: 'High Risk', value: s.highRiskCount ?? 0, icon: AlertCircle, color: 'bg-orange-50 border-orange-200 dark:bg-orange-900/30 dark:border-orange-800' },
+   514→        ]
+   515→      case 'payments':
+   516→        return [
+   517→          { label: 'Total Payments', value: fmtINR(s.totalPayments ?? 0), icon: CreditCard, color: 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800' },
+   518→          { label: 'Payment Count', value: s.paymentCount ?? 0, icon: Receipt, color: 'bg-slate-50 border-slate-200 dark:bg-slate-900/50 dark:border-slate-700' },
+   519→          { label: 'Avg Payment', value: fmtINR(s.avgPayment ?? 0), icon: BarChart3, color: 'bg-sky-50 border-sky-200 dark:bg-sky-900/30 dark:border-sky-800' },
+   520→          ...Object.entries(s.modeBreakdown || {}).slice(0, 3).map(([mode, amt]) => ({
+   521→            label: mode, value: fmtINR(amt as number), icon: CreditCard,
+   522→            color: 'bg-violet-50 border-violet-200 dark:bg-violet-900/30 dark:border-violet-800',
+   523→          })),
+   524→        ]
+   525→      case 'transactions':
+   526→        return [
+   527→          { label: 'Total Entries', value: s.totalEntries ?? 0, icon: Receipt, color: 'bg-slate-50 border-slate-200 dark:bg-slate-900/50 dark:border-slate-700' },
+   528→          { label: 'Total Debits', value: fmtINR(s.totalDebits ?? 0), icon: IndianRupee, color: 'bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-800' },
+   529→          { label: 'Total Credits', value: fmtINR(s.totalCredits ?? 0), icon: CreditCard, color: 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800' },
+   530→          { label: 'Total Tax', value: fmtINR(s.totalTax ?? 0), icon: Calculator, color: 'bg-amber-50 border-amber-200 dark:bg-amber-900/30 dark:border-amber-800' },
+   531→          { label: 'Discounts', value: fmtINR(s.totalDiscount ?? 0), icon: RotateCcw, color: 'bg-teal-50 border-teal-200 dark:bg-teal-900/30 dark:border-teal-800' },
+   532→          { label: 'Net Flow', value: fmtINR(s.netFlow ?? 0), icon: BarChart3, color: s.netFlow >= 0 ? 'bg-green-50 border-green-200 dark:bg-green-900/30 dark:border-green-800' : 'bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-800' },
+   533→        ]
+   534→      case 'vip':
+   535→        return [
+   536→          { label: 'VIP Customers', value: s.totalVipCustomers ?? 0, icon: Crown, color: 'bg-yellow-50 border-yellow-200 dark:bg-yellow-900/30 dark:border-yellow-800' },
+   537→          { label: 'Lifetime Spend', value: fmtINR(s.totalLifetimeSpend ?? 0), icon: IndianRupee, color: 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800' },
+   538→          { label: 'Outstanding', value: fmtINR(s.totalOutstanding ?? 0), icon: CreditCard, color: 'bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-800' },
+   539→          { label: 'Avg Lifetime', value: fmtINR(s.avgLifetimeSpend ?? 0), icon: BarChart3, color: 'bg-sky-50 border-sky-200 dark:bg-sky-900/30 dark:border-sky-800' },
+   540→          { label: 'Active VIP', value: s.activeVipCount ?? 0, icon: Users, color: 'bg-green-50 border-green-200 dark:bg-green-900/30 dark:border-green-800' },
+   541→        ]
+   542→      case 'settlements':
+   543→        return [
+   544→          { label: 'Total Settlements', value: s.totalSettlements ?? 0, icon: HandCoins, color: 'bg-slate-50 border-slate-200 dark:bg-slate-900/50 dark:border-slate-700' },
+   545→          { label: 'Total Settled', value: fmtINR(s.totalSettled ?? 0), icon: IndianRupee, color: 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800' },
+   546→          { label: 'Avg Settlement', value: fmtINR(s.avgSettlement ?? 0), icon: BarChart3, color: 'bg-sky-50 border-sky-200 dark:bg-sky-900/30 dark:border-sky-800' },
+   547→          ...Object.entries(s.modeBreakdown || {}).slice(0, 3).map(([mode, amt]) => ({
+   548→            label: mode, value: fmtINR(amt as number), icon: CreditCard,
+   549→            color: 'bg-violet-50 border-violet-200 dark:bg-violet-900/30 dark:border-violet-800',
+   550→          })),
+   551→        ]
+   552→      case 'refunds':
+   553→        return [
+   554→          { label: 'Total Refunds', value: s.totalRefunds ?? 0, icon: RotateCcw, color: 'bg-orange-50 border-orange-200 dark:bg-orange-900/30 dark:border-orange-800' },
+   555→          { label: 'Refund Amount', value: fmtINR(s.totalRefundAmount ?? 0), icon: IndianRupee, color: 'bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-800' },
+   556→          { label: 'Avg Refund', value: fmtINR(s.avgRefund ?? 0), icon: BarChart3, color: 'bg-amber-50 border-amber-200 dark:bg-amber-900/30 dark:border-amber-800' },
+   557→        ]
+   558→      case 'gst':
+   559→        return [
+   560→          { label: 'Taxable Entries', value: s.totalTaxableEntries ?? 0, icon: Receipt, color: 'bg-slate-50 border-slate-200 dark:bg-slate-900/50 dark:border-slate-700' },
+   561→          { label: 'Base Amount', value: fmtINR(s.totalBaseAmount ?? 0), icon: IndianRupee, color: 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800' },
+   562→          { label: 'Total Tax/GST', value: fmtINR(s.totalTax ?? 0), icon: Calculator, color: 'bg-amber-50 border-amber-200 dark:bg-amber-900/30 dark:border-amber-800' },
+   563→          { label: 'Total Discounts', value: fmtINR(s.totalDiscount ?? 0), icon: RotateCcw, color: 'bg-teal-50 border-teal-200 dark:bg-teal-900/30 dark:border-teal-800' },
+   564→          { label: 'Grand Total', value: fmtINR(s.totalGstAmount ?? 0), icon: BarChart3, color: 'bg-green-50 border-green-200 dark:bg-green-900/30 dark:border-green-800' },
+   565→          { label: 'Avg Tax/Entry', value: fmtINR(s.avgTaxPerEntry ?? 0), icon: FileBarChart, color: 'bg-sky-50 border-sky-200 dark:bg-sky-900/30 dark:border-sky-800' },
+   566→        ]
+   567→      default:
+   568→        return []
+   569→    }
+   570→  }, [reportData, reportType])
+   571→
+   572→  const hasData = reportData?.data?.length > 0
+   573→
+   574→  return (
+   575→    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+   576→      <DialogContent className="w-[100vw] max-w-[100vw] h-[100vh] max-h-[100vh] p-0 overflow-hidden flex flex-col gap-0 sm:rounded-none">
+   577→        <DialogHeader className="px-6 pt-5 pb-0 shrink-0">
+   578→          <div className="flex items-center justify-between">
+   579→            <div className="flex items-center gap-3">
+   580→              <div className="flex items-center justify-center size-9 rounded-lg bg-emerald-100 dark:bg-emerald-900/40">
+   581→                <FileBarChart className="size-4.5 text-emerald-700 dark:text-emerald-400" />
+   582→              </div>
+   583→              <div>
+   584→                <DialogTitle className="text-base">Folio Reports</DialogTitle>
+   585→                <DialogDescription className="text-[11px]">Generate and export customer folio reports</DialogDescription>
+   586→              </div>
+   587→            </div>
+   588→            {/* Close button */}
+   589→            <Button variant="ghost" size="icon" className="size-8 rounded-lg" onClick={onClose}>
+   590→              <X className="size-4" />
+   591→            </Button>
+   592→          </div>
+   593→        </DialogHeader>
+   594→
+   595→        <div className="flex flex-col flex-1 min-h-0">
+   596→          {/* ─── Controls ─── */}
+   597→          <div className="px-6 pt-4 pb-3 shrink-0 border-b border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/30">
+   598→            <div className="flex flex-col lg:flex-row gap-3 items-start lg:items-end">
+   599→              {/* Report Type Selector */}
+   600→              <div className="flex-1 w-full lg:w-auto min-w-0">
+   601→                <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Report Type</label>
+   602→                <Select value={reportType} onValueChange={(v) => setReportType(v as ReportType)}>
+   603→                  <SelectTrigger className="w-full">
+   604→                    <SelectValue />
+   605→                  </SelectTrigger>
+   606→                  <SelectContent>
+   607→                    {REPORT_OPTIONS.map(opt => (
+   608→                      <SelectItem key={opt.value} value={opt.value}>
+   609→                        <div className="flex items-center gap-2">
+   610→                          <opt.icon className="size-3.5 text-muted-foreground" />
+   611→                          <div>
+   612→                            <div className="text-xs font-medium">{opt.label}</div>
+   613→                            <div className="text-[10px] text-muted-foreground hidden sm:block">{opt.description}</div>
+   614→                          </div>
+   615→                        </div>
+   616→                      </SelectItem>
+   617→                    ))}
+   618→                  </SelectContent>
+   619→                </Select>
+   620→              </div>
+   621→
+   622→              {/* Date Range */}
+   623→              <div className="flex items-end gap-2">
+   624→                <div>
+   625→                  <label className="text-[11px] font-medium text-muted-foreground mb-1 block">From</label>
+   626→                  <div className="relative">
+   627→                    <CalendarDays className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
+   628→                    <Input
+   629→                      type="date"
+   630→                      value={fromDate}
+   631→                      onChange={(e) => setFromDate(e.target.value)}
+   632→                      className="h-9 w-[150px] text-xs pl-8"
+   633→                    />
+   634→                  </div>
+   635→                </div>
+   636→                <div>
+   637→                  <label className="text-[11px] font-medium text-muted-foreground mb-1 block">To</label>
+   638→                  <div className="relative">
+   639→                    <CalendarDays className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
+   640→                    <Input
+   641→                      type="date"
+   642→                      value={toDate}
+   643→                      onChange={(e) => setToDate(e.target.value)}
+   644→                      className="h-9 w-[150px] text-xs pl-8"
+   645→                    />
+   646→                  </div>
+   647→                </div>
+   648→              </div>
+   649→
+   650→              {/* Generate Button */}
+   651→              <Button
+   652→                size="sm"
+   653→                onClick={generateReport}
+   654→                disabled={loading}
+   655→                className="h-9 px-5 gap-2 shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white"
+   656→              >
+   657→                {loading ? <Loader2 className="size-3.5 animate-spin" /> : <Filter className="size-3.5" />}
+   658→                <span className="text-xs font-medium">Generate</span>
+   659→              </Button>
+   660→
+   661→              {/* Download / Print buttons - visible after report is generated */}
+   662→              {hasData && (
+   663→                <div className="flex gap-2 shrink-0">
+   664→                  <Button
+   665→                    variant="outline"
+   666→                    size="sm"
+   667→                    onClick={handleDownloadPDF}
+   668→                    className="h-9 px-4 gap-2 border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30"
+   669→                  >
+   670→                    <Printer className="size-3.5" />
+   671→                    <span className="text-xs font-medium">Download PDF</span>
+   672→                  </Button>
+   673→                  <Button
+   674→                    variant="outline"
+   675→                    size="sm"
+   676→                    onClick={handleDownloadCSV}
+   677→                    className="h-9 px-4 gap-2 border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
+   678→                  >
+   679→                    <FileSpreadsheet className="size-3.5" />
+   680→                    <span className="text-xs font-medium">Download Excel</span>
+   681→                  </Button>
+   682→                </div>
+   683→              )}
+   684→            </div>
+   685→          </div>
+   686→
+   687→          {/* ─── Content Area ─── */}
+   688→          <div className="flex-1 overflow-hidden">
+   689→            {loading ? (
+   690→              <div className="p-6 space-y-4">
+   691→                {/* Summary skeleton */}
+   692→                <div className="flex gap-3 overflow-x-auto pb-2">
+   693→                  {Array.from({ length: 4 }).map((_, i) => (
+   694→                    <Skeleton key={i} className="h-20 w-44 shrink-0 rounded-lg" />
+   695→                  ))}
+   696→                </div>
+   697→                <TableSkeleton cols={columns.length} />
+   698→              </div>
+   699→            ) : error ? (
+   700→              <div className="flex flex-col items-center justify-center py-16 px-6">
+   701→                <div className="flex size-12 items-center justify-center rounded-xl bg-red-100 dark:bg-red-900/30 mb-3">
+   702→                  <AlertCircle className="size-6 text-red-500" />
+   703→                </div>
+   704→                <h3 className="text-sm font-semibold text-foreground mb-1">Failed to Generate Report</h3>
+   705→                <p className="text-xs text-muted-foreground text-center max-w-sm">{error}</p>
+   706→                <Button variant="outline" size="sm" onClick={generateReport} className="mt-4 gap-1.5">
+   707→                  <Filter className="size-3" /> Retry
+   708→                </Button>
+   709→              </div>
+   710→            ) : hasData ? (
+   711→              <ScrollArea className="h-full">
+   712→                <div className="p-6 space-y-4">
+   713→                  {/* Summary Cards */}
+   714→                  {summaryCards.length > 0 && (
+   715→                    <div className="flex gap-3 overflow-x-auto pb-2">
+   716→                      {summaryCards.map((card, i) => (
+   717→                        <SummaryCard key={i} {...card} />
+   718→                      ))}
+   719→                    </div>
+   720→                  )}
+   721→
+   722→                  <Separator />
+   723→
+   724→                  {/* Report header with inline download buttons */}
+   725→                  <div className="flex items-center justify-between flex-wrap gap-2">
+   726→                    <div className="flex items-center gap-2">
+   727→                      <selectedOption.icon className="size-4 text-muted-foreground" />
+   728→                      <h3 className="text-sm font-semibold">{selectedOption.label}</h3>
+   729→                      <Badge variant="secondary" className="text-[10px]">
+   730→                        {reportData.data.length} records
+   731→                      </Badge>
+   732→                      {(fromDate || toDate) && (
+   733→                        <span className="text-[10px] text-muted-foreground ml-1">
+   734→                          {fromDate || 'All time'} → {toDate || 'Today'}
+   735→                        </span>
+   736→                      )}
+   737→                    </div>
+   738→                    {/* Inline download buttons next to report title */}
+   739→                    <div className="flex gap-1.5">
+   740→                      <Button
+   741→                        variant="ghost"
+   742→                        size="sm"
+   743→                        onClick={handleDownloadPDF}
+   744→                        className="h-7 px-2.5 gap-1.5 text-muted-foreground hover:text-red-600 dark:hover:text-red-400"
+   745→                      >
+   746→                        <Printer className="size-3" />
+   747→                        <span className="text-[10px] font-medium">PDF</span>
+   748→                      </Button>
+   749→                      <Button
+   750→                        variant="ghost"
+   751→                        size="sm"
+   752→                        onClick={handleDownloadCSV}
+   753→                        className="h-7 px-2.5 gap-1.5 text-muted-foreground hover:text-emerald-600 dark:hover:text-emerald-400"
+   754→                      >
+   755→                        <Download className="size-3" />
+   756→                        <span className="text-[10px] font-medium">Excel</span>
+   757→                      </Button>
+   758→                    </div>
+   759→                  </div>
+   760→
+   761→                  {/* Data Table */}
+   762→                  <div className="border rounded-lg overflow-hidden">
+   763→                    <Table>
+   764→                      <TableHeader>
+   765→                        <TableRow className="bg-muted/50 hover:bg-muted/50">
+   766→                          {columns.map((col) => (
+   767→                            <TableHead
+   768→                              key={col.key}
+   769→                              className={`text-[10px] font-semibold uppercase tracking-wide h-9 px-3 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}
+   770→                              style={col.width ? { width: col.width, minWidth: col.width } : undefined}
+   771→                            >
+   772→                              {col.label}
+   773→                            </TableHead>
+   774→                          ))}
+   775→                        </TableRow>
+   776→                      </TableHeader>
+   777→                      <TableBody>
+   778→                        {reportData.data.map((row: any, idx: number) => (
+   779→                          <TableRow key={idx} className="text-xs">
+   780→                            {columns.map((col) => (
+   781→                              <TableCell
+   782→                                key={col.key}
+   783→                                className={`py-2 px-3 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}
+   784→                                style={col.width ? { width: col.width, minWidth: col.width } : undefined}
+   785→                              >
+   786→                                {formatCellValue(row[col.key], col)}
+   787→                              </TableCell>
+   788→                            ))}
+   789→                          </TableRow>
+   790→                        ))}
+   791→                      </TableBody>
+   792→                    </Table>
+   793→                  </div>
+   794→
+   795→                  {/* Footer info */}
+   796→                  <div className="text-center text-[10px] text-muted-foreground pb-4">
+   797→                    Report generated at {new Date().toLocaleString('en-IN')} &middot; {reportData.data.length} records
+   798→                  </div>
+   799→                </div>
+   800→              </ScrollArea>
+   801→            ) : reportData ? (
+   802→              /* Empty state */
+   803→              <div className="flex flex-col items-center justify-center py-16 px-6">
+   804→                <div className="flex size-12 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 mb-3">
+   805→                  <FileBarChart className="size-6 text-slate-400 dark:text-slate-500" />
+   806→                </div>
+   807→                <h3 className="text-sm font-semibold text-foreground mb-1">No Records Found</h3>
+   808→                <p className="text-xs text-muted-foreground text-center max-w-sm">
+   809→                  No data found for {selectedOption.label}. Try adjusting the date range or filters.
+   810→                </p>
+   811→              </div>
+   812→            ) : (
+   813→              /* Initial state */
+   814→              <div className="flex flex-col items-center justify-center py-16 px-6">
+   815→                <div className="flex size-14 items-center justify-center rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 mb-4">
+   816→                  <BarChart3 className="size-7 text-emerald-500" />
+   817→                </div>
+   818→                <h3 className="text-sm font-bold text-foreground mb-1">Select a Report</h3>
+   819→                <p className="text-xs text-muted-foreground text-center max-w-sm mb-6">
+   820→                  Choose a report type, optionally set a date range, and click Generate to view the results. Download as PDF or Excel (CSV).
+   821→                </p>
+   822→                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-lg w-full">
+   823→                  {REPORT_OPTIONS.map(opt => (
+   824→                    <button
+   825→                      key={opt.value}
+   826→                      onClick={() => setReportType(opt.value)}
+   827→                      className={`flex flex-col items-center gap-2 p-4 rounded-xl border text-center transition-all cursor-pointer
+   828→                        ${reportType === opt.value
+   829→                          ? 'border-emerald-400 bg-emerald-50 dark:border-emerald-600 dark:bg-emerald-900/30 shadow-sm shadow-emerald-600/10'
+   830→                          : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600'}`}
+   831→                    >
+   832→                      <opt.icon className={`size-5 ${reportType === opt.value ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`} />
+   833→                      <span className="text-[11px] font-medium">{opt.label}</span>
+   834→                      <span className="text-[9px] text-muted-foreground leading-tight">{opt.description}</span>
+   835→                    </button>
+   836→                  ))}
+   837→                </div>
+   838→              </div>
+   839→            )}
+   840→          </div>
+   841→        </div>
+   842→      </DialogContent>
+   843→    </Dialog>
+   844→  )
+   845→}

@@ -1,0 +1,813 @@
+     1→# Customer Folio System - Worklog
+     2→
+     3→---
+     4→Task ID: 1
+     5→Agent: Main
+     6→Task: Fix all 7 Customer Folio requirements
+     7→
+     8→Work Log:
+     9→- Searched for "Ban" across all source files to find the undefined variable
+    10→- Found `Ban` icon used on line 498 of `customer-folio-management.tsx` but NOT imported from lucide-react
+    11→- Also found `ReadOnlyBanner` used on line 596 of `customer-folio-section.tsx` but NOT imported
+    12→- Fixed: Added `Ban` to lucide-react imports in `customer-folio-management.tsx`
+    13→- Fixed: Added `import ReadOnlyBanner from '@/components/read-only-banner'` in `customer-folio-section.tsx`
+    14→- Cleared .next cache to remove stale compiled code
+    15→- Verified all 7 requirements and found Reqs 3, 5, 6 were already implemented
+    16→- Fixed Req 2: Added `openingBalance: 0` to customer update in reopen API route
+    17→- Fixed Req 4: Replaced shadcn/ui Table with raw HTML table using `break-words` instead of `whitespace-nowrap`, improved print styles with `word-wrap:break-word`, `table-layout:auto`, landscape print, and `page-break-inside:avoid`
+    18→- Fixed Req 7: Rewrote `customer-folio-documents.tsx` with advanced UI - type-specific icons (MessageSquare, User, Shield, etc.), color-coded cards with left borders, note editing (inline edit + save), expand/collapse for long notes, document grid cards with type icons, type stats filter chips, separate Notes/Documents tabs (Notes button opens Notes tab, Documents button opens Docs tab), added `notesDocsTab` state to orchestrator, added PUT endpoint for note editing at `/api/folio/customers/[id]/notes/[noteId]/route.ts`
+    19→- Ran ESLint on all modified files - zero errors
+    20→
+    21→Stage Summary:
+    22→- **Req 1 (CRITICAL)**: FIXED - `Ban` icon was used but not imported. Also `ReadOnlyBanner` was missing import.
+    23→- **Req 2 (Reopen)**: FIXED - `openingBalance` now reset to 0 on reopen
+    24→- **Req 3 (Checkout History)**: ALREADY IMPLEMENTED - Full CheckoutRecord with transaction snapshots, history UI, print buttons
+    25→- **Req 4 (Report Layout)**: FIXED - Tables now use `break-words` + `max-w-[300px]` instead of `whitespace-nowrap`, PDF export uses `word-wrap:break-word` + landscape + proper print CSS
+    26→- **Req 5 (Checkout Validation)**: ALREADY IMPLEMENTED - API blocks checkout when `allEntries.length === 0`
+    27→- **Req 6 (Permanent Delete)**: ALREADY IMPLEMENTED - DELETE with `?permanent=true` + cascade deletes in Prisma + confirmation dialog
+    28→- **Req 7 (Notes & Documents)**: FIXED - Complete UI rewrite with advanced features
+    29→
+    30→Files Modified:
+    31→1. `src/components/sections/customer-folio/customer-folio-management.tsx` - Added `Ban` import
+    32→2. `src/components/sections/customer-folio-section.tsx` - Added `ReadOnlyBanner` import, `notesDocsTab` state, pass `initialTab` prop
+    33→3. `src/app/api/folio/customers/[id]/reopen/route.ts` - Reset `openingBalance: 0`
+    34→4. `src/components/sections/customer-folio/customer-folio-reports.tsx` - Fixed table layout, PDF export
+    35→5. `src/components/sections/customer-folio/customer-folio-documents.tsx` - Complete UI rewrite
+    36→6. `src/app/api/folio/customers/[id]/notes/[noteId]/route.ts` - Added PUT endpoint for note editing
+    37→
+    38→---
+    39→Task ID: 5
+    40→Agent: checkout-validation-fix
+    41→Task: Add checkout validation to block empty folios
+    42→
+    43→Work Log:
+    44→- Read checkout API route at `src/app/api/folio/customers/[id]/checkout/route.ts`
+    45→- Read Prisma schema to understand Customer, Folio, and LedgerEntry models
+    46→- Found existing validation at lines 74-84 that checks only active folios' active entries
+    47→- Added new early validation check (lines 37-46) right after auth/permission checks and before the customer DB query
+    48→- New check uses `db.ledgerEntry.count({ where: { customerId: id } })` to check across ALL folios (not just active ones)
+    49→- If count is 0, returns 400 with exact message: "Cannot checkout this folio because no transactions or charges exist."
+    50→- Existing active-folios-only check retained as defense-in-depth
+    51→
+    52→Stage Summary:
+    53→- Added lightweight `ledgerEntry.count` query as the FIRST business-logic check in the checkout handler
+    54→- This check runs before the heavier `customer.findUnique` query, failing fast when no transactions exist
+    55→- Checks ALL folios for the customer (not filtered by folio status or entry status), which is broader than the existing check
+    56→
+    57→---
+    58→Task ID: 6
+    59→Agent: permanent-delete-fix
+    60→Task: Implement Permanent Customer Delete with cascade deletion
+    61→
+    62→Work Log:
+    63→- Read Prisma schema to identify all models related to Customer
+    64→- Customer has FK-cascaded relations: Folio, LedgerEntry, CustomerDocument, CustomerNote, CustomerTagAssignment, CustomerVisit, Settlement, CheckoutRecord — all with `onDelete: Cascade`
+    65→- FolioAuditLog has a plain `customerId` string field (no FK relation), so Prisma cascade does NOT clean it up
+    66→- Read existing DELETE handler in `src/app/api/folio/customers/[id]/route.ts` — permanent delete existed but had 3 issues
+    67→- Read `src/lib/auth.ts` to understand session structure (`role`, `isSuperAdmin`, `sessionHasPermission`)
+    68→- Fixed 3 issues in the permanent delete branch:
+    69→
+    70→Stage Summary:
+    71→- **Issue 1 — Missing role check**: Added `session.role !== 'Admin' && !session.isSuperAdmin` guard returning 403. Previously any user with `khata.delete` permission could permanently delete.
+    72→- **Issue 2 — Incomplete balance check**: Replaced the old check (only looked at last entry's `balance` field in the active folio's Active-status entries) with a thorough computation: fetches ALL folios with ALL ledger entries (no status filter), iterates chronologically, skips Cancelled/Reversed entries, and computes the real running balance from `openingBalance + debits - credits`.
+    73→- **Issue 3 — No transaction + missing FolioAuditLog cleanup**: Wrapped the delete in `db.$transaction()`. Inside the transaction, explicitly deletes `FolioAuditLog` records (no FK cascade), then deletes the Customer (Prisma `onDelete: Cascade` handles all 8 FK-related models: Folio, LedgerEntry, CustomerDocument, CustomerNote, CustomerTagAssignment, CustomerVisit, Settlement, CheckoutRecord).
+    74→
+    75→Files Modified:
+    76→1. `src/app/api/folio/customers/[id]/route.ts` — Rewrote permanent delete branch (lines 297-350)
+    77→
+    78→---
+    79→Task ID: 2
+    80→Agent: reopen-folio-fix
+    81→Task: Fix Reopen Folio API for complete reset
+    82→
+    83→Work Log:
+    84→- Read reopen API route at `src/app/api/folio/customers/[id]/reopen/route.ts`
+    85→- Read Prisma schema to understand Folio and LedgerEntry models
+    86→- Reviewed git history: original version had `carryForwardBalance` option that could create Opening LedgerEntries and carry forward balance from previous folio
+    87→- Verified current implementation already implements complete reset:
+    88→  - No `carryForwardBalance` parameter accepted (removed in prior commit)
+    89→  - No LedgerEntry creation of any kind during reopen
+    90→  - New Folio created with only: `unitCode`, `folioId`, `customerId`, `folioNumber`, `visitNumber`, `status='Active'` — completely empty
+    91→  - Customer updated with `status: 'Active'`, `primaryFolioId: newFolioId`, `openingBalance: 0`
+    92→  - Customer profile fields (name, mobile, email, address, etc.) untouched — preserved
+    93→  - Old folios and all historical LedgerEntries, Settlements, CheckoutRecords, CustomerNotes, CustomerDocuments preserved via cascade relations
+    94→  - Duplicate active folio guard at lines 71-79 prevents creating a second active folio
+    95→  - Audit log records `freshFolio: true` and `noCarryForward: true`
+    96→- Verified no Prisma middleware or hooks that could auto-create entries for the new folio
+    97→- Confirmed no changes needed — the reopen API already performs a complete reset
+    98→
+    99→Stage Summary:
+   100→- The reopen API at `src/app/api/folio/customers/[id]/reopen/route.ts` is already correctly implemented for complete reset
+   101→- Key guarantees verified: (1) New Folio is empty — no LedgerEntries, (2) Customer.openingBalance reset to 0, (3) Customer.status set to Active, (4) Old folio history fully preserved, (5) Duplicate active folio prevention in place
+   102→- No code changes were required — the fix (`openingBalance: 0` addition + removal of `carryForwardBalance` logic) was already applied in prior commits---
+   103→Task ID: 1
+   104→Agent: main
+   105→Task: Fix all 7 Customer Folio requirements + critical crash fix
+   106→
+   107→Work Log:
+   108→- Cleared .next cache to eliminate stale compiled artifacts
+   109→- Replaced Ban icon with ShieldAlert in customer-folio-management.tsx (line 10, 498)
+   110→- Improved FolioErrorBoundary to show full error name, message, and stack trace
+   111→- Made notify() message parameter optional (falls back to title)
+   112→- Fixed hdrRef type to Record<string, string> for fetch header compatibility
+   113→- Fixed setDuplicate() type cast for safeJson result
+   114→- Added global window.onerror and unhandledrejection handlers for debugging
+   115→- Fixed report layout: removed max-w-[300px] cell constraint, added whitespace-nowrap, landscape print CSS
+   116→- Verified Reopen Folio API already does complete reset correctly
+   117→- Verified Checkout History fully implemented with stored invoice data + print
+   118→- Sub-agent added early validation to checkout API (blocks empty folios)
+   119→- Sub-agent fixed permanent delete: added Admin/SuperAdmin gate, accurate balance check, explicit FolioAuditLog cleanup
+   120→- Verified Notes & Documents UI is comprehensive with search, filters, CRUD, private notes
+   121→- Build succeeds with no errors
+   122→
+   123→Stage Summary:
+   124→- All 7 requirements addressed
+   125→- Build compiles cleanly (next build succeeds)
+   126→- Key code changes: customer-folio-helpers.tsx, customer-folio-section.tsx, customer-folio-management.tsx, customer-folio-reports.tsx, notification-store.ts, page.tsx
+   127→- Server cannot run in sandbox due to OOM (build uses ~1.2GB, server needs additional memory)
+   128→- User must deploy to production to verify runtime behavior
+   129→
+   130→---
+   131→Task ID: 1
+   132→Agent: main
+   133→Task: Fix "Something went wrong" error when opening Customer Folio page
+   134→
+   135→Work Log:
+   136→- Analyzed the global-error.tsx which shows "Something went wrong / An unexpected error occurred / Try Again"
+   137→- Identified this is Next.js route-level error boundary that triggers when NO error.tsx exists and errors escape all React error boundaries
+   138→- Found that FolioErrorBoundary was INSIDE CustomerFolioSection (can't catch errors in its own function body)
+   139→- Found NO error.tsx at route level - all uncaught errors went to global-error.tsx
+   140→- Found NO section-level error boundary in page.tsx - dynamic section errors crashed entire page
+   141→- Added SectionErrorBoundary class component to page.tsx (catches rendering errors in ANY section)
+   142→- Wrapped all section renders in renderPage() with SectionErrorBoundary using key={activePage-pageKey}
+   143→- Added error.tsx at route level (catches remaining errors before global-error.tsx)
+   144→- Added SectionLoader component for consistent loading states across all dynamic imports
+   145→- Added loading prop to all dynamic() imports
+   146→- Build succeeds cleanly, lint passes for changed files
+   147→
+   148→Stage Summary:
+   149→- Added SectionErrorBoundary in page.tsx that wraps EVERY section render
+   150→- Added src/app/error.tsx as route-level error boundary (was completely missing)
+   151→- Added loading spinners to all dynamic imports
+   152→- If CustomerFolioSection throws, user now sees section-specific error with actual error message + stack trace + retry button
+   153→- The generic "Something went wrong" global error page should never appear again
+   154→
+   155→---
+   156→Task ID: 4-a
+   157→Agent: backend-bug-fix
+   158→Task: Fix backend critical+high bugs in Customer Folio API routes
+   159→
+   160→Work Log:
+   161→- Searched all 26 folio API route files for `sessionHasPermission(session, 'khata', ...)` calls
+   162→- Replaced ALL instances with `'customerFolio'` and correct action names (access, create, edit, delete, settlement, refund, checkout, reopenFolio, removeTransaction, transferOperation, deleteDocuments)
+   163→- Fixed `JSON.parse(session.permissions || '{}')` → `session.permissions || {}` in 4 files (ledger, entries/remove, transfer, reopen)
+   164→- Fixed permission key names: `khata.forceEdit` → `customerFolio.forceEdit`, `khata.removeTransaction` → `customerFolio.removeTransaction`, `khata.transferOperation` → `customerFolio.transferOperation`, `khata.reopenFolio` → `customerFolio.reopenFolio`
+   165→- Fixed `recalculateFolioBalances` in 3 files (entries/remove, shift, split) + 1 additional (transfer) to fetch and start from `customer.openingBalance` instead of 0
+   166→- Added `Math.max(1, ... || 1)` guard on page param and `Math.min(..., 500)` cap on limit param in customers list route
+   167→- Added `Math.min(..., 500)` cap on limit param in audit route
+   168→- Fixed checkout `totalSettlements` to only include settlements created after the last checkout date (queries CheckoutRecord table)
+   169→- Moved refund balance validation (credit balance check + max refund check) INSIDE the transaction for atomicity
+   170→- Added `sourceFolio.status !== 'Active'` and `targetFolio.status !== 'Active'` validation checks in split route
+   171→- Fixed archive (soft delete) balance check to compute unified balance across ALL folios instead of checking only the first active folio's last entry
+   172→- Verified admin route has no `sessionHasPermission` calls (uses role check only) — no changes needed
+   173→- Verified migrate route's `khataProfile` references are database model names, not permission keys — no changes needed
+   174→
+   175→Stage Summary:
+   176→- **Bug #1 (CRITICAL)**: FIXED — All 25 route files had `'khata'` replaced with `'customerFolio'` in sessionHasPermission calls, with correct action-specific permission keys (settlement, refund, checkout, etc.)
+   177→- **Bug #2 (CRITICAL)**: FIXED — Removed `JSON.parse()` wrapping in 4 files; changed permission key names from `khata.*` to `customerFolio.*`
+   178→- **Bug #3 (CRITICAL)**: FIXED — `recalculateFolioBalances` now fetches `openingBalance` from customer and starts running balance from it instead of 0 (in 4 files: entries/remove, shift, split, transfer)
+   179→- **Bug #4 (HIGH)**: FIXED — `page` parameter guarded against NaN; `limit` parameter capped at 500
+   180→- **Bug #5 (HIGH)**: FIXED — Audit route `limit` parameter capped at 500
+   181→- **Bug #6 (HIGH)**: FIXED — Checkout `totalSettlements` now filters to only settlements created after the last checkout date
+   182→- **Bug #7 (HIGH)**: FIXED — Refund balance validation moved inside the `db.$transaction` block
+   183→- **Bug #8 (MEDIUM)**: FIXED — Split route now validates both source and target folio status is 'Active'
+   184→- **Bug #9 (MEDIUM)**: FIXED — Archive balance check now computes unified balance across ALL folios
+   185→
+   186→Files Modified:
+   187→1. `src/app/api/folio/customers/route.ts` — Bug #1 (khata→customerFolio), Bug #4 (NaN page, limit cap)
+   188→2. `src/app/api/folio/customers/[id]/route.ts` — Bug #1 (khata→customerFolio), Bug #9 (archive balance check)
+   189→3. `src/app/api/folio/customers/[id]/ledger/route.ts` — Bug #1 (khata→customerFolio), Bug #2 (JSON.parse + khata.forceEdit→customerFolio.forceEdit)
+   190→4. `src/app/api/folio/customers/[id]/settle/route.ts` — Bug #1 (khata.create→customerFolio.settlement)
+   191→5. `src/app/api/folio/customers/[id]/refund/route.ts` — Bug #1 (khata.create→customerFolio.refund), Bug #7 (balance check inside transaction)
+   192→6. `src/app/api/folio/customers/[id]/transfer/route.ts` — Bug #1 (khata.edit→customerFolio.edit), Bug #2 (JSON.parse + khata.transferOperation→customerFolio.transferOperation), Bug #3 (openingBalance)
+   193→7. `src/app/api/folio/customers/[id]/shift/route.ts` — Bug #1 (khata.edit→customerFolio.edit), Bug #3 (openingBalance)
+   194→8. `src/app/api/folio/customers/[id]/split/route.ts` — Bug #1 (khata.edit→customerFolio.edit), Bug #3 (openingBalance), Bug #8 (folio status validation)
+   195→9. `src/app/api/folio/customers/[id]/entries/remove/route.ts` — Bug #1 (khata.delete→customerFolio.delete), Bug #2 (JSON.parse + permission keys), Bug #3 (openingBalance)
+   196→10. `src/app/api/folio/customers/[id]/checkout/route.ts` — Bug #1 (khata.edit→customerFolio.checkout), Bug #6 (settlements filter)
+   197→11. `src/app/api/folio/customers/[id]/reopen/route.ts` — Bug #2 (JSON.parse + permission keys)
+   198→12. `src/app/api/folio/customers/[id]/folios/route.ts` — Bug #1 (khata.create→customerFolio.create)
+   199→13. `src/app/api/folio/customers/[id]/folios/[folioId]/route.ts` — Bug #1 (khata.delete→customerFolio.delete)
+   200→14. `src/app/api/folio/customers/[id]/folios/[folioId]/entries/route.ts` — Bug #1 (khata.access→customerFolio.access)
+   201→15. `src/app/api/folio/customers/[id]/statement/route.ts` — Bug #1 (khata.access→customerFolio.access)
+   202→16. `src/app/api/folio/customers/[id]/notes/route.ts` — Bug #1 (khata.access→customerFolio.access, khata.create→customerFolio.create)
+   203→17. `src/app/api/folio/customers/[id]/notes/[noteId]/route.ts` — Bug #1 (khata.edit→customerFolio.edit, khata.delete→customerFolio.delete)
+   204→18. `src/app/api/folio/customers/[id]/documents/route.ts` — Bug #1 (khata.access→customerFolio.access, khata.create→customerFolio.create)
+   205→19. `src/app/api/folio/customers/[id]/documents/[docId]/route.ts` — Bug #1 (khata.delete→customerFolio.delete)
+   206→20. `src/app/api/folio/customers/[id]/tags/route.ts` — Bug #1 (khata.access/edit→customerFolio.access/edit)
+   207→21. `src/app/api/folio/customers/[id]/audit/route.ts` — Bug #1 (khata.access→customerFolio.access), Bug #5 (limit cap)
+   208→22. `src/app/api/folio/customers/[id]/history/route.ts` — Bug #1 (khata.access→customerFolio.access)
+   209→23. `src/app/api/folio/customers/[id]/settlement-overview/route.ts` — Bug #1 (khata.access→customerFolio.access)
+   210→24. `src/app/api/folio/reports/route.ts` — Bug #1 (khata.access→customerFolio.access)
+   211→
+   212→---
+   213→Task ID: 4-b
+   214→Agent: frontend-bug-fix
+   215→Task: Fix frontend critical+high bugs in Customer Folio components
+   216→
+   217→Work Log:
+   218→- Read all 5 target files and identified exact locations for all 10 bugs
+   219→- Bug #1: Added master→active folio resolution in `addLedgerEntry` and `handleSettle` — when `selectedFolioId === 'master'`, finds first Active folio from `allFolios` and uses its real ID; shows error if none found
+   220→- Bug #2: Added `e.preventDefault()` to 2 AlertDialogAction onClick handlers (Archive Customer, Delete Folio dialogs) to prevent auto-close before async operations complete
+   221→- Bug #3: Updated thermal print voucher button to pass selected entry filter (same pattern as A4 print), updated `onThermalPrintVoucher` type to accept optional entries, updated `doThermalPrintVoucher` handler to use filtered entries
+   222→- Bug #4: Added `selectedEntries` to `transferWithTxn` useCallback dependency array
+   223→- Bug #5: Fixed inverted balance color in `buildEntryRows`: changed from `e.balance >= 0 ? green : red` to `e.balance > 0 ? red : e.balance < 0 ? green : gray`
+   224→- Bug #6: Replaced 7 `catch { /* ignore */ }` blocks with proper `notify()` error calls in handleUpdate, addLedgerEntry, handleTransfer, handleShift, handleRemove, handleReopen, handleDelete
+   225→- Bug #7: Added `f.status === 'Active'` filter to Shift and Split dialog folio selectors
+   226→- Bug #8: Added `hdrRef` parameter to `printInvoice`, `printSingleFolio`, `printHistoryInvoice`; replaced raw `fetch('/api/settings')` with `fetchSettingsForPrint(hdrRef)` that passes auth headers; updated all 5 call sites in section component
+   227→- Bug #9: Removed unused `TYPE_BADGE` import from customer-folio-customer-list.tsx (Download was already absent from management.tsx)
+   228→- Bug #10: Fixed 3 useEffects in dialogs: (a) history fetch — added `fetchCustomerHistory` and `apiHeaders` to deps, moved `fetchCustomerHistory` definition before useEffect to avoid TDZ; (b) invoice number fetch — added `invoiceNumber` and `fetchInvoiceNumber` to deps; (c) invoice data fetch — added `invoiceData`, `detail?.id`, `selectedFolioId` to deps
+   229→- Build compiles successfully with zero errors
+   230→
+   231→Stage Summary:
+   232→- **Bug #1 (CRITICAL)**: FIXED — Master folio string 'master' no longer sent to API; resolved to real active folio ID before API call
+   233→- **Bug #2 (CRITICAL)**: FIXED — AlertDialogAction auto-close prevented with `e.preventDefault()` in Archive and Delete Folio dialogs
+   234→- **Bug #3 (HIGH)**: FIXED — Thermal print voucher now respects entry selection
+   235→- **Bug #4 (HIGH)**: FIXED — `selectedEntries` added to `transferWithTxn` deps
+   236→- **Bug #5 (HIGH)**: FIXED — Balance colors corrected: positive=red (owes), negative=green (credit), zero=gray
+   237→- **Bug #6 (HIGH)**: FIXED — 7 silent error catch blocks now show user-facing error notifications
+   238→- **Bug #7 (MEDIUM)**: FIXED — Shift/Split dialogs only show Active folios as targets
+   239→- **Bug #8 (MEDIUM)**: FIXED — `printInvoice`, `printSingleFolio`, `printHistoryInvoice` now use `fetchSettingsForPrint(hdrRef)` with auth headers
+   240→- **Bug #9 (MEDIUM)**: FIXED — Removed unused `TYPE_BADGE` import from customer list
+   241→- **Bug #10 (MEDIUM)**: FIXED — 3 useEffects now have complete dependency arrays; `fetchCustomerHistory` moved before its consumer useEffect
+   242→
+   243→Files Modified:
+   244→1. `src/components/sections/customer-folio-section.tsx` — Bugs #1, #3, #6, #8
+   245→2. `src/components/sections/customer-folio/customer-folio-dialogs.tsx` — Bugs #2, #3, #4, #7, #10
+   246→3. `src/components/sections/customer-folio/customer-folio-print.ts` — Bugs #5, #8
+   247→4. `src/components/sections/customer-folio/customer-folio-customer-list.tsx` — Bug #9
+   248→---
+   249→Task ID: 4-a
+   250→Agent: backend-fixer
+   251→Task: Fix all backend Critical/High/Medium bugs in folio API routes
+   252→
+   253→Work Log:
+   254→- Fixed Bug #1 (CRITICAL): Changed all `sessionHasPermission(session, 'khata', ...)` to `'customerFolio'` across 23 API route files (34 occurrences). Used correct action-specific keys: checkout→customerFolio.checkout, settle→customerFolio.settlement, refund→customerFolio.refund, etc.
+   255→- Fixed Bug #2 (CRITICAL): Removed `JSON.parse()` wrapping of `session.permissions` in 4 files (ledger, entries/remove, transfer, reopen). Fixed permission key names from `khata.forceEdit` to `customerFolio.forceEdit` etc.
+   256→- Fixed Bug #3 (CRITICAL): Fixed `recalculateFolioBalances` to start runningBalance from `customer.openingBalance` instead of 0 in 4 files (entries/remove, shift, split, transfer)
+   257→- Fixed Bug #4 (HIGH): Added NaN protection and 500 cap for page/limit params in customers list route
+   258→- Fixed Bug #5 (HIGH): Added 500 cap for limit in audit route
+   259→- Fixed Bug #6 (HIGH): Checkout totalSettlements now filters to only settlements after last CheckoutRecord date
+   260→- Fixed Bug #7 (HIGH): Moved refund balance validation inside db.$transaction
+   261→- Fixed Bug #8 (MEDIUM): Added source and target folio Active status validation in split route
+   262→- Fixed Bug #9 (MEDIUM): Archive check now computes unified balance across ALL folios from openingBalance
+   263→
+   264→Stage Summary:
+   265→- 24 files modified, 9 bugs fixed
+   266→- All `khata` permission keys replaced with `customerFolio`
+   267→- All `JSON.parse(session.permissions)` removed
+   268→- Balance recalculation now correctly starts from openingBalance
+   269→- Query parameters properly validated and capped
+   270→- Race conditions in refund checkout reduced
+   271→
+   272→---
+   273→Task ID: 4-b
+   274→Agent: frontend-fixer
+   275→Task: Fix all frontend Critical/High/Medium bugs in folio components
+   276→
+   277→Work Log:
+   278→- Fixed Bug #1 (CRITICAL): `addLedgerEntry` and `handleSettle` now resolve `selectedFolioId === 'master'` to actual active folio ID. Shows error if no active folio.
+   279→- Fixed Bug #2 (CRITICAL): Added `e.preventDefault()` to AlertDialogAction in Archive Customer and Delete Folio dialogs
+   280→- Fixed Bug #3 (HIGH): Thermal voucher print now passes selected entries (matching A4 print behavior)
+   281→- Fixed Bug #4 (HIGH): Added `selectedEntries` to `transferWithTxn` useCallback dependency array
+   282→- Fixed Bug #5 (HIGH): Fixed inverted balance color in `buildEntryRows` (positive=red, negative=green)
+   283→- Fixed Bug #6 (HIGH): Replaced 7 silent `catch { /* ignore */ }` blocks with proper `notify()` error calls
+   284→- Fixed Bug #7 (MEDIUM): Shift/Split dialogs now filter folios by `f.status === 'Active'`
+   285→- Fixed Bug #8 (MEDIUM): `printInvoice`, `printSingleFolio`, `printHistoryInvoice` now accept and use hdrRef for auth headers
+   286→- Fixed Bug #9 (MEDIUM): Removed unused `Download` import from management, `TYPE_BADGE` from customer-list
+   287→- Fixed Bug #10 (MEDIUM): Fixed 3 useEffects with missing dependencies in dialogs
+   288→
+   289→Stage Summary:
+   290→- 4 files modified, 10 bugs fixed
+   291→- Master folio no longer sends 'master' as folioId to API
+   292→- AlertDialogAction no longer auto-closes before async operations
+   293→- All print functions now use auth headers consistently
+   294→- All API error handlers now notify users of failures
+   295→
+   296→---
+   297→Task ID: 11
+   298→Agent: Main
+   299→Task: Fix "Receipt is not defined" ReferenceError and "khata" section name in error boundary
+   300→
+   301→Work Log:
+   302→- Identified `ReferenceError: Receipt is not defined` in `customer-folio-documents.tsx` line 71
+   303→  - `DOC_ICONS` mapping uses `Receipt` (lucide-react icon) as value but it was NOT imported
+   304→  - Reports and Dialogs files correctly import `Receipt`, but Documents file was missing it
+   305→  - Fixed by adding `Receipt` to the lucide-react import in `customer-folio-documents.tsx`
+   306→- Identified section name showing "khata" instead of "Customer Folio" in error boundary
+   307→  - `page.tsx` passes `activePage` (internal ID "khata") as `sectionName` to `SectionErrorBoundary`
+   308→  - The sidebar correctly labels it "Customer Folio" but the error boundary shows the raw ID
+   309→  - Fixed by adding `PAGE_DISPLAY_NAMES` mapping in `page.tsx` and using it in the error boundary
+   310→
+   311→Stage Summary:
+   312→- 2 files modified: `customer-folio-documents.tsx`, `page.tsx`
+   313→- `Receipt` icon now properly imported in documents module
+   314→- Error boundary now shows "Customer Folio" instead of "khata"
+   315→
+   316→---
+   317→Task ID: 12
+   318→Agent: Main
+   319→Task: Fix Report, History, Notes & Documents in Customer Folio
+   320→
+   321→Work Log:
+   322→- Removed Report button from CustomerFolioManagement action bar (was between History and profile actions)
+   323→- Removed onReports prop from Management component interface and destructuring
+   324→- Removed unused FileBarChart import from management
+   325→- Removed onReports prop from customer-folio-section.tsx Management rendering
+   326→- Fixed silent `catch { /* ignore */ }` in customer-folio-dialogs.tsx History fetch
+   327→- Fixed 6 silent catches in customer-folio-documents.tsx (addNote, addDoc, deleteNote, deleteDoc) with proper error notifications
+   328→- Fixed deleteNote and deleteDoc notifying success before checking response.ok - now properly conditional
+   329→
+   330→Stage Summary:
+   331→- 3 files modified: customer-folio-management.tsx, customer-folio-dialogs.tsx, customer-folio-documents.tsx
+   332→- Reports button removed from customer profile action menu, kept only on Home Page
+   333→- All error handlers now properly notify users instead of silently ignoring errors
+   334→- History, Notes, and Documents features now show proper error/success feedback
+   335→
+   336→---
+   337→Task ID: 13
+   338→Agent: Main
+   339→Task: Verify and fix all 6 Customer Folio requirements
+   340→
+   341→Work Log:
+   342→- Read all Customer Folio source files (section, reports, documents, dialogs, print, helpers, management, types, profile-grid, customer-list)
+   343→- Traced each requirement against actual code implementation
+   344→- Verified all 6 requirements are implemented:
+   345→  1. Full Screen Mode: Reports (z-[70]), Notes & Docs (z-[70]) render as fixed overlays above section (z-[60])
+   346→  2. Important Note: Checkbox in note form, displayed in Customer Header Bar with Star icon, backend saves isImportant field
+   347→  3. Shop Info in Reports: CSV/PDF/Print all include shop name, address, phone, GSTIN
+   348→  4. Reopen Default Folio: setSelectedFolioId('master') forced after reopen
+   349→  5. Permanent Bill Numbers: History prints use stored co.invoiceNumber from CheckoutRecord (not generated)
+   350→  6. Currency Formatting: MONETARY_PATTERNS and NON_MONETARY_PATTERNS regex in reports cell() function
+   351→- Found printCheckoutFolioBill in dialogs.tsx was missing shop info header - FIXED
+   352→  - Added async shop info fetch from /api/settings
+   353→  - Added professional shop header with name, address, phone, GSTIN
+   354→  - Added invoice/checkout number display with customer info grid
+   355→- Ran ESLint - 0 errors in source files (only pre-existing errors in non-source files like server-wrapper.js)
+   356→- Production build succeeds cleanly
+   357→- Server runs and serves 39KB page content
+   358→
+   359→Stage Summary:
+   360→- All 6 requirements were already implemented in source code from previous sessions
+   361→- Added shop info to printCheckoutFolioBill (the only missing piece for Req 3)
+   362→- Build: SUCCESS, Lint: PASS (source files), Server: RUNNING
+   363→- Files Modified: customer-folio-dialogs.tsx (shop header in Folio Bill print)
+   364→
+   365→---
+   366→Task ID: 2
+   367→Agent: Main
+   368→Task: Customer Folio Bug Fixes - Master Folio Default, Transfer Fix, Invoice Redesign
+   369→
+   370→Work Log:
+   371→- Read and analyzed all relevant source files: customer-folio-section.tsx, customer-folio-management.tsx, customer-folio-print.ts, transfer API, reopen API, customer detail API, checkout API
+   372→- Analyzed uploaded invoice image (20260708_214018.jpg) using VLM to extract exact layout, borders, typography, and section structure
+   373→- Fixed Requirement 1: Master Folio always selected by default
+   374→  - Changed fetchDetail() in customer-folio-section.tsx to ALWAYS set selectedFolioId to 'master'
+   375→  - Removed conditional logic that prioritized activeFolio.id or d.folios[0].id
+   376→  - Simplified handleReopen() to eliminate redundant state-setting steps
+   377→- Fixed Requirement 2: Active folio detection after reopen
+   378→  - Added primaryFolioId fallback in transfer API (both entry transfer and pure balance transfer)
+   379→  - When no active folio found by status filter, checks customer.primaryFolioId
+   380→  - Applied fix to all 4 validation points (source/target in both transfer types)
+   381→- Fixed Requirement 3: Complete Invoice Redesign
+   382→  - Added INVOICE_CSS: Professional hotel-style CSS matching uploaded sample
+   383→  - Added numberToIndianWords() helper for amount-in-words conversion
+   384→  - Added buildHotelStyleInvoice() function generating complete hotel-style tax invoice HTML
+   385→  - Updated printInvoice() to use new design (TAX INVOICE)
+   386→  - Updated printReceipt() to use new design (FOLIO INVOICE)
+   387→  - Updated printHistoryInvoice() to use new design (FINAL INVOICE)
+   388→  - Invoice layout: Header → Title Bar → Date → Customer Info Grid → Transaction Table → Tax Calculations → GST Summary → Footer with signatures
+   389→
+   390→Stage Summary:
+   391→- **Req 1 (Master Folio Default)**: FIXED - fetchDetail always defaults to 'master', reopen simplified
+   392→- **Req 2 (Active Folio Detection)**: FIXED - primaryFolioId fallback in all transfer validation points
+   393→- **Req 3 (Invoice Redesign)**: DONE - Complete hotel-style tax invoice with professional borders, customer info grid, GST summary, amount in words, signatures
+   394→- Build compiles cleanly (0 errors, only pre-existing auth warnings)
+   395→- Key files modified: customer-folio-section.tsx, transfer/route.ts, customer-folio-print.ts
+   396→---
+   397→Task ID: 1
+   398→Agent: Main Agent
+   399→Task: Master Folio ALWAYS selected by default in ALL scenarios
+   400→
+   401→Work Log:
+   402→- Changed `selectedFolioId` state initialization from `null` to `master` in customer-folio-section.tsx (line 66)
+   403→- Added safety useEffect that forces Master Folio selection whenever a customer is open (lines 192-197)
+   404→- Updated `openCustomer()` to synchronously set `setSelectedFolioId(master)` and clear stale `folioEntries` before async fetch (line 254)
+   405→- Updated `goBack()` to set `selectedFolioId` to `master` instead of `null` (line 256)
+   406→- Statement API already correctly filters by active folios only (verified)
+   407→
+   408→Stage Summary:
+   409→- Master Folio is now the default in ALL scenarios: initial load, openCustomer, after reopen, after refresh, after navigation
+   410→- The `selectedFolioId` state type changed from `string | null` to `string` — no breaking changes as `string` is assignable to `string | null` in child components
+   411→- `currentEntries` line (547) now correctly falls to `masterFolioEntries` since `selectedFolioId` is always `"master"` when no individual folio is selected
+   412→- No "no folio selected" state is possible anymore
+   413→
+   414→---
+   415→Task ID: 2
+   416→Agent: Main Agent
+   417→Task: Fix active folio detection after reopen for transaction transfers
+   418→
+   419→Work Log:
+   420→- Identified root cause: Transfer API fallback query used `where: { id: primaryFolioId }` but `primaryFolioId` stores the business ID (e.g. "FOLIO-001") while `id` is the internal Prisma CUID
+   421→- Fixed entry transfer source validation (transfer/route.ts lines 98-116): Changed fallback to use `where: { folioId: ... }` and added second fallback finding ANY folio by customer
+   422→- Fixed entry transfer target validation (transfer/route.ts lines 158-176): Same fix for target customer
+   423→- Fixed pure balance transfer function (transfer/route.ts lines 371-388): Same fix for both source and target
+   424→- Verified reopen route creates folio with `status: Active` and sets `primaryFolioId` correctly
+   425→- Verified checkout route sets folio status to `Archived` (not deleted)
+   426→
+   427→Stage Summary:
+   428→- Transfer API now correctly finds active folios after reopen via 3-tier fallback: (1) Active status filter, (2) primaryFolioId via folioId field, (3) Any folio for customer (most recent)
+   429→- Fixed incorrect `where: { id: primaryFolioId }` → `where: { folioId: primaryFolioId }` in all 4 locations
+   430→- Both entry transfer and pure balance transfer paths are fixed
+   431→- Customer list API and statement API already had correct active folio filtering
+   432→
+   433→---
+   434→Task ID: 1-rebuild
+   435→Agent: Main Agent
+   436→Task: Fix ChunkLoadError by rebuilding production server
+   437→
+   438→Work Log:
+   439→- Killed stale server processes on port 3000
+   440→- Ran `npx next build` — build succeeded with no errors
+   441→- Copied static files and public dir to standalone
+   442→- Restarted server-wrapper on port 3000
+   443→- Verified server responds with 39824 bytes HTML
+   444→
+   445→Stage Summary:
+   446→- ChunkLoadError was caused by stale .next build artifacts after code changes
+   447→- Full rebuild resolved it
+   448→
+   449→---
+   450→Task ID: 3
+   451→Agent: Main Agent (with full-stack-developer subagent)
+   452→Task: Complete invoice redesign matching sample hotel invoice
+   453→
+   454→Work Log:
+   455→- Analyzed attached sample invoice (20260708_214018.jpg) using VLM for detailed visual specs
+   456→- Completely rewrote INVOICE_CSS (lines 98-186) with hotel-style design
+   457→- Completely rewrote buildHotelStyleInvoice function (lines 365-651)
+   458→- Key design changes:
+   459→  - True black (#000) borders throughout instead of #333
+   460→  - Centered header: business name 17px bold, subtitle 11px, address/contact 10px, GSTIN bold
+   461→  - Title section: centered "TAX INVOICE" with letter-spacing 3px, underline, flex meta-row (Invoice No | Date | Page)
+   462→  - Customer info: 4-column label-value table with gray #f5f5f5 label backgrounds, 1px borders
+   463→  - Added Folio No and Visit No fields to customer info
+   464→  - Transaction table: Courier New for doc numbers, alternating #fafafa rows
+   465→  - Calculations: dashed dividers, double border before Grand Total, ₹ prefix on all amounts
+   466→  - Payment info with explicit Date/Mode labels
+   467→  - GST/HSN summary table with 9 columns
+   468→  - 3-column footer: hotel info / billing party / bank details
+   469→  - Bottom bar: state code + declaration (left), signature blocks (right)
+   470→  - Legal line with date and prepared-by
+   471→- All function signatures, imports, and helper functions preserved
+   472→- Rebuilt and verified: build succeeds, no lint errors in modified file
+   473→
+   474→Stage Summary:
+   475→- Invoice now matches professional hotel invoice style
+   476→- All existing data and functionality preserved
+   477→- A4 and PDF print-ready with print-color-adjust:exact
+   478→
+   479→
+   480→---
+   481→Task ID: chunk-error-fix-audit
+   482→Agent: Main
+   483→Task: Fix ChunkLoadError A-Z audit of Customer Folio
+   484→
+   485→Work Log:
+   486→- **ROOT CAUSE FOUND**: `package.json` "dev" script was `next build 2>&1 | tail -1 && cp -r ... && node server-wrapper.js` — a PRODUCTION BUILD script, NOT a dev server! Every `bun run dev` was doing a full build, creating new chunk hashes that mismatched with stale static files, causing ChunkLoadError.
+   487→- Fixed `package.json`:
+   488→  - `"dev"` → Now runs actual dev server with webpack: `DATABASE_URL=... NODE_OPTIONS="--max-old-space-size=2048" next dev --webpack -p 3000 -H 0.0.0.0`
+   489→  - `"start"` → Moved the old production build+serve workflow here
+   490→- Deleted stale `.next` directory to remove all corrupted build artifacts
+   491→- Performed clean production build: `next build` → success
+   492→- Verified all 40 chunk files copied correctly to `.next/standalone/.next/static/chunks/` (diff confirmed 0 differences)
+   493→- Enhanced `SectionErrorBoundary` in `page.tsx` to:
+   494→  - Auto-retry ChunkLoadError once after 800ms delay
+   495→  - Show "Reload Page" button (does `window.location.reload()`) for ChunkLoadError instead of in-app retry
+   496→  - Display helpful message: "This usually fixes itself after a page reload"
+   497→  - Hide stack traces for ChunkLoadError (not useful to users)
+   498→
+   499→**A-Z Audit of Customer Folio Code:**
+   500→1. `customer-folio-section.tsx` — Main orchestrator. All imports verified. Task 1 confirmed:
+   501→   - `selectedFolioId` initialized to `'master'` (line 66)
+   502→   - Safety useEffect forces master on `selectedId` change (lines 193-197)
+   503→   - `fetchDetail` always sets `selectedFolioId('master')` (line 239)
+   504→   - `openCustomer` sets `selectedFolioId('master')` (line 254)
+   505→   - `goBack` resets to `selectedFolioId('master')` (line 256)
+   506→   - `handleReopen` resets to `selectedFolioId('master')` (line 498)
+   507→2. `customer-folio-types.ts` — All interfaces verified, no issues
+   508→3. `customer-folio-helpers.tsx` — Exports verified (FolioErrorBoundary, fmtCur, all defaults, all constants)
+   509→4. `customer-folio-management.tsx` — All imports verified (Ban icon present, all lucide-react icons imported)
+   510→5. `customer-folio-dialogs.tsx` — All imports verified (15+ lucide icons, all UI components)
+   511→6. `customer-folio-customer-list.tsx` — Imports verified
+   512→7. `customer-folio-profile-grid.tsx` — Imports verified
+   513→8. `customer-folio-reports.tsx` — Imports verified
+   514→9. `customer-folio-documents.tsx` — Imports verified
+   515→10. `customer-folio-print.ts` — File exists
+   516→11. `read-only-banner.tsx` — File exists
+   517→
+   518→**Task 2 Verification (Transfer API):**
+   519→- `src/app/api/folio/customers/[id]/transfer/route.ts` — All 4 folio lookup locations verified:
+   520→  - Entry transfer source (lines 98-116): `where: { folioId: primaryFolioId, customerId: id }` ✅
+   521→  - Entry transfer target (lines 158-176): `where: { folioId: primaryFolioId, customerId: targetId }` ✅
+   522→  - Pure balance transfer source (lines 371-379): `where: { folioId: primaryFolioId, customerId: sourceId }` ✅
+   523→  - Pure balance transfer target (lines 380-388): `where: { folioId: primaryFolioId, customerId: targetId }` ✅
+   524→  - All 4 locations have 3-tier fallback: active folio → primaryFolioId → any folio
+   525→
+   526→**Verification Results:**
+   527→- Production build: Clean, no errors
+   528→- Page: HTTP 200, 39,824 bytes
+   529→- Chunks: All 40 files match between .next and .next/standalone
+   530→- API: Responding correctly
+   531→- Lint: 0 errors in Customer Folio TypeScript files (46 pre-existing errors in .js files only)
+   532→
+   533→Stage Summary:
+   534→- **ChunkLoadError ROOT CAUSE FIXED**: "dev" script was actually a production build, creating chunk hash mismatches
+   535→- **Error boundary enhanced**: Auto-retry + reload for ChunkLoadError
+   536→- **Complete A-Z audit passed**: All imports, types, exports, and API logic verified
+   537→- **Task 1 (Master Folio default)**: Confirmed in 5 code locations
+   538→- **Task 2 (Transfer folio lookup)**: Confirmed in 4 API locations with 3-tier fallback
+   539→
+   540→---
+   541→Task ID: invoice-gst-fix-redesign
+   542→Agent: Main
+   543→Task: Fix GST double-counting bug AND redesign invoice in Customer Folio print system
+   544→
+   545→Work Log:
+   546→- Read full `customer-folio-print.ts` (1104 lines) and `customer-folio-dialogs.tsx` (1851 lines)
+   547→- Identified GST double-counting: `grandTotal = taxableAmount + totalTax - totalCredits` was adding tax AGAIN even though `e.debit` already includes GST
+   548→- Fixed grandTotal to: `totalDebits - totalDiscount - totalCredits + totalRefunds` (matches folio balance)
+   549→- Replaced "Taxable Amount + CGST/SGST" calculation rows with a single "Net Amount" line + an italic note "Amount includes GST of ₹X (CGST ₹Y + SGST ₹Z)"
+   550→- Updated GST/HSN summary table to show "Taxable Amt" (base = net - tax) and "Total (Incl. GST)" (net) columns
+   551→- Added `printedBy?: string` parameter to `buildHotelStyleInvoice` function
+   552→- Updated `printReceipt`, `printInvoice`, `printHistoryInvoice` to accept and pass `printedBy`
+   553→- Exported `buildHotelStyleInvoice` and `INVOICE_CSS` from print.ts
+   554→- Fixed 2a: Added logo from `settings.shopLogo || settings.logo` to invoice header
+   555→- Fixed 2b: Removed Bank Details column from footer grid (3-col → 2-col)
+   556→- Fixed 2c: Folio No now properly extracts `.folioNumber` from `d.folios[0]` object instead of printing `[object Object]`
+   557→- Fixed 2d: Visit No now checks `d.visitNumber`, `d.activeFolio.visitNumber`, `d.folios[0].visitNumber`, `d.totalVisits`
+   558→- Fixed 2e: Replaced "Prepared by: {authorizedSignatory}" with "Powered by Eservices"
+   559→- Fixed 2f: Changed "Guest Signature" → "Customer Signature"
+   560→- Fixed 2g: Added "Printed by: {name}" to legal line when `printedBy` is provided
+   561→- Fixed 2h: Redesigned INVOICE_CSS with emerald gradient header, amber accent line, green title bar, subtle backgrounds, modern typography, colored section headers, and clean print rules
+   562→- Replaced two inline checkout invoice HTML templates in `customer-folio-dialogs.tsx` (lines 236-274) with calls to `buildHotelStyleInvoice` from print.ts
+   563→- Imported `fmtFolioNum` in print.ts for proper folio number formatting
+   564→- Ran ESLint: zero errors on modified files
+   565→
+   566→Stage Summary:
+   567→- **CRITICAL GST BUG FIXED**: `grandTotal` no longer double-counts tax. Grand total now always matches folio balance.
+   568→- **Invoice Modernized**: Professional emerald/green gradient header, logo support, clean layout
+   569→- **Bank Details Removed**: Footer is now 2-column (Business + Billing Party)
+   570→- **Folio No/Visit No Fixed**: No more `[object Object]` or `—` for available data
+   571→- **Unified Design**: ALL invoice printing (checkout, receipt, invoice, history) now uses the same `buildHotelStyleInvoice` function
+   572→
+   573→---
+   574→Task ID: checkout-invoice-flow
+   575→Agent: Main
+   576→Task: Fix "No Transactions" after Checkout — invoice shows empty because statement API filters out Archived folios
+   577→
+   578→Work Log:
+   579→- Read checkout API (`/api/folio/customers/[id]/checkout/route.ts`) — confirmed it only archives folios (sets status to "Archived"), does NOT delete entries. Correct behavior.
+   580→- Read statement API (`/api/folio/customers/[id]/statement/route.ts`) — identified ROOT CAUSE: lines 44-48 query `folio.status: 'Active'` only. After checkout all folios are Archived, so `activeFolioIdList` is empty → returns 0 entries.
+   581→- Read reopen API — confirmed it creates a fresh empty folio and resets customer to Active. Correct behavior.
+   582→- Read history API — confirmed it returns checkout records with full transaction snapshots. Correct behavior.
+   583→- Read frontend `customer-folio-section.tsx` — confirmed `fetchMasterFolioEntries` calls `/statement` without any archived-folio support. After checkout + `refreshAll()`, master folio shows empty.
+   584→- **FIX 1 — Statement API** (`statement/route.ts`): Added `includeArchived` query parameter. Smart logic: fetches ALL customer folios, then — if `includeArchived=true` AND no Active folios exist (i.e. CheckedOut) — uses ALL folio IDs instead of only Active ones. If Active folios exist, always uses only those (preserving normal behavior). Updated both main query and opening-balance pre-period query to use the resolved `folioIdList`.
+   585→- **FIX 2 — Frontend `fetchMasterFolioEntries`**: Added `?includeArchived=true` to the statement API call. Now after checkout, the Master Folio view still shows the last folio's entries.
+   586→- **FIX 3 — Frontend `fetchInvoiceData`**: Added `includeArchived=true` param so the Invoice dialog fetches entries from archived folios when no active folios exist.
+   587→- **FIX 4 — Frontend `handleCheckout` pre-fetch**: Added `includeArchived=true` to the statement call that runs before checkout to capture entries for the post-checkout print.
+   588→- **FIX 5 — Frontend `doPrintCompleteInvoice`**: Added `includeArchived=true` so "Print Complete Invoice" works after checkout.
+   589→- Verified: zero lint errors in modified files. Pre-existing 46 errors in other files unchanged.
+   590→- Verified: dev server starts cleanly, no compilation errors.
+   591→
+   592→Stage Summary:
+   593→- **Root Cause**: Statement API hardcoded `folio.status: 'Active'` filter, returning empty after checkout archives all folios.
+   594→- **Solution**: `includeArchived=true` query param with smart fallback — uses all folios only when no active folios exist.
+   595→- **Files Modified**:
+   596→  - `src/app/api/folio/customers/[id]/statement/route.ts` — added `includeArchived` smart logic
+   597→  - `src/components/sections/customer-folio-section.tsx` — 4 call sites updated to pass `includeArchived=true`
+   598→- **Behavior After Fix**: After Checkout → Master Folio shows all transactions → Invoice/Print works → Reopen creates empty folio (old entries preserved in History)
+   599→
+   600→---
+   601→Task ID: roundoff-and-date-filter
+   602→Agent: Main
+   603→Task: (1) Automatic round-off for decimal balances (2) Checkout History date filter defaulting to today
+   604→
+   605→Work Log:
+   606→- Added `roundBal` helper to `customer-folio-helpers.tsx`: `Math.round((v || 0) * 100) / 100`
+   607→- Updated `fmtCur` to apply `Math.round()` before formatting
+   608→- Updated `fmtINR` to apply `Math.round()` before formatting
+   609→- Imported `roundBal` in `customer-folio-print.ts` and applied it to `grandTotal`, `closingBal`, and `openingBal` in `buildHotelStyleInvoice`
+   610→- In statement API route, rounded each running balance step and final `closingBalance`
+   611→- In customers list API route, rounded `balance` before returning in enriched customer data
+   612→- Added `historyDate` state to `customer-folio-dialogs.tsx` defaulting to today's date (YYYY-MM-DD)
+   613→- Updated `fetchCustomerHistory` to accept optional date parameter and pass as `?date=` query param
+   614→- Added date picker `<Input type="date">` to History dialog header
+   615→- History API route now accepts optional `?date=YYYY-MM-DD` query param to filter checkout records by date
+   616→- Ran ESLint on all 6 modified files — zero errors
+   617→
+   618→Stage Summary:
+   619→- **TASK 1 (Round-off)**: FIXED — `fmtCur`, `fmtINR` now round values. `roundBal` helper added for internal use. Print functions and API routes round final displayed balances and closing balances. Intermediate transaction amounts are NOT rounded.
+   620→- **TASK 2 (Date Filter)**: FIXED — History dialog now has a date picker defaulting to today. Changing the date immediately refetches filtered checkout records. API supports optional `?date=` filter.
+   621→- **Files Modified**:
+   622→  - `src/components/sections/customer-folio/customer-folio-helpers.tsx` — added `roundBal`, updated `fmtCur`/`fmtINR`
+   623→  - `src/components/sections/customer-folio/customer-folio-print.ts` — rounded `grandTotal`, `closingBal`, `openingBal`
+   624→  - `src/app/api/folio/customers/[id]/statement/route.ts` — rounded running balance and closingBalance
+   625→  - `src/app/api/folio/customers/route.ts` — rounded customer balance
+   626→  - `src/components/sections/customer-folio/customer-folio-dialogs.tsx` — added `historyDate` state, date picker UI, date param in fetch
+   627→  - `src/app/api/folio/customers/[id]/history/route.ts` — added `?date=` query param support
+   628→
+   629→---
+   630→Task ID: invoice-gst-fix-redesign
+   631→Agent: full-stack-developer (subagent)
+   632→Task: Fix GST double-counting + complete invoice UI redesign
+   633→
+   634→Work Log:
+   635→- Fixed GST double-counting: `grandTotal = totalDebits - totalDiscount - totalCredits + totalRefunds` (no longer adds tax on top)
+   636→- Tax section now shows "Amount includes GST of ₹X (CGST ₹Y + SGST ₹Z)" as informational breakdown only
+   637→- Added logo display from settings.shopLogo in invoice header
+   638→- Removed Bank Details section entirely from invoice
+   639→- Fixed Folio No showing [object Object] — now properly extracts .folioNumber from folio objects, uses fmtFolioNum(), falls back to "Master Folio"
+   640→- Fixed Visit No — checks d.visitNumber, d.activeFolio, d.folios[0], d.totalVisits
+   641→- Changed "Prepared by: Bivash" to "Powered by Eservices"
+   642→- Renamed "Guest Signature" to "Customer Signature"
+   643→- Added printedBy parameter to show who printed the invoice
+   644→- Exported buildHotelStyleInvoice and INVOICE_CSS for use by dialogs
+   645→- Replaced both inline checkout invoice HTML templates in dialogs.tsx with calls to buildHotelStyleInvoice
+   646→- All 6 print paths now use unified professional design with emerald gradient header
+   647→
+   648→Stage Summary:
+   649→- GST double-counting ELIMINATED — invoice total always matches folio balance
+   650→- All 8 invoice UI issues (2a-2h) fixed
+   651→- All print functions unified to single design
+   652→
+   653→---
+   654→Task ID: checkout-invoice-flow
+   655→Agent: full-stack-developer (subagent)
+   656→Task: Fix checkout invoice flow — keep transactions visible after checkout
+   657→
+   658→Work Log:
+   659→- Root cause: statement API hardcoded folio.status = 'Active', returning 0 entries after checkout
+   660→- Added includeArchived=true query parameter to statement API with smart fallback logic
+   661→- Updated 4 call sites in customer-folio-section.tsx to pass includeArchived=true
+   662→- After checkout, Master Folio still shows all transactions
+   663→- After reopen, includeArchived smartly ignores archived (active folios now exist)
+   664→- History remains accessible via History button
+   665→
+   666→Stage Summary:
+   667→- Invoice/Print works correctly after checkout
+   668→- Transactions remain visible until Reopen
+   669→- History printing preserved
+   670→
+   671→---
+   672→Task ID: roundoff-and-date-filter
+   673→Agent: full-stack-developer (subagent)
+   674→Task: Add automatic round-off and checkout date filter
+   675→
+   676→Work Log:
+   677→- Added roundBal helper to customer-folio-helpers.tsx
+   678→- Applied Math.round() to fmtCur and fmtINR
+   679→- Applied roundBal to grandTotal, closingBal, openingBal in invoice
+   680→- Statement API rounds each running balance step and final closingBalance
+   681→- Customer list API rounds balance before returning
+   682→- Added historyDate state defaulting to today in dialogs
+   683→- Added date picker in History dialog header
+   684→- Added ?date=YYYY-MM-DD filter support to history API
+   685→- Date change auto-refreshes checkout list
+   686→
+   687→Stage Summary:
+   688→- Decimal balances automatically rounded in display and calculations
+   689→- Checkout history defaults to today's date
+   690→---
+   691→Task ID: 1b
+   692→Agent: transfer-voucher-fix
+   693→Task: Fix transfer description, rename FINAL CHECKOUT INVOICE
+   694→
+   695→Work Log:
+   696→- Changed transfer marker from Folio Number to Customer Profile ID
+   697→- Renamed FINAL CHECKOUT INVOICE to Tax Invoice in dialogs
+   698→- Renamed FINAL INVOICE to Tax Invoice in print
+   699→
+   700→Stage Summary:
+   701→- Transfer descriptions now show Customer Profile ID
+   702→- History invoices show "Tax Invoice" title
+   703→
+   704→---
+   705→Task ID: 1
+   706→Agent: invoice-permanence
+   707→Task: Fix invoice number permanence
+   708→
+   709→Work Log:
+   710→- Modified checkout route to accept pre-generated invoiceNumber from request body
+   711→- Modified frontend checkout call to pass invoice number
+   712→- Made padding consistent (padStart(4, '0')) for both INV and CO prefixes in checkout route
+   713→
+   714→Stage Summary:
+   715→- Invoice numbers now remain permanent across checkout
+   716→
+   717→---
+   718→Task ID: 2
+   719→Agent: Sub-agent (Invoice Print Overhaul)
+   720→Date: 2025-07-09
+   721→Description: Overhaul Customer Folio print system in customer-folio-print.ts
+   722→
+   723→Changes Made:
+   724→1. **Invoice Header CSS → White Background (Point 6):** Replaced emerald gradient header with clean white background and flex layout. Removed filter:brightness(0) invert(1) from logo, changed text colors from white/rgba to #16a34a/#555, added .header-info wrapper class, changed bottom border from gold gradient to solid #16a34a.
+   725→
+   726→2. **Logo Fix in buildHotelStyleInvoice:** Updated HTML generation to match new flex layout — wrapped business info elements in `<div class="header-info">` container, removed centered text-align, logo now sits beside info instead of above it.
+   727→
+   728→3. **Fix Proforma Print (Point 4):** Completely replaced printSingleFolio function to use INVOICE_CSS + buildHotelStyleInvoice instead of old PRINT_CSS + buildUnifiedHeader/buildCustomerInfoBlock. Added optional `printedBy` parameter to function signature. Now renders professional hotel-style invoice for proforma prints.
+   729→
+   730→4. **Multi-Page A4 Support (Point 8):** Added page-break-inside CSS rules before @media print block — inv-txn-table tr avoids breaks, inv-txn-section allows auto break, critical sections (cust, calcs, gst, footer, bottom-bar, legal) avoid breaks. Verified @page rule already has correct A4 margins (8mm 10mm).
+   731→
+   732→5. **Fix buildFooter:** Changed "Generated by Eservices POS System" to "Powered by Eservices".
+   733→
+   734→6. **Fix printReceipt Title:** Changed document title from 'FOLIO INVOICE' to 'TAX INVOICE' in the printReceipt function.
+   735→
+   736→Files Modified:
+   737→- src/components/sections/customer-folio/customer-folio-print.ts
+   738→
+   739→Stage Summary:
+   740→- Invoice header now uses white background with green accent instead of emerald gradient
+   741→- Logo renders in natural colors beside business info (flex layout)
+   742→- Proforma print now uses professional hotel-style invoice format
+   743→- Multi-page printing supported with proper page-break rules
+   744→- Footer and receipt title text updated
+   745→
+   746→---
+   747→Task ID: Fix history print customer info
+   748→Agent: Sub-agent
+   749→Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+   750→
+   751→Problem:
+   752→- History invoice prints (printCheckoutFolioBill, printCheckoutInvoice) built a `fakeDetail` from frozen CheckoutRecord data (co.customerName, co.customerMobile, etc.). If customer updated their name/phone/GST/address after checkout, the reprinted invoice still showed OLD data.
+   753→- `buildUnifiedHeader` in print.ts was missing `settings.logo` fallback for logo resolution.
+   754→
+   755→Changes Made:
+   756→
+   757→1. **customer-folio-dialogs.tsx** (lines 242-268):
+   758→   - `printCheckoutFolioBill`: Replaced `fakeDetail` (built from frozen co.customerName/co.customerMobile/co.customerEmail/co.customerAddress/co.customerType with empty gstNumber/panNumber/companyName) with `printDetail = { ...detail, totalVisits: co.visitNumber || detail.totalVisits }`. Added `!detail` guard.
+   759→   - `printCheckoutInvoice`: Same replacement. Also fixed page title from "Final Checkout Invoice" to "Tax Invoice" for consistency.
+   760→   - Result: Printed history invoices now use CURRENT customer data (name, phone, email, address, GST, PAN, company, customer type) while still using checkout record's visitNumber for visit count.
+   761→
+   762→2. **customer-folio-print.ts** (line 285):
+   763→   - `buildUnifiedHeader`: Changed `settings.shopLogo || ''` to `settings.shopLogo || settings.logo || ''` to match the fallback logic in `buildHotelStyleInvoice`. Ensures logo displays in old-style unified header even if stored under `settings.logo` key.
+   764→
+   765→Files Modified:
+   766→- src/components/sections/customer-folio/customer-folio-dialogs.tsx
+   767→- src/components/sections/customer-folio/customer-folio-print.ts
+   768→
+   769→---
+   770→Task ID: Point 9
+   771→Agent: Sub-agent
+   772→Date: $(date -Iseconds)
+   773→Description: Add checkout date filter to the Customer Folio Profile Grid page
+   774→
+   775→Changes Made:
+   776→- **`src/components/sections/customer-folio/customer-folio-profile-grid.tsx`**:
+   777→  - Imported `Calendar` icon from `lucide-react`
+   778→  - Added `onCheckoutDateChange?: (date: string) => void` to `ProfileGridProps` interface
+   779→  - Added `checkoutDate` state initialized to today's date (YYYY-MM-DD format)
+   780→  - Added `displayedCustomers` useMemo that filters customers by `updatedAt` date prefix when filter is 'Checkout'
+   781→  - Added date input UI (with Calendar icon) visible only when filter tab is 'Checkout'
+   782→  - Checkout tab badge count now shows `displayedCustomers.length` instead of full `customers.length`
+   783→  - Grid rendering and empty state use `displayedCustomers` instead of `customers`
+   784→  - Stats bar (Total, Active, Due, Outstanding) continues to use original `customers` array
+   785→- **`src/components/sections/customer-folio-section.tsx`**:
+   786→  - Passed `onCheckoutDateChange={() => {}}` to `CustomerFolioProfileGrid` (no-op for future extensibility)
+   787→
+   788→Files Modified:
+   789→- src/components/sections/customer-folio/customer-folio-profile-grid.tsx
+   790→- src/components/sections/customer-folio-section.tsx
+   791→---
+   792→Task ID: 1-3
+   793→Agent: main
+   794→Task: Phases 1-3 - Invoice permanence, print overhaul, date filter, transfers, rename
+   795→
+   796→Work Log:
+   797→- Modified checkout route to accept pre-generated invoiceNumber from request body
+   798→- Modified transfer description to show Customer Profile ID instead of Folio Number
+   799→- Renamed FINAL CHECKOUT INVOICE → Tax Invoice across all files
+   800→- Overhauled invoice CSS: white header, flex layout, logo visible, no invert filter
+   801→- Fixed proforma print to use hotel-style invoice template
+   802→- Added multi-page A4 support with page-break CSS
+   803→- Fixed history prints to use current customer data (not frozen snapshot)
+   804→- Added checkout date filter to profile grid (defaults to today)
+   805→- Reports already had proper ₹ symbol filtering via MONETARY_PATTERNS
+   806→
+   807→Stage Summary:
+   808→- 10 requirements addressed across 8 files
+   809→- Invoice numbers are now permanent across checkout
+   810→- All prints use professional white-header design
+   811→- Checkout page has date filter
+   812→- Transfer shows Customer Profile ID
+   813→

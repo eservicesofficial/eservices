@@ -1,0 +1,445 @@
+     1→   401→   401→   401→  // Fetch business settings for PDF header
+     2→   402→   402→   402→  useEffect(() => {
+     3→   403→   403→   403→    if (settingsFetched.current) return
+     4→   404→   404→   404→    settingsFetched.current = true
+     5→   405→   405→   405→    fetch('/api/settings', { headers: hdrRef.current })
+     6→   406→   406→   406→      .then(r => r.ok ? r.json() : {})
+     7→   407→   407→   407→      .then(s => setSettings(s))
+     8→   408→   408→   408→      .catch(() => {})
+     9→   409→   409→   409→  }, [hdrRef])
+    10→   410→   410→   410→
+    11→   411→   411→   411→  const columns = useMemo(() => REPORT_COLUMNS[reportType], [reportType])
+    12→   412→   412→   412→  const selectedOption = useMemo(() => REPORT_OPTIONS.find(o => o.value === reportType)!, [reportType])
+    13→   413→   413→   413→
+    14→   414→   414→   414→  // Generate report
+    15→   415→   415→   415→  const generateReport = useCallback(async () => {
+    16→   416→   416→   416→    if (!canAccess) {
+    17→   417→   417→   417→      notify({ type: 'error', title: 'Access Denied', message: 'You do not have permission to view reports' })
+    18→   418→   418→   418→      return
+    19→   419→   419→   419→    }
+    20→   420→   420→   420→
+    21→   421→   421→   421→    setLoading(true)
+    22→   422→   422→   422→    setError(null)
+    23→   423→   423→   423→    setReportData(null)
+    24→   424→   424→   424→
+    25→   425→   425→   425→    try {
+    26→   426→   426→   426→      const params = new URLSearchParams({ type: reportType })
+    27→   427→   427→   427→      if (fromDate) params.set('from', fromDate)
+    28→   428→   428→   428→      if (toDate) params.set('to', toDate)
+    29→   429→   429→   429→
+    30→   430→   430→   430→      const res = await fetch(`/api/folio/reports?${params}`, { headers: hdrRef.current })
+    31→   431→   431→   431→      if (!res.ok) {
+    32→   432→   432→   432→        const errData = await res.json().catch(() => ({}))
+    33→   433→   433→   433→        throw new Error(errData.error || `Request failed (${res.status})`)
+    34→   434→   434→   434→      }
+    35→   435→   435→   435→
+    36→   436→   436→   436→      const data = await res.json()
+    37→   437→   437→   437→      setReportData(data)
+    38→   438→   438→   438→
+    39→   439→   439→   439→      if (!data.data || data.data.length === 0) {
+    40→   440→   440→   440→        notify({ type: 'info', title: 'No Data', message: 'No records found for the selected criteria' })
+    41→   441→   441→   441→      }
+    42→   442→   442→   442→    } catch (err: any) {
+    43→   443→   443→   443→      const msg = err.message || 'Failed to generate report'
+    44→   444→   444→   444→      setError(msg)
+    45→   445→   445→   445→      notify({ type: 'error', title: 'Report Error', message: msg })
+    46→   446→   446→   446→    } finally {
+    47→   447→   447→   447→      setLoading(false)
+    48→   448→   448→   448→    }
+    49→   449→   449→   449→  }, [reportType, fromDate, toDate, canAccess, hdrRef])
+    50→   450→   450→   450→
+    51→   451→   451→   451→  // Download CSV (enhanced with proper column headers)
+    52→   452→   452→   452→  const handleDownloadCSV = useCallback(() => {
+    53→   453→   453→   453→    if (!reportData?.data?.length) {
+    54→   454→   454→   454→      notify({ type: 'warning', title: 'No Data', message: 'Generate a report first' })
+    55→   455→   455→   455→      return
+    56→   456→   456→   456→    }
+    57→   457→   457→   457→    const dateStr = new Date().toISOString().split('T')[0]
+    58→   458→   458→   458→    downloadCSV(reportData.data, columns, `${reportType}-report-${dateStr}`)
+    59→   459→   459→   459→    notify({ type: 'success', title: 'Downloaded', message: 'Excel (CSV) file downloaded successfully' })
+    60→   460→   460→   460→  }, [reportData, columns, reportType])
+    61→   461→   461→   461→
+    62→   462→   462→   462→  // Download PDF (opens in new window for printing)
+    63→   463→   463→   463→  const handleDownloadPDF = useCallback(() => {
+    64→   464→   464→   464→    if (!reportData?.data?.length) {
+    65→   465→   465→   465→      notify({ type: 'warning', title: 'No Data', message: 'Generate a report first' })
+    66→   466→   466→   466→      return
+    67→   467→   467→   467→    }
+    68→   468→   468→   468→    const html = buildReportPdfHtml(
+    69→   469→   469→   469→      selectedOption.label,
+    70→   470→   470→   470→      reportType,
+    71→   471→   471→   471→      fromDate,
+    72→   472→   472→   472→      toDate,
+    73→   473→   473→   473→      reportData.summary || {},
+    74→   474→   474→   474→      reportData.data,
+    75→   475→   475→   475→      columns,
+    76→   476→   476→   476→      settings,
+    77→   477→   477→   477→    )
+    78→   478→   478→   478→
+    79→   479→   479→   479→    const w = window.open('', '_blank')
+    80→   480→   480→   480→    if (!w) {
+    81→   481→   481→   481→      notify({ type: 'error', title: 'Error', message: 'Please allow popups to print' })
+    82→   482→   482→   482→      return
+    83→   483→   483→   483→    }
+    84→   484→   484→   484→
+    85→   485→   485→   485→    w.document.write(html)
+    86→   486→   486→   486→    w.document.close()
+    87→   487→   487→   487→    // Short delay to ensure the document is rendered before printing
+    88→   488→   488→   488→    setTimeout(() => w.print(), 300)
+    89→   489→   489→   489→  }, [reportData, reportType, selectedOption, fromDate, toDate, columns, settings])
+    90→   490→   490→   490→
+    91→   491→   491→   491→  // Print (same as PDF — opens print dialog)
+    92→   492→   492→   492→  const handlePrint = handleDownloadPDF
+    93→   493→   493→   493→
+    94→   494→   494→   494→  // Summary cards config per report type
+    95→   495→   495→   495→  const summaryCards = useMemo(() => {
+    96→   496→   496→   496→    if (!reportData?.summary) return []
+    97→   497→   497→   497→    const s = reportData.summary
+    98→   498→   498→   498→    switch (reportType) {
+    99→   499→   499→   499→      case 'summary':
+   100→   500→   500→   500→        return [
+   101→   501→   501→   501→          { label: 'Total Customers', value: s.totalCustomers ?? 0, icon: Users, color: 'bg-slate-50 border-slate-200 dark:bg-slate-900/50 dark:border-slate-700' },
+   102→   502→   502→   502→          { label: 'Total Balance', value: fmtINR(s.totalBalance ?? 0), icon: IndianRupee, color: 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800' },
+   103→   503→   503→   503→          { label: 'Outstanding', value: fmtINR(s.totalOutstanding ?? 0), icon: CreditCard, color: 'bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-800' },
+   104→   504→   504→   504→          { label: 'With Dues', value: s.outstandingCount ?? 0, icon: AlertCircle, color: 'bg-amber-50 border-amber-200 dark:bg-amber-900/30 dark:border-amber-800' },
+   105→   505→   505→   505→          { label: 'Active', value: s.activeCount ?? 0, icon: BarChart3, color: 'bg-green-50 border-green-200 dark:bg-green-900/30 dark:border-green-800' },
+   106→   506→   506→   506→          { label: 'Settled', value: s.settledCount ?? 0, icon: HandCoins, color: 'bg-teal-50 border-teal-200 dark:bg-teal-900/30 dark:border-teal-800' },
+   107→   507→   507→   507→        ]
+   108→   508→   508→   508→      case 'outstanding':
+   109→   509→   509→   509→        return [
+   110→   510→   510→   510→          { label: 'Customers with Due', value: s.totalCustomersWithDue ?? 0, icon: Users, color: 'bg-slate-50 border-slate-200 dark:bg-slate-900/50 dark:border-slate-700' },
+   111→   511→   511→   511→          { label: 'Total Outstanding', value: fmtINR(s.totalOutstanding ?? 0), icon: IndianRupee, color: 'bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-800' },
+   112→   512→   512→   512→          { label: 'Avg Outstanding', value: fmtINR(s.avgOutstanding ?? 0), icon: BarChart3, color: 'bg-amber-50 border-amber-200 dark:bg-amber-900/30 dark:border-amber-800' },
+   113→   513→   513→   513→          { label: 'High Risk', value: s.highRiskCount ?? 0, icon: AlertCircle, color: 'bg-orange-50 border-orange-200 dark:bg-orange-900/30 dark:border-orange-800' },
+   114→   514→   514→   514→        ]
+   115→   515→   515→   515→      case 'payments':
+   116→   516→   516→   516→        return [
+   117→   517→   517→   517→          { label: 'Total Payments', value: fmtINR(s.totalPayments ?? 0), icon: CreditCard, color: 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800' },
+   118→   518→   518→   518→          { label: 'Payment Count', value: s.paymentCount ?? 0, icon: Receipt, color: 'bg-slate-50 border-slate-200 dark:bg-slate-900/50 dark:border-slate-700' },
+   119→   519→   519→   519→          { label: 'Avg Payment', value: fmtINR(s.avgPayment ?? 0), icon: BarChart3, color: 'bg-sky-50 border-sky-200 dark:bg-sky-900/30 dark:border-sky-800' },
+   120→   520→   520→   520→          ...Object.entries(s.modeBreakdown || {}).slice(0, 3).map(([mode, amt]) => ({
+   121→   521→   521→   521→            label: mode, value: fmtINR(amt as number), icon: CreditCard,
+   122→   522→   522→   522→            color: 'bg-violet-50 border-violet-200 dark:bg-violet-900/30 dark:border-violet-800',
+   123→   523→   523→   523→          })),
+   124→   524→   524→   524→        ]
+   125→   525→   525→   525→      case 'transactions':
+   126→   526→   526→   526→        return [
+   127→   527→   527→   527→          { label: 'Total Entries', value: s.totalEntries ?? 0, icon: Receipt, color: 'bg-slate-50 border-slate-200 dark:bg-slate-900/50 dark:border-slate-700' },
+   128→   528→   528→   528→          { label: 'Total Debits', value: fmtINR(s.totalDebits ?? 0), icon: IndianRupee, color: 'bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-800' },
+   129→   529→   529→   529→          { label: 'Total Credits', value: fmtINR(s.totalCredits ?? 0), icon: CreditCard, color: 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800' },
+   130→   530→   530→   530→          { label: 'Total Tax', value: fmtINR(s.totalTax ?? 0), icon: Calculator, color: 'bg-amber-50 border-amber-200 dark:bg-amber-900/30 dark:border-amber-800' },
+   131→   531→   531→   531→          { label: 'Discounts', value: fmtINR(s.totalDiscount ?? 0), icon: RotateCcw, color: 'bg-teal-50 border-teal-200 dark:bg-teal-900/30 dark:border-teal-800' },
+   132→   532→   532→   532→          { label: 'Net Flow', value: fmtINR(s.netFlow ?? 0), icon: BarChart3, color: s.netFlow >= 0 ? 'bg-green-50 border-green-200 dark:bg-green-900/30 dark:border-green-800' : 'bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-800' },
+   133→   533→   533→   533→        ]
+   134→   534→   534→   534→      case 'vip':
+   135→   535→   535→   535→        return [
+   136→   536→   536→   536→          { label: 'VIP Customers', value: s.totalVipCustomers ?? 0, icon: Crown, color: 'bg-yellow-50 border-yellow-200 dark:bg-yellow-900/30 dark:border-yellow-800' },
+   137→   537→   537→   537→          { label: 'Lifetime Spend', value: fmtINR(s.totalLifetimeSpend ?? 0), icon: IndianRupee, color: 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800' },
+   138→   538→   538→   538→          { label: 'Outstanding', value: fmtINR(s.totalOutstanding ?? 0), icon: CreditCard, color: 'bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-800' },
+   139→   539→   539→   539→          { label: 'Avg Lifetime', value: fmtINR(s.avgLifetimeSpend ?? 0), icon: BarChart3, color: 'bg-sky-50 border-sky-200 dark:bg-sky-900/30 dark:border-sky-800' },
+   140→   540→   540→   540→          { label: 'Active VIP', value: s.activeVipCount ?? 0, icon: Users, color: 'bg-green-50 border-green-200 dark:bg-green-900/30 dark:border-green-800' },
+   141→   541→   541→   541→        ]
+   142→   542→   542→   542→      case 'settlements':
+   143→   543→   543→   543→        return [
+   144→   544→   544→   544→          { label: 'Total Settlements', value: s.totalSettlements ?? 0, icon: HandCoins, color: 'bg-slate-50 border-slate-200 dark:bg-slate-900/50 dark:border-slate-700' },
+   145→   545→   545→   545→          { label: 'Total Settled', value: fmtINR(s.totalSettled ?? 0), icon: IndianRupee, color: 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800' },
+   146→   546→   546→   546→          { label: 'Avg Settlement', value: fmtINR(s.avgSettlement ?? 0), icon: BarChart3, color: 'bg-sky-50 border-sky-200 dark:bg-sky-900/30 dark:border-sky-800' },
+   147→   547→   547→   547→          ...Object.entries(s.modeBreakdown || {}).slice(0, 3).map(([mode, amt]) => ({
+   148→   548→   548→   548→            label: mode, value: fmtINR(amt as number), icon: CreditCard,
+   149→   549→   549→   549→            color: 'bg-violet-50 border-violet-200 dark:bg-violet-900/30 dark:border-violet-800',
+   150→   550→   550→   550→          })),
+   151→   551→   551→   551→        ]
+   152→   552→   552→   552→      case 'refunds':
+   153→   553→   553→   553→        return [
+   154→   554→   554→   554→          { label: 'Total Refunds', value: s.totalRefunds ?? 0, icon: RotateCcw, color: 'bg-orange-50 border-orange-200 dark:bg-orange-900/30 dark:border-orange-800' },
+   155→   555→   555→   555→          { label: 'Refund Amount', value: fmtINR(s.totalRefundAmount ?? 0), icon: IndianRupee, color: 'bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-800' },
+   156→   556→   556→   556→          { label: 'Avg Refund', value: fmtINR(s.avgRefund ?? 0), icon: BarChart3, color: 'bg-amber-50 border-amber-200 dark:bg-amber-900/30 dark:border-amber-800' },
+   157→   557→   557→   557→        ]
+   158→   558→   558→   558→      case 'gst':
+   159→   559→   559→   559→        return [
+   160→   560→   560→   560→          { label: 'Taxable Entries', value: s.totalTaxableEntries ?? 0, icon: Receipt, color: 'bg-slate-50 border-slate-200 dark:bg-slate-900/50 dark:border-slate-700' },
+   161→   561→   561→   561→          { label: 'Base Amount', value: fmtINR(s.totalBaseAmount ?? 0), icon: IndianRupee, color: 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800' },
+   162→   562→   562→   562→          { label: 'Total Tax/GST', value: fmtINR(s.totalTax ?? 0), icon: Calculator, color: 'bg-amber-50 border-amber-200 dark:bg-amber-900/30 dark:border-amber-800' },
+   163→   563→   563→   563→          { label: 'Total Discounts', value: fmtINR(s.totalDiscount ?? 0), icon: RotateCcw, color: 'bg-teal-50 border-teal-200 dark:bg-teal-900/30 dark:border-teal-800' },
+   164→   564→   564→   564→          { label: 'Grand Total', value: fmtINR(s.totalGstAmount ?? 0), icon: BarChart3, color: 'bg-green-50 border-green-200 dark:bg-green-900/30 dark:border-green-800' },
+   165→   565→   565→   565→          { label: 'Avg Tax/Entry', value: fmtINR(s.avgTaxPerEntry ?? 0), icon: FileBarChart, color: 'bg-sky-50 border-sky-200 dark:bg-sky-900/30 dark:border-sky-800' },
+   166→   566→   566→   566→        ]
+   167→   567→   567→   567→      default:
+   168→   568→   568→   568→        return []
+   169→   569→   569→   569→    }
+   170→   570→   570→   570→  }, [reportData, reportType])
+   171→   571→   571→   571→
+   172→   572→   572→   572→  const hasData = reportData?.data?.length > 0
+   173→   573→   573→   573→
+   174→   574→   574→   574→  return (
+   175→   575→   575→   575→    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+   176→   576→   576→   576→      <DialogContent className="w-[100vw] max-w-[100vw] h-[100vh] max-h-[100vh] p-0 overflow-hidden flex flex-col gap-0 sm:rounded-none">
+   177→   577→   577→   577→        <DialogHeader className="px-6 pt-5 pb-0 shrink-0">
+   178→   578→   578→   578→          <div className="flex items-center justify-between">
+   179→   579→   579→   579→            <div className="flex items-center gap-3">
+   180→   580→   580→   580→              <div className="flex items-center justify-center size-9 rounded-lg bg-emerald-100 dark:bg-emerald-900/40">
+   181→   581→   581→   581→                <FileBarChart className="size-4.5 text-emerald-700 dark:text-emerald-400" />
+   182→   582→   582→   582→              </div>
+   183→   583→   583→   583→              <div>
+   184→   584→   584→   584→                <DialogTitle className="text-base">Folio Reports</DialogTitle>
+   185→   585→   585→   585→                <DialogDescription className="text-[11px]">Generate and export customer folio reports</DialogDescription>
+   186→   586→   586→   586→              </div>
+   187→   587→   587→   587→            </div>
+   188→   588→   588→   588→            {/* Close button */}
+   189→   589→   589→   589→            <Button variant="ghost" size="icon" className="size-8 rounded-lg" onClick={onClose}>
+   190→   590→   590→   590→              <X className="size-4" />
+   191→   591→   591→   591→            </Button>
+   192→   592→   592→   592→          </div>
+   193→   593→   593→   593→        </DialogHeader>
+   194→   594→   594→   594→
+   195→   595→   595→   595→        <div className="flex flex-col flex-1 min-h-0">
+   196→   596→   596→   596→          {/* ─── Controls ─── */}
+   197→   597→   597→   597→          <div className="px-6 pt-4 pb-3 shrink-0 border-b border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/30">
+   198→   598→   598→   598→            <div className="flex flex-col lg:flex-row gap-3 items-start lg:items-end">
+   199→   599→   599→   599→              {/* Report Type Selector */}
+   200→   600→   600→   600→              <div className="flex-1 w-full lg:w-auto min-w-0">
+   201→   601→   601→   601→                <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Report Type</label>
+   202→   602→   602→   602→                <Select value={reportType} onValueChange={(v) => setReportType(v as ReportType)}>
+   203→   603→   603→   603→                  <SelectTrigger className="w-full">
+   204→   604→   604→   604→                    <SelectValue />
+   205→   605→   605→   605→                  </SelectTrigger>
+   206→   606→   606→   606→                  <SelectContent>
+   207→   607→   607→   607→                    {REPORT_OPTIONS.map(opt => (
+   208→   608→   608→   608→                      <SelectItem key={opt.value} value={opt.value}>
+   209→   609→   609→   609→                        <div className="flex items-center gap-2">
+   210→   610→   610→   610→                          <opt.icon className="size-3.5 text-muted-foreground" />
+   211→   611→   611→   611→                          <div>
+   212→   612→   612→   612→                            <div className="text-xs font-medium">{opt.label}</div>
+   213→   613→   613→   613→                            <div className="text-[10px] text-muted-foreground hidden sm:block">{opt.description}</div>
+   214→   614→   614→   614→                          </div>
+   215→   615→   615→   615→                        </div>
+   216→   616→   616→   616→                      </SelectItem>
+   217→   617→   617→   617→                    ))}
+   218→   618→   618→   618→                  </SelectContent>
+   219→   619→   619→   619→                </Select>
+   220→   620→   620→   620→              </div>
+   221→   621→   621→   621→
+   222→   622→   622→   622→              {/* Date Range */}
+   223→   623→   623→   623→              <div className="flex items-end gap-2">
+   224→   624→   624→   624→                <div>
+   225→   625→   625→   625→                  <label className="text-[11px] font-medium text-muted-foreground mb-1 block">From</label>
+   226→   626→   626→   626→                  <div className="relative">
+   227→   627→   627→   627→                    <CalendarDays className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
+   228→   628→   628→   628→                    <Input
+   229→   629→   629→   629→                      type="date"
+   230→   630→   630→   630→                      value={fromDate}
+   231→   631→   631→   631→                      onChange={(e) => setFromDate(e.target.value)}
+   232→   632→   632→   632→                      className="h-9 w-[150px] text-xs pl-8"
+   233→   633→   633→   633→                    />
+   234→   634→   634→   634→                  </div>
+   235→   635→   635→   635→                </div>
+   236→   636→   636→   636→                <div>
+   237→   637→   637→   637→                  <label className="text-[11px] font-medium text-muted-foreground mb-1 block">To</label>
+   238→   638→   638→   638→                  <div className="relative">
+   239→   639→   639→   639→                    <CalendarDays className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
+   240→   640→   640→   640→                    <Input
+   241→   641→   641→   641→                      type="date"
+   242→   642→   642→   642→                      value={toDate}
+   243→   643→   643→   643→                      onChange={(e) => setToDate(e.target.value)}
+   244→   644→   644→   644→                      className="h-9 w-[150px] text-xs pl-8"
+   245→   645→   645→   645→                    />
+   246→   646→   646→   646→                  </div>
+   247→   647→   647→   647→                </div>
+   248→   648→   648→   648→              </div>
+   249→   649→   649→   649→
+   250→   650→   650→   650→              {/* Generate Button */}
+   251→   651→   651→   651→              <Button
+   252→   652→   652→   652→                size="sm"
+   253→   653→   653→   653→                onClick={generateReport}
+   254→   654→   654→   654→                disabled={loading}
+   255→   655→   655→   655→                className="h-9 px-5 gap-2 shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white"
+   256→   656→   656→   656→              >
+   257→   657→   657→   657→                {loading ? <Loader2 className="size-3.5 animate-spin" /> : <Filter className="size-3.5" />}
+   258→   658→   658→   658→                <span className="text-xs font-medium">Generate</span>
+   259→   659→   659→   659→              </Button>
+   260→   660→   660→   660→
+   261→   661→   661→   661→              {/* Download / Print buttons - visible after report is generated */}
+   262→   662→   662→   662→              {hasData && (
+   263→   663→   663→   663→                <div className="flex gap-2 shrink-0">
+   264→   664→   664→   664→                  <Button
+   265→   665→   665→   665→                    variant="outline"
+   266→   666→   666→   666→                    size="sm"
+   267→   667→   667→   667→                    onClick={handleDownloadPDF}
+   268→   668→   668→   668→                    className="h-9 px-4 gap-2 border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30"
+   269→   669→   669→   669→                  >
+   270→   670→   670→   670→                    <Printer className="size-3.5" />
+   271→   671→   671→   671→                    <span className="text-xs font-medium">Download PDF</span>
+   272→   672→   672→   672→                  </Button>
+   273→   673→   673→   673→                  <Button
+   274→   674→   674→   674→                    variant="outline"
+   275→   675→   675→   675→                    size="sm"
+   276→   676→   676→   676→                    onClick={handleDownloadCSV}
+   277→   677→   677→   677→                    className="h-9 px-4 gap-2 border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
+   278→   678→   678→   678→                  >
+   279→   679→   679→   679→                    <FileSpreadsheet className="size-3.5" />
+   280→   680→   680→   680→                    <span className="text-xs font-medium">Download Excel</span>
+   281→   681→   681→   681→                  </Button>
+   282→   682→   682→   682→                </div>
+   283→   683→   683→   683→              )}
+   284→   684→   684→   684→            </div>
+   285→   685→   685→   685→          </div>
+   286→   686→   686→   686→
+   287→   687→   687→   687→          {/* ─── Content Area ─── */}
+   288→   688→   688→   688→          <div className="flex-1 overflow-hidden">
+   289→   689→   689→   689→            {loading ? (
+   290→   690→   690→   690→              <div className="p-6 space-y-4">
+   291→   691→   691→   691→                {/* Summary skeleton */}
+   292→   692→   692→   692→                <div className="flex gap-3 overflow-x-auto pb-2">
+   293→   693→   693→   693→                  {Array.from({ length: 4 }).map((_, i) => (
+   294→   694→   694→   694→                    <Skeleton key={i} className="h-20 w-44 shrink-0 rounded-lg" />
+   295→   695→   695→   695→                  ))}
+   296→   696→   696→   696→                </div>
+   297→   697→   697→   697→                <TableSkeleton cols={columns.length} />
+   298→   698→   698→   698→              </div>
+   299→   699→   699→   699→            ) : error ? (
+   300→   700→   700→   700→              <div className="flex flex-col items-center justify-center py-16 px-6">
+   301→   701→   701→   701→                <div className="flex size-12 items-center justify-center rounded-xl bg-red-100 dark:bg-red-900/30 mb-3">
+   302→   702→   702→   702→                  <AlertCircle className="size-6 text-red-500" />
+   303→   703→   703→   703→                </div>
+   304→   704→   704→   704→                <h3 className="text-sm font-semibold text-foreground mb-1">Failed to Generate Report</h3>
+   305→   705→   705→   705→                <p className="text-xs text-muted-foreground text-center max-w-sm">{error}</p>
+   306→   706→   706→   706→                <Button variant="outline" size="sm" onClick={generateReport} className="mt-4 gap-1.5">
+   307→   707→   707→   707→                  <Filter className="size-3" /> Retry
+   308→   708→   708→   708→                </Button>
+   309→   709→   709→   709→              </div>
+   310→   710→   710→   710→            ) : hasData ? (
+   311→   711→   711→   711→              <ScrollArea className="h-full">
+   312→   712→   712→   712→                <div className="p-6 space-y-4">
+   313→   713→   713→   713→                  {/* Summary Cards */}
+   314→   714→   714→   714→                  {summaryCards.length > 0 && (
+   315→   715→   715→   715→                    <div className="flex gap-3 overflow-x-auto pb-2">
+   316→   716→   716→   716→                      {summaryCards.map((card, i) => (
+   317→   717→   717→   717→                        <SummaryCard key={i} {...card} />
+   318→   718→   718→   718→                      ))}
+   319→   719→   719→   719→                    </div>
+   320→   720→   720→   720→                  )}
+   321→   721→   721→   721→
+   322→   722→   722→   722→                  <Separator />
+   323→   723→   723→   723→
+   324→   724→   724→   724→                  {/* Report header with inline download buttons */}
+   325→   725→   725→   725→                  <div className="flex items-center justify-between flex-wrap gap-2">
+   326→   726→   726→   726→                    <div className="flex items-center gap-2">
+   327→   727→   727→   727→                      <selectedOption.icon className="size-4 text-muted-foreground" />
+   328→   728→   728→   728→                      <h3 className="text-sm font-semibold">{selectedOption.label}</h3>
+   329→   729→   729→   729→                      <Badge variant="secondary" className="text-[10px]">
+   330→   730→   730→   730→                        {reportData.data.length} records
+   331→   731→   731→   731→                      </Badge>
+   332→   732→   732→   732→                      {(fromDate || toDate) && (
+   333→   733→   733→   733→                        <span className="text-[10px] text-muted-foreground ml-1">
+   334→   734→   734→   734→                          {fromDate || 'All time'} → {toDate || 'Today'}
+   335→   735→   735→   735→                        </span>
+   336→   736→   736→   736→                      )}
+   337→   737→   737→   737→                    </div>
+   338→   738→   738→   738→                    {/* Inline download buttons next to report title */}
+   339→   739→   739→   739→                    <div className="flex gap-1.5">
+   340→   740→   740→   740→                      <Button
+   341→   741→   741→   741→                        variant="ghost"
+   342→   742→   742→   742→                        size="sm"
+   343→   743→   743→   743→                        onClick={handleDownloadPDF}
+   344→   744→   744→   744→                        className="h-7 px-2.5 gap-1.5 text-muted-foreground hover:text-red-600 dark:hover:text-red-400"
+   345→   745→   745→   745→                      >
+   346→   746→   746→   746→                        <Printer className="size-3" />
+   347→   747→   747→   747→                        <span className="text-[10px] font-medium">PDF</span>
+   348→   748→   748→   748→                      </Button>
+   349→   749→   749→   749→                      <Button
+   350→   750→   750→   750→                        variant="ghost"
+   351→   751→   751→   751→                        size="sm"
+   352→   752→   752→   752→                        onClick={handleDownloadCSV}
+   353→   753→   753→   753→                        className="h-7 px-2.5 gap-1.5 text-muted-foreground hover:text-emerald-600 dark:hover:text-emerald-400"
+   354→   754→   754→   754→                      >
+   355→   755→   755→   755→                        <Download className="size-3" />
+   356→   756→   756→   756→                        <span className="text-[10px] font-medium">Excel</span>
+   357→   757→   757→   757→                      </Button>
+   358→   758→   758→   758→                    </div>
+   359→   759→   759→   759→                  </div>
+   360→   760→   760→   760→
+   361→   761→   761→   761→                  {/* Data Table */}
+   362→   762→   762→   762→                  <div className="border rounded-lg overflow-hidden">
+   363→   763→   763→   763→                    <Table>
+   364→   764→   764→   764→                      <TableHeader>
+   365→   765→   765→   765→                        <TableRow className="bg-muted/50 hover:bg-muted/50">
+   366→   766→   766→   766→                          {columns.map((col) => (
+   367→   767→   767→   767→                            <TableHead
+   368→   768→   768→   768→                              key={col.key}
+   369→   769→   769→   769→                              className={`text-[10px] font-semibold uppercase tracking-wide h-9 px-3 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}
+   370→   770→   770→   770→                              style={col.width ? { width: col.width, minWidth: col.width } : undefined}
+   371→   771→   771→   771→                            >
+   372→   772→   772→   772→                              {col.label}
+   373→   773→   773→   773→                            </TableHead>
+   374→   774→   774→   774→                          ))}
+   375→   775→   775→   775→                        </TableRow>
+   376→   776→   776→   776→                      </TableHeader>
+   377→   777→   777→   777→                      <TableBody>
+   378→   778→   778→   778→                        {reportData.data.map((row: any, idx: number) => (
+   379→   779→   779→   779→                          <TableRow key={idx} className="text-xs">
+   380→   780→   780→   780→                            {columns.map((col) => (
+   381→   781→   781→   781→                              <TableCell
+   382→   782→   782→   782→                                key={col.key}
+   383→   783→   783→   783→                                className={`py-2 px-3 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}
+   384→   784→   784→   784→                                style={col.width ? { width: col.width, minWidth: col.width } : undefined}
+   385→   785→   785→   785→                              >
+   386→   786→   786→   786→                                {formatCellValue(row[col.key], col)}
+   387→   787→   787→   787→                              </TableCell>
+   388→   788→   788→   788→                            ))}
+   389→   789→   789→   789→                          </TableRow>
+   390→   790→   790→   790→                        ))}
+   391→   791→   791→   791→                      </TableBody>
+   392→   792→   792→   792→                    </Table>
+   393→   793→   793→   793→                  </div>
+   394→   794→   794→   794→
+   395→   795→   795→   795→                  {/* Footer info */}
+   396→   796→   796→   796→                  <div className="text-center text-[10px] text-muted-foreground pb-4">
+   397→   797→   797→   797→                    Report generated at {new Date().toLocaleString('en-IN')} &middot; {reportData.data.length} records
+   398→   798→   798→   798→                  </div>
+   399→   799→   799→   799→                </div>
+   400→   800→   800→   800→              </ScrollArea>
+   401→   801→   801→   801→            ) : reportData ? (
+   402→   802→   802→   802→              /* Empty state */
+   403→   803→   803→   803→              <div className="flex flex-col items-center justify-center py-16 px-6">
+   404→   804→   804→   804→                <div className="flex size-12 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 mb-3">
+   405→   805→   805→   805→                  <FileBarChart className="size-6 text-slate-400 dark:text-slate-500" />
+   406→   806→   806→   806→                </div>
+   407→   807→   807→   807→                <h3 className="text-sm font-semibold text-foreground mb-1">No Records Found</h3>
+   408→   808→   808→   808→                <p className="text-xs text-muted-foreground text-center max-w-sm">
+   409→   809→   809→   809→                  No data found for {selectedOption.label}. Try adjusting the date range or filters.
+   410→   810→   810→   810→                </p>
+   411→   811→   811→   811→              </div>
+   412→   812→   812→   812→            ) : (
+   413→   813→   813→   813→              /* Initial state */
+   414→   814→   814→   814→              <div className="flex flex-col items-center justify-center py-16 px-6">
+   415→   815→   815→   815→                <div className="flex size-14 items-center justify-center rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 mb-4">
+   416→   816→   816→   816→                  <BarChart3 className="size-7 text-emerald-500" />
+   417→   817→   817→   817→                </div>
+   418→   818→   818→   818→                <h3 className="text-sm font-bold text-foreground mb-1">Select a Report</h3>
+   419→   819→   819→   819→                <p className="text-xs text-muted-foreground text-center max-w-sm mb-6">
+   420→   820→   820→   820→                  Choose a report type, optionally set a date range, and click Generate to view the results. Download as PDF or Excel (CSV).
+   421→   821→   821→   821→                </p>
+   422→   822→   822→   822→                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-lg w-full">
+   423→   823→   823→   823→                  {REPORT_OPTIONS.map(opt => (
+   424→   824→   824→   824→                    <button
+   425→   825→   825→   825→                      key={opt.value}
+   426→   826→   826→   826→                      onClick={() => setReportType(opt.value)}
+   427→   827→   827→   827→                      className={`flex flex-col items-center gap-2 p-4 rounded-xl border text-center transition-all cursor-pointer
+   428→   828→   828→   828→                        ${reportType === opt.value
+   429→   829→   829→   829→                          ? 'border-emerald-400 bg-emerald-50 dark:border-emerald-600 dark:bg-emerald-900/30 shadow-sm shadow-emerald-600/10'
+   430→   830→   830→   830→                          : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800 hover:border-slate-300 dark:hover:border-slate-600'}`}
+   431→   831→   831→   831→                    >
+   432→   832→   832→   832→                      <opt.icon className={`size-5 ${reportType === opt.value ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`} />
+   433→   833→   833→   833→                      <span className="text-[11px] font-medium">{opt.label}</span>
+   434→   834→   834→   834→                      <span className="text-[9px] text-muted-foreground leading-tight">{opt.description}</span>
+   435→   835→   835→   835→                    </button>
+   436→   836→   836→   836→                  ))}
+   437→   837→   837→   837→                </div>
+   438→   838→   838→   838→              </div>
+   439→   839→   839→   839→            )}
+   440→   840→   840→   840→          </div>
+   441→   841→   841→   841→        </div>
+   442→   842→   842→   842→      </DialogContent>
+   443→   843→   843→   843→    </Dialog>
+   444→   844→   844→   844→  )
+   445→   845→   845→   845→}

@@ -1,0 +1,1078 @@
+     1→'use client'
+     2→
+     3→import React, { useState, useEffect, useCallback, useRef } from 'react'
+     4→import {
+     5→  BookOpen, Plus, Search, ArrowLeft, Trash2, Phone, UserCircle, TrendingUp,
+     6→  TrendingDown, Scale, Loader2, Wallet, FileText, CalendarDays, Clock,
+     7→  ArrowDownLeft, ArrowUpRight, Users, Receipt, CreditCard, Tag, StickyNote,
+     8→  FileUp, Download, Printer, GitBranch, History, ChevronRight, AlertTriangle,
+     9→  CheckCircle, XCircle, ArrowRightLeft, Split, Percent, LogOut, Shield,
+    10→  Crown, Star, Eye, EyeOff, Copy, Filter, SortAsc, SortDesc, RefreshCw,
+    11→  MoreVertical, Edit3, Archive, Undo2, Lock, Unlock, IndianRupee,
+    12→  Briefcase, Building2, UserCheck, BadgeCheck, Activity, FileSearch,
+    13→  ChevronDown, Upload, Send, MessageSquare, AlertCircle, Info, Zap,
+    14→} from 'lucide-react'
+    15→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+    16→import { Button } from '@/components/ui/button'
+    17→import { Input } from '@/components/ui/input'
+    18→import { Badge } from '@/components/ui/badge'
+    19→import { Label } from '@/components/ui/label'
+    20→import { Separator } from '@/components/ui/separator'
+    21→import { Skeleton } from '@/components/ui/skeleton'
+    22→import { Progress } from '@/components/ui/progress'
+    23→import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+    24→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+    25→import {
+    26→  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+    27→} from '@/components/ui/dialog'
+    28→import {
+    29→  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+    30→  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+    31→} from '@/components/ui/alert-dialog'
+    32→import {
+    33→  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+    34→} from '@/components/ui/table'
+    35→import { ScrollArea } from '@/components/ui/scroll-area'
+    36→import { Textarea } from '@/components/ui/textarea'
+    37→import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+    38→import { notify } from '@/lib/notification-store'
+    39→import { useAuth } from '@/components/auth-provider'
+    40→import ReadOnlyBanner from '@/components/read-only-banner'
+    41→
+    42→// ─── Types ───
+    43→interface Customer {
+    44→  id: string; unitCode: string; customerId: string; primaryFolioId: string
+    45→  fullName: string; mobile: string; whatsapp: string; email: string
+    46→  customerType: string; creditLimit: number; internalNotes: string; status: string
+    47→  gstNumber: string; panNumber: string; aadhaarNumber: string; openingBalance: number
+    48→  balance: number; totalVisits: number; lastTxnDate: string; tags: CustomerTagAssignment[]
+    49→  createdAt: string; updatedAt: string
+    50→}
+    51→
+    52→interface Folio { id: string; folioId: string; customerId: string; visitNumber: number; status: string; lockedAt: string | null }
+    53→
+    54→interface LedgerEntry {
+    55→  id: string; folioId: string; customerId: string; date: string; docNo: string; invoiceNo: string
+    56→  type: string; description: string; debit: number; credit: number; tax: number
+    57→  discount: number; balance: number; userId: string; userName: string; status: string; createdAt: string
+    58→}
+    59→
+    60→interface CustomerDocument { id: string; customerId: string; type: string; name: string; url: string; notes: string; createdAt: string }
+    61→interface CustomerNote { id: string; customerId: string; type: string; content: string; isPrivate: boolean; userId: string; userName: string; createdAt: string }
+    62→interface CustomerTagAssignment { id: string; customerId: string; tagName: string }
+    63→interface CustomerVisit { id: string; visitNumber: number; checkInAt: string; checkOutAt: string | null }
+    64→interface FolioAuditLog { id: string; action: string; target: string; details: string; userId: string; userName: string; ipAddress: string; device: string; createdAt: string }
+    65→interface Settlement { id: string; amount: number; mode: string; reference: string; description: string; userName: string; createdAt: string }
+    66→
+    67→interface CustomerDetail extends Customer {
+    68→  folios: Folio[]; ledgerEntries: LedgerEntry[]; documents: CustomerDocument[]
+    69→  notes: CustomerNote[]; visits: CustomerVisit[]; settlements: Settlement[]
+    70→  auditLogs: FolioAuditLog[]; lifetimeRevenue: number; lifetimePayments: number
+    71→  lifetimeRefunds: number; totalBills: number; totalTransactions: number
+    72→  lastVisitDate: string; lastCheckoutDate: string; activeFolio: Folio | null
+    73→}
+    74→
+    75→// ─── Helpers ───
+    76→const fmtCur = (v: number) => `₹${Math.abs(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
+    77→const fmtDate = (s: string) => { if (!s) return '—'; try { const d = new Date(s); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}` } catch { return s } }
+    78→const fmtDateTime = (s: string) => { if (!s) return '—'; try { const d = new Date(s); return `${fmtDate(s)} ${d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}` } catch { return s } }
+    79→const relTime = (s: string) => {
+    80→  if (!s) return ''; const n = new Date(); const d = new Date(s); const ms = n.getTime()-d.getTime(); const m = Math.floor(ms/60000); const h = Math.floor(m/60); const dy = Math.floor(h/24)
+    81→  if (m < 1) return 'Just now'; if (m < 60) return `${m}m ago`; if (h < 24) return `${h}h ago`; if (dy < 7) return `${dy}d ago`; return fmtDate(s)
+    82→}
+    83→
+    84→function getAvatarGrad(name: string): string {
+    85→  const g = ['from-emerald-400 to-teal-500','from-teal-400 to-cyan-500','from-green-400 to-emerald-600','from-cyan-400 to-green-500','from-emerald-500 to-green-600']
+    86→  let h = 0; for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h); return g[Math.abs(h) % g.length]
+    87→}
+    88→
+    89→const TYPE_BADGE: Record<string, string> = {
+    90→  Retail: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+    91→  Wholesale: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400',
+    92→  Supplier: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400',
+    93→  Corporate: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-400',
+    94→  VIP: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400',
+    95→}
+    96→
+    97→const STATUS_BADGE: Record<string, string> = {
+    98→  Active: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400',
+    99→  Settled: 'bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-400',
+   100→  CheckedOut: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+   101→  Archived: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400',
+   102→}
+   103→
+   104→const TAG_COLORS: Record<string, string> = {
+   105→  VIP: 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400',
+   106→  Premium: 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/30 dark:text-purple-400',
+   107→  Regular: 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-400',
+   108→  Wholesale: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400',
+   109→  Supplier: 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/30 dark:text-orange-400',
+   110→  'High Risk': 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400',
+   111→  Blocked: 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400',
+   112→}
+   113→
+   114→const ALL_TAGS = ['VIP', 'Premium', 'Regular', 'Wholesale', 'Supplier', 'High Risk', 'Blocked']
+   115→const FILTER_TABS = ['All', 'Active', 'Due', 'Settled', 'CheckedOut', 'Archived', 'VIP']
+   116→
+   117→// ─── Component ───
+   118→interface Props { onRefreshData: () => void; dataVersion?: number }
+   119→export default function CustomerFolioSection({ onRefreshData, dataVersion }: Props) {
+   120→  const { token, hasPermission, currentUser } = useAuth()
+   121→  const hdr: Record<string, string> = token ? { 'Authorization': `Bearer ${token}` } : {}
+   122→  const canAccess = hasPermission('khata', 'access')
+   123→  const canCreate = hasPermission('khata', 'create')
+   124→  const canEdit = hasPermission('khata', 'edit')
+   125→  const canDelete = hasPermission('khata', 'delete')
+   126→  const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'SuperAdmin'
+   127→
+   128→  // State: list view
+   129→  const [customers, setCustomers] = useState<Customer[]>([])
+   130→  const [loading, setLoading] = useState(true)
+   131→  const [search, setSearch] = useState('')
+   132→  const [debounced, setDebounced] = useState('')
+   133→  const [filter, setFilter] = useState('All')
+   134→  const [sort, setSort] = useState('newest')
+   135→  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+   136→
+   137→  // State: detail view
+   138→  const [selectedId, setSelectedId] = useState<string | null>(null)
+   139→  const [detail, setDetail] = useState<CustomerDetail | null>(null)
+   140→  const [detailLoading, setDetailLoading] = useState(false)
+   141→  const [activeTab, setActiveTab] = useState('overview')
+   142→
+   143→  // Dialogs
+   144→  const [addOpen, setAddOpen] = useState(false)
+   145→  const [editOpen, setEditOpen] = useState(false)
+   146→  const [chargeOpen, setChargeOpen] = useState(false)
+   147→  const [paymentOpen, setPaymentOpen] = useState(false)
+   148→  const [refundOpen, setRefundOpen] = useState(false)
+   149→  const [transferOpen, setTransferOpen] = useState(false)
+   150→  const [discountOpen, setDiscountOpen] = useState(false)
+   151→  const [docOpen, setDocOpen] = useState(false)
+   152→  const [noteOpen, setNoteOpen] = useState(false)
+   153→  const [tagsOpen, setTagsOpen] = useState(false)
+   154→  const [checkoutOpen, setCheckoutOpen] = useState(false)
+   155→  const [statementOpen, setStatementOpen] = useState(false)
+   156→  const [historyOpen, setHistoryOpen] = useState(false)
+   157→  const [timelineOpen, setTimelineOpen] = useState(false)
+   158→  const [deleteOpen, setDeleteOpen] = useState(false)
+   159→  const [submitting, setSubmitting] = useState(false)
+   160→
+   161→  // Form states
+   162→  const [form, setForm] = useState({ fullName: '', mobile: '', whatsapp: '', email: '', customerType: 'Retail', creditLimit: 0, internalNotes: '', gstNumber: '', panNumber: '', aadhaarNumber: '', openingBalance: 0 })
+   163→  const [chargeForm, setChargeForm] = useState({ description: '', amount: '', chargeType: 'Product', tax: '0', invoiceNo: '' })
+   164→  const [paymentForm, setPaymentForm] = useState({ amount: '', mode: 'Cash', reference: '', description: '' })
+   165→  const [refundForm, setRefundForm] = useState({ amount: '', reason: 'Partial Refund', description: '', invoiceNo: '' })
+   166→  const [transferForm, setTransferForm] = useState({ targetCustomerId: '', targetName: '', amount: '', description: '' })
+   167→  const [transferResults, setTransferResults] = useState<Customer[]>([])
+   168→  const [discountForm, setDiscountForm] = useState({ discountType: 'Fixed', amount: '', description: '', requiresApproval: false })
+   169→  const [docForm, setDocForm] = useState({ type: 'Aadhaar', name: '', url: '', notes: '' })
+   170→  const [noteForm, setNoteForm] = useState({ type: 'Internal', content: '' })
+   171→  const [stmtFrom, setStmtFrom] = useState('')
+   172→  const [stmtTo, setStmtTo] = useState('')
+   173→  const [stmtData, setStmtData] = useState<any>(null)
+   174→  const [stmtLoading, setStmtLoading] = useState(false)
+   175→  const [duplicate, setDuplicate] = useState<Customer | null>(null)
+   176→  const [customerTags, setCustomerTags] = useState<string[]>([])
+   177→
+   178→  // Debounce search
+   179→  useEffect(() => { if (debounceRef.current) clearTimeout(debounceRef.current); debounceRef.current = setTimeout(() => setDebounced(search), 300); return () => { if (debounceRef.current) clearTimeout(debounceRef.current) } }, [search])
+   180→
+   181→  // Fetch customers
+   182→  const fetchCustomers = useCallback(async (silent?: boolean) => {
+   183→    try { if (!silent) setLoading(true)
+   184→      const params = new URLSearchParams()
+   185→      if (filter !== 'All') params.set('status', filter === 'Due' ? 'Active' : filter)
+   186→      if (debounced) params.set('search', debounced)
+   187→      if (sort) params.set('sort', sort)
+   188→      if (filter === 'VIP') params.set('tag', 'VIP')
+   189→      if (filter === 'Due') params.set('hasDue', 'true')
+   190→      const res = await fetch(`/api/folio/customers?${params}`, { headers: hdr })
+   191→      if (res.ok) {
+   192→        const data = await res.json()
+   193→        // API returns { customers: [...], pagination: {...} } — extract the array
+   194→        const list = Array.isArray(data) ? data : (data.customers || [])
+   195→        setCustomers(list.map((c: any) => ({
+   196→          ...c,
+   197→          balance: c.balance ?? c.currentBalance ?? 0,
+   198→          lastTxnDate: c.lastTxnDate ?? c.lastTransactionDate ?? '',
+   199→          tags: Array.isArray(c.tags) ? c.tags : [],
+   200→        })))
+   201→      }
+   202→    } catch { } finally { setLoading(false) }
+   203→  }, [debounced, filter, sort])
+   204→
+   205→  useEffect(() => { fetchCustomers() }, [fetchCustomers])
+   206→  const prevDataVer = useRef(dataVersion)
+   207→  useEffect(() => { if (dataVersion !== undefined && dataVersion !== prevDataVer.current) { prevDataVer.current = dataVersion; fetchCustomers(true); if (selectedId) fetchDetail(selectedId, true) } }, [dataVersion])
+   208→
+   209→  // Fetch customer detail
+   210→  const fetchDetail = useCallback(async (id: string, silent?: boolean) => {
+   211→    try { if (!silent) setDetailLoading(true)
+   212→      const res = await fetch(`/api/folio/customers/${id}`, { headers: hdr })
+   213→      if (res.ok) {
+   214→        const d = await res.json()
+   215→        // API returns nested: { customer, activeFolio, folios, documents, notes, visits, settlements, tags: string[], lifetimeStats }
+   216→        // Transform into flat CustomerDetail format that the component expects
+   217→        const customer = d.customer || d
+   218→        const activeFolio = d.activeFolio
+   219→        const lifetimeStats = d.lifetimeStats || {}
+   220→
+   221→        // Build tags as CustomerTagAssignment objects from string[]
+   222→        const tagAssignments: CustomerTagAssignment[] = Array.isArray(d.tags)
+   223→          ? d.tags.map((tagName: string, i: number) => ({ id: `tag-${i}`, customerId: customer.id, tagName }))
+   224→          : []
+   225→
+   226→        // Get active folio ledger entries
+   227→        const ledgerEntries: LedgerEntry[] = activeFolio?.ledgerEntries || []
+   228→
+   229→        // Compute balance from last ledger entry or lifetime stats
+   230→        const balance = lifetimeStats.currentBalance ??
+   231→          (ledgerEntries.length > 0 ? ledgerEntries[ledgerEntries.length - 1].balance : customer.openingBalance ?? 0)
+   232→
+   233→        const detailObj: CustomerDetail = {
+   234→          ...customer,
+   235→          balance,
+   236→          totalVisits: d.visits?.length ?? lifetimeStats.totalVisits ?? 0,
+   237→          lastTxnDate: lifetimeStats.lastTransactionDate || '',
+   238→          tags: tagAssignments,
+   239→          folios: d.folios || [],
+   240→          ledgerEntries,
+   241→          documents: d.documents || [],
+   242→          notes: d.notes || [],
+   243→          visits: d.visits || [],
+   244→          settlements: d.settlements || [],
+   245→          auditLogs: [],
+   246→          lifetimeRevenue: lifetimeStats.totalCharges ?? 0,
+   247→          lifetimePayments: lifetimeStats.totalPayments ?? 0,
+   248→          lifetimeRefunds: lifetimeStats.totalRefunds ?? 0,
+   249→          totalBills: 0,
+   250→          totalTransactions: ledgerEntries.length,
+   251→          lastVisitDate: d.visits?.[0]?.checkInAt || '',
+   252→          lastCheckoutDate: '',
+   253→          activeFolio: activeFolio ? {
+   254→            id: activeFolio.id,
+   255→            folioId: activeFolio.folioId,
+   256→            customerId: customer.id,
+   257→            visitNumber: activeFolio.visitNumber,
+   258→            status: activeFolio.status,
+   259→            lockedAt: activeFolio.lockedAt || null,
+   260→          } : null,
+   261→        }
+   262→
+   263→        setDetail(detailObj)
+   264→        setCustomerTags(tagAssignments.map(t => t.tagName))
+   265→      }
+   266→    } catch { } finally { setDetailLoading(false) }
+   267→  }, [])
+   268→
+   269→  // Migrate legacy data
+   270→  const migrateLegacy = useCallback(async () => {
+   271→    try { setSubmitting(true)
+   272→      const res = await fetch('/api/folio/migrate', { method: 'POST', headers: { ...hdr, 'Content-Type': 'application/json' }, body: JSON.stringify({ dryRun: false }) })
+   273→      if (res.ok) { const d = await res.json(); notify({ type: 'success', title: 'Migration Complete', message: `Migrated ${d.migrated} customers` }); fetchCustomers() }
+   274→      else { const e = await res.json(); notify({ type: 'info', title: 'Migration', message: e.message || e.error || 'No legacy data to migrate' }) }
+   275→    } catch { notify({ type: 'error', title: 'Error', message: 'Migration failed' }) } finally { setSubmitting(false) }
+   276→  }, [])
+   277→
+   278→  // Open customer
+   279→  const openCustomer = (id: string) => { setSelectedId(id); setActiveTab('overview'); fetchDetail(id) }
+   280→  const goBack = () => { setSelectedId(null); setDetail(null); setActiveTab('overview') }
+   281→
+   282→  // Create customer
+   283→  const handleCreate = async () => {
+   284→    if (!form.fullName.trim() || !form.mobile.trim()) { notify({ type: 'error', title: 'Error', message: 'Name and Mobile are required' }); return }
+   285→    try { setSubmitting(true)
+   286→      const res = await fetch('/api/folio/customers', { method: 'POST', headers: { ...hdr, 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
+   287→      if (res.ok) { notify({ type: 'success', title: 'Customer Created', message: 'New customer profile added' }); setAddOpen(false); resetForm(); fetchCustomers(); onRefreshData() }
+   288→      else { const e = await res.json(); if (e.duplicate) { setDuplicate(e.duplicate); notify({ type: 'warning', title: 'Duplicate Found', message: 'A customer with similar details exists' }) } else { notify({ type: 'error', title: 'Error', message: e.error || 'Failed to create' }) } }
+   289→    } catch { notify({ type: 'error', title: 'Error', message: 'Failed to create customer' }) } finally { setSubmitting(false) }
+   290→  }
+   291→
+   292→  // Update customer
+   293→  const handleUpdate = async () => {
+   294→    if (!detail || !form.fullName.trim()) return
+   295→    try { setSubmitting(true)
+   296→      const res = await fetch(`/api/folio/customers/${detail.id}`, { method: 'PUT', headers: { ...hdr, 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
+   297→      if (res.ok) { notify({ type: 'success', title: 'Updated', message: 'Customer profile updated' }); setEditOpen(false); fetchDetail(detail.id); fetchCustomers(true) }
+   298→      else { const e = await res.json(); notify({ type: 'error', title: 'Error', message: e.error || 'Update failed' }) }
+   299→    } catch { notify({ type: 'error', title: 'Error', message: 'Update failed' }) } finally { setSubmitting(false) }
+   300→  }
+   301→
+   302→  // Add ledger entry (charge/payment/refund/discount)
+   303→  const addLedgerEntry = async (type: string, data: any) => {
+   304→    if (!detail) return
+   305→    try { setSubmitting(true)
+   306→      const res = await fetch(`/api/folio/customers/${detail.id}/ledger`, { method: 'POST', headers: { ...hdr, 'Content-Type': 'application/json' }, body: JSON.stringify({ type, ...data }) })
+   307→      if (res.ok) { notify({ type: 'success', title: 'Entry Added', message: `${type} recorded successfully` }); closeDialogs(); fetchDetail(detail.id); fetchCustomers(true); onRefreshData() }
+   308→      else { const e = await res.json(); notify({ type: 'error', title: 'Error', message: e.error || 'Failed to add entry' }) }
+   309→    } catch { notify({ type: 'error', title: 'Error', message: 'Failed to add entry' }) } finally { setSubmitting(false) }
+   310→  }
+   311→
+   312→  const handleCharge = () => { if (!chargeForm.amount || !chargeForm.description) { notify({ type: 'error', title: 'Error', message: 'Amount and description required' }); return } addLedgerEntry('Charge', { description: chargeForm.description, amount: parseFloat(chargeForm.amount), tax: parseFloat(chargeForm.tax) || 0, invoiceNo: chargeForm.invoiceNo }) }
+   313→  const handlePayment = () => { if (!paymentForm.amount) { notify({ type: 'error', title: 'Error', message: 'Amount required' }); return } addLedgerEntry('Payment', { description: paymentForm.description || `Payment via ${paymentForm.mode}`, amount: parseFloat(paymentForm.amount), paymentMode: paymentForm.mode, reference: paymentForm.reference }) }
+   314→  const handleRefund = () => { if (!refundForm.amount || !refundForm.description) { notify({ type: 'error', title: 'Error', message: 'Amount and reason required' }); return } addLedgerEntry('Refund', { description: `${refundForm.reason}: ${refundForm.description}`, amount: parseFloat(refundForm.amount), invoiceNo: refundForm.invoiceNo }) }
+   315→  const handleDiscount = () => { if (!discountForm.amount) { notify({ type: 'error', title: 'Error', message: 'Amount required' }); return } const amt = discountForm.discountType === 'Percentage' ? parseFloat(discountForm.amount) : parseFloat(discountForm.amount); addLedgerEntry('Discount', { description: discountForm.description || 'Discount applied', amount: amt, discountType: discountForm.discountType }) }
+   316→
+   317→  // Transfer
+   318→  const handleTransfer = async () => {
+   319→    if (!detail || !transferForm.targetCustomerId || !transferForm.amount) { notify({ type: 'error', title: 'Error', message: 'Target customer and amount required' }); return }
+   320→    try { setSubmitting(true)
+   321→      const res = await fetch(`/api/folio/customers/${detail.id}/transfer`, { method: 'POST', headers: { ...hdr, 'Content-Type': 'application/json' }, body: JSON.stringify({ targetCustomerId: transferForm.targetCustomerId, amount: parseFloat(transferForm.amount), description: transferForm.description }) })
+   322→      if (res.ok) { notify({ type: 'success', title: 'Transfer Complete', message: 'Balance transferred successfully' }); closeDialogs(); fetchDetail(detail.id); fetchCustomers(true); onRefreshData() }
+   323→      else { const e = await res.json(); notify({ type: 'error', title: 'Error', message: e.error || 'Transfer failed' }) }
+   324→    } catch { notify({ type: 'error', title: 'Error', message: 'Transfer failed' }) } finally { setSubmitting(false) }
+   325→  }
+   326→
+   327→  // Search transfer targets
+   328→  const searchTransferTargets = async (q: string) => {
+   329→    if (q.length < 2) { setTransferResults([]); return }
+   330→    try { const res = await fetch(`/api/folio/customers?search=${encodeURIComponent(q)}&limit=10`, { headers: hdr }); if (res.ok) { const data = await res.json(); const list = Array.isArray(data) ? data : (data.customers || []); setTransferResults(list.filter((c: Customer) => c.id !== detail?.id)) } } catch { }
+   331→  }
+   332→
+   333→  // Settlement
+   334→  const handleSettle = async () => {
+   335→    if (!detail || !paymentForm.amount) return
+   336→    try { setSubmitting(true)
+   337→      const res = await fetch(`/api/folio/customers/${detail.id}/settle`, { method: 'POST', headers: { ...hdr, 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: parseFloat(paymentForm.amount), mode: paymentForm.mode, reference: paymentForm.reference, description: paymentForm.description }) })
+   338→      if (res.ok) { notify({ type: 'success', title: 'Settlement Complete', message: 'Folio settled successfully' }); closeDialogs(); fetchDetail(detail.id); fetchCustomers(true); onRefreshData() }
+   339→      else { const e = await res.json(); notify({ type: 'error', title: 'Error', message: e.error || 'Settlement failed' }) }
+   340→    } catch { notify({ type: 'error', title: 'Error', message: 'Settlement failed' }) } finally { setSubmitting(false) }
+   341→  }
+   342→
+   343→  // Checkout
+   344→  const handleCheckout = async () => {
+   345→    if (!detail) return
+   346→    try { setSubmitting(true)
+   347→      const res = await fetch(`/api/folio/customers/${detail.id}/checkout`, { method: 'POST', headers: { ...hdr, 'Content-Type': 'application/json' } })
+   348→      if (res.ok) { notify({ type: 'success', title: 'Checkout Complete', message: 'Customer checked out' }); setCheckoutOpen(false); fetchDetail(detail.id); fetchCustomers(true); onRefreshData() }
+   349→      else { const e = await res.json(); notify({ type: 'error', title: 'Error', message: e.error || 'Checkout failed' }) }
+   350→    } catch { notify({ type: 'error', title: 'Error', message: 'Checkout failed' }) } finally { setSubmitting(false) }
+   351→  }
+   352→
+   353→  // Reopen
+   354→  const handleReopen = async () => {
+   355→    if (!detail) return
+   356→    try { setSubmitting(true)
+   357→      const res = await fetch(`/api/folio/customers/${detail.id}/reopen`, { method: 'POST', headers: { ...hdr, 'Content-Type': 'application/json' } })
+   358→      if (res.ok) { notify({ type: 'success', title: 'Reopened', message: 'Customer folio reopened with new visit' }); fetchDetail(detail.id); fetchCustomers(true) }
+   359→      else { const e = await res.json(); notify({ type: 'error', title: 'Error', message: e.error || 'Failed to reopen' }) }
+   360→    } catch { } finally { setSubmitting(false) }
+   361→  }
+   362→
+   363→  // Documents
+   364→  const handleAddDoc = async () => {
+   365→    if (!detail || !docForm.name) { notify({ type: 'error', title: 'Error', message: 'Document name required' }); return }
+   366→    try { setSubmitting(true)
+   367→      const res = await fetch(`/api/folio/customers/${detail.id}/documents`, { method: 'POST', headers: { ...hdr, 'Content-Type': 'application/json' }, body: JSON.stringify(docForm) })
+   368→      if (res.ok) { notify({ type: 'success', title: 'Document Added', message: 'Document added successfully' }); setDocOpen(false); setDocForm({ type: 'Aadhaar', name: '', url: '', notes: '' }); fetchDetail(detail.id) }
+   369→      else { notify({ type: 'error', title: 'Error', message: 'Failed to add document' }) }
+   370→    } catch { } finally { setSubmitting(false) }
+   371→  }
+   372→
+   373→  const handleDeleteDoc = async (docId: string) => {
+   374→    if (!detail) return
+   375→    try { await fetch(`/api/folio/customers/${detail.id}/documents/${docId}`, { method: 'DELETE', headers: hdr }); notify({ type: 'success', title: 'Deleted', message: 'Document removed' }); fetchDetail(detail.id) } catch { }
+   376→  }
+   377→
+   378→  // Notes
+   379→  const handleAddNote = async () => {
+   380→    if (!detail || !noteForm.content) { notify({ type: 'error', title: 'Error', message: 'Note content required' }); return }
+   381→    try { setSubmitting(true)
+   382→      const res = await fetch(`/api/folio/customers/${detail.id}/notes`, { method: 'POST', headers: { ...hdr, 'Content-Type': 'application/json' }, body: JSON.stringify(noteForm) })
+   383→      if (res.ok) { notify({ type: 'success', title: 'Note Added', message: 'Note added successfully' }); setNoteOpen(false); setNoteForm({ type: 'Internal', content: '' }); fetchDetail(detail.id) }
+   384→      else { notify({ type: 'error', title: 'Error', message: 'Failed to add note' }) }
+   385→    } catch { } finally { setSubmitting(false) }
+   386→  }
+   387→
+   388→  const handleDeleteNote = async (noteId: string) => {
+   389→    if (!detail) return
+   390→    try { await fetch(`/api/folio/customers/${detail.id}/notes/${noteId}`, { method: 'DELETE', headers: hdr }); notify({ type: 'success', title: 'Deleted', message: 'Note removed' }); fetchDetail(detail.id) } catch { }
+   391→  }
+   392→
+   393→  // Tags
+   394→  const handleToggleTag = async (tagName: string) => {
+   395→    if (!detail) return
+   396→    const has = customerTags.includes(tagName)
+   397→    try {
+   398→      if (has) { await fetch(`/api/folio/customers/${detail.id}/tags?tagName=${encodeURIComponent(tagName)}`, { method: 'DELETE', headers: hdr }); setCustomerTags(prev => prev.filter(t => t !== tagName)) }
+   399→      else { await fetch(`/api/folio/customers/${detail.id}/tags`, { method: 'POST', headers: { ...hdr, 'Content-Type': 'application/json' }, body: JSON.stringify({ tagName }) }); setCustomerTags(prev => [...prev, tagName]) }
+   400→      fetchDetail(detail.id, true); fetchCustomers(true)
+   401→    } catch { }
+   402→  }
+   403→
+   404→  // Delete customer (archive)
+   405→  const handleDelete = async () => {
+   406→    if (!detail) return
+   407→    try { setSubmitting(true)
+   408→      const res = await fetch(`/api/folio/customers/${detail.id}`, { method: 'DELETE', headers: hdr })
+   409→      if (res.ok) { notify({ type: 'success', title: 'Archived', message: 'Customer archived' }); setDeleteOpen(false); goBack(); fetchCustomers(); onRefreshData() }
+   410→      else { notify({ type: 'error', title: 'Error', message: 'Failed to archive' }) }
+   411→    } catch { } finally { setSubmitting(false) }
+   412→  }
+   413→
+   414→  // Statement
+   415→  const fetchStatement = async () => {
+   416→    if (!detail) return
+   417→    try { setStmtLoading(true)
+   418→      const params = new URLSearchParams()
+   419→      if (stmtFrom) params.set('from', stmtFrom)
+   420→      if (stmtTo) params.set('to', stmtTo)
+   421→      const res = await fetch(`/api/folio/customers/${detail.id}/statement?${params}`, { headers: hdr })
+   422→      if (res.ok) setStmtData(await res.json()); else notify({ type: 'error', title: 'Error', message: 'Failed to load statement' })
+   423→    } catch { } finally { setStmtLoading(false) }
+   424→  }
+   425→
+   426→  // Helpers
+   427→  const resetForm = () => setForm({ fullName: '', mobile: '', whatsapp: '', email: '', customerType: 'Retail', creditLimit: 0, internalNotes: '', gstNumber: '', panNumber: '', aadhaarNumber: '', openingBalance: 0 })
+   428→  const closeDialogs = () => { setChargeOpen(false); setPaymentOpen(false); setRefundOpen(false); setTransferOpen(false); setDiscountOpen(false); setChargeForm({ description: '', amount: '', chargeType: 'Product', tax: '0', invoiceNo: '' }); setPaymentForm({ amount: '', mode: 'Cash', reference: '', description: '' }); setRefundForm({ amount: '', reason: 'Partial Refund', description: '', invoiceNo: '' }); setTransferForm({ targetCustomerId: '', targetName: '', amount: '', description: '' }); setDiscountForm({ discountType: 'Fixed', amount: '', description: '', requiresApproval: false }) }
+   429→  const populateEditForm = () => { if (!detail) return; setForm({ fullName: detail.fullName, mobile: detail.mobile, whatsapp: detail.whatsapp, email: detail.email, customerType: detail.customerType, creditLimit: detail.creditLimit, internalNotes: detail.internalNotes, gstNumber: detail.gstNumber, panNumber: detail.panNumber, aadhaarNumber: detail.aadhaarNumber, openingBalance: detail.openingBalance }) }
+   430→
+   431→  // Computed
+   432→  const totalOutstanding = customers.reduce((s, c) => s + (c.balance > 0 ? c.balance : 0), 0)
+   433→  const filteredCustomers = customers
+   434→  const activeCount = customers.filter(c => c.status === 'Active').length
+   435→  const dueCount = customers.filter(c => c.status === 'Active' && c.balance > 0).length
+   436→  const settledCount = customers.filter(c => c.status === 'Settled').length
+   437→  const checkedOutCount = customers.filter(c => c.status === 'CheckedOut').length
+   438→
+   439→  // Print statement
+   440→  const printStatement = () => {
+   441→    if (!detail || !stmtData) return
+   442→    const w = window.open('', '_blank'); if (!w) { notify({ type: 'error', title: 'Error', message: 'Allow popups to print' }); return }
+   443→    const entries = (stmtData.entries || []).map((e: LedgerEntry, i: number) => `<tr style="background:${i%2===0?'#fff':'#fafafa'}"><td style="padding:8px 12px;font-size:12px;border-bottom:1px solid #eee">${i+1}</td><td style="padding:8px 12px;font-size:12px;border-bottom:1px solid #eee">${fmtDate(e.date)}</td><td style="padding:8px 12px;font-size:12px;border-bottom:1px solid #eee">${e.type}</td><td style="padding:8px 12px;font-size:12px;border-bottom:1px solid #eee">${e.description}</td><td style="padding:8px 12px;font-size:12px;text-align:right;border-bottom:1px solid #eee;color:#dc2626">${e.debit>0?'-₹'+e.debit.toLocaleString('en-IN'):''}</td><td style="padding:8px 12px;font-size:12px;text-align:right;border-bottom:1px solid #eee;color:#059669">${e.credit>0?'+₹'+e.credit.toLocaleString('en-IN'):''}</td><td style="padding:8px 12px;font-size:12px;text-align:right;font-weight:700;border-bottom:1px solid #eee;color:${e.balance>=0?'#059669':'#dc2626'}">${fmtCur(e.balance)}</td></tr>`).join('')
+   444→    w.document.write(`<!DOCTYPE html><html><head><title>Statement - ${detail.fullName}</title><style>body{font-family:system-ui;padding:20px}table{width:100%;border-collapse:collapse;margin-top:16px}th{background:#f3f4f6;padding:10px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid #e5e7eb}</style></head><body><h2>Customer Statement</h2><p><strong>${detail.fullName}</strong> | ${detail.customerId} | ${detail.mobile}</p><p>Period: ${stmtFrom||'Beginning'} to ${stmtTo||'Today'}</p><table><tr><th>#</th><th>Date</th><th>Type</th><th>Description</th><th>Debit</th><th>Credit</th><th>Balance</th></tr>${entries}</table><p style="margin-top:20px">Opening: ${fmtCur(stmtData.openingBalance)} | Total Debits: ${fmtCur(stmtData.totalDebits)} | Total Credits: ${fmtCur(stmtData.totalCredits)} | Closing: ${fmtCur(stmtData.closingBalance)}</p><p style="color:#999;font-size:11px;margin-top:30px">Generated by Eservices</p></body></html>`)
+   445→    w.document.close(); w.print()
+   446→  }
+   447→
+   448→  // ─── DETAIL VIEW LOADING ───
+   449→  if (selectedId && detailLoading && !detail) {
+   450→    return (
+   451→      <div className="flex flex-col items-center justify-center py-20 animate-fade-in">
+   452→        <Loader2 className="size-8 animate-spin text-emerald-500 mb-3" />
+   453→        <p className="text-sm text-muted-foreground">Loading customer details...</p>
+   454→      </div>
+   455→    )
+   456→  }
+   457→
+   458→  // ─── DETAIL VIEW ───
+   459→  if (selectedId && detail) {
+   460→    const bal = detail?.balance ?? 0
+   461→    const detailCreditLimit = detail?.creditLimit ?? 0
+   462→    const creditPct = detailCreditLimit > 0 ? Math.min(Math.round((Math.abs(bal) / detailCreditLimit) * 100), 100) : 0
+   463→
+   464→    return (
+   465→      <div className="space-y-4 animate-fade-in">
+   466→        {!canAccess && <ReadOnlyBanner module="Customer Folio" noAccess />}
+   467→        {/* Back Button */}
+   468→        <Button variant="ghost" size="sm" onClick={goBack} className="gap-2"><ArrowLeft className="size-4" /> Back to All Customers</Button>
+   469→
+   470→        {/* Customer Header */}
+   471→        <Card className="overflow-hidden border-0 shadow-md">
+   472→          <div className="h-2 bg-gradient-to-r from-emerald-400 via-teal-500 to-cyan-500" />
+   473→          <CardContent className="p-4 sm:p-6">
+   474→            <div className="flex flex-col sm:flex-row gap-4">
+   475→              <div className={`flex size-16 shrink-0 items-center justify-center rounded-full text-2xl font-bold text-white shadow-lg bg-gradient-to-br ${getAvatarGrad(detail.fullName)}`}>{detail.fullName.charAt(0).toUpperCase()}</div>
+   476→              <div className="flex-1 min-w-0 space-y-2">
+   477→                <div className="flex flex-wrap items-center gap-2">
+   478→                  <h2 className="text-xl font-bold truncate">{detail.fullName}</h2>
+   479→                  <Badge variant="outline" className="text-[10px] font-mono">{detail.customerId}</Badge>
+   480→                  <Badge variant="outline" className="text-[10px] font-mono">{detail.primaryFolioId}</Badge>
+   481→                  <Badge className={STATUS_BADGE[detail.status] || ''}>{detail.status}</Badge>
+   482→                  <Badge className={TYPE_BADGE[detail.customerType] || TYPE_BADGE.Retail}>{detail.customerType}</Badge>
+   483→                </div>
+   484→                <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
+   485→                  {detail.mobile && <span className="flex items-center gap-1"><Phone className="size-3" />{detail.mobile}</span>}
+   486→                  {detail.whatsapp && <span className="flex items-center gap-1"><MessageSquare className="size-3" />{detail.whatsapp}</span>}
+   487→                  {detail.email && <span className="flex items-center gap-1"><Receipt className="size-3" />{detail.email}</span>}
+   488→                </div>
+   489→                <div className="flex flex-wrap gap-1">{detail.tags?.map(t => <span key={t.id} className={`text-[10px] px-2 py-0.5 rounded-full border ${TAG_COLORS[t.tagName] || TAG_COLORS.Regular}`}>{t.tagName}</span>)}</div>
+   490→              </div>
+   491→              <div className="text-left sm:text-right shrink-0">
+   492→                <p className="text-xs text-muted-foreground">Current Balance</p>
+   493→                <p className={`text-2xl font-bold tabular-nums ${bal > 0 ? 'text-green-600 dark:text-green-400' : bal < 0 ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'}`}>{bal < 0 ? '-' : bal > 0 ? '+' : ''}{fmtCur(bal)}</p>
+   494→                <p className={`text-xs ${bal > 0 ? 'text-green-500' : bal < 0 ? 'text-red-500' : 'text-muted-foreground'}`}>{bal > 0 ? '↑ They owe you' : bal < 0 ? '↓ Advance balance' : '✓ Settled'}</p>
+   495→                {detail.creditLimit > 0 && <div className="mt-2"><Progress value={creditPct} className="h-1.5 w-32" /><p className="text-[10px] text-muted-foreground mt-0.5">Credit: {fmtCur(bal)}/{fmtCur(detail.creditLimit)}</p></div>}
+   496→              </div>
+   497→            </div>
+   498→
+   499→            {/* Quick Actions */}
+   500→            <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t">
+   501→              <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => { populateEditForm(); setEditOpen(true) }}><Edit3 className="size-3" />Edit</Button>
+   502→              <Button size="sm" className="gap-1 text-xs bg-emerald-600 hover:bg-emerald-700" onClick={() => setChargeOpen(true)}><Plus className="size-3" />Charge</Button>
+   503→              <Button size="sm" className="gap-1 text-xs bg-teal-600 hover:bg-teal-700" onClick={() => setPaymentOpen(true)}><Wallet className="size-3" />Payment</Button>
+   504→              <Button size="sm" variant="outline" className="gap-1 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => setRefundOpen(true)}><Undo2 className="size-3" />Refund</Button>
+   505→              <Button size="sm" variant="outline" className="gap-1 text-xs text-amber-600 border-amber-200 hover:bg-amber-50" onClick={() => setDiscountOpen(true)}><Percent className="size-3" />Discount</Button>
+   506→              <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => setTransferOpen(true)}><ArrowRightLeft className="size-3" />Transfer</Button>
+   507→              <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => setDocOpen(true)}><FileUp className="size-3" />Docs</Button>
+   508→              <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => setNoteOpen(true)}><StickyNote className="size-3" />Note</Button>
+   509→              <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => setTagsOpen(true)}><Tag className="size-3" />Tags</Button>
+   510→              {(detail.status === 'Active' || detail.status === 'Settled') && isAdmin && <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={handleSettle} disabled={!paymentForm.amount}><CheckCircle className="size-3" />Settle</Button>}
+   511→              {isAdmin && detail.status !== 'Active' && <Button size="sm" variant="outline" className="gap-1 text-xs text-teal-600 border-teal-200" onClick={handleReopen}><Undo2 className="size-3" />Reopen</Button>}
+   512→              <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => { setStmtFrom(''); setStmtTo(''); setStmtData(null); setStatementOpen(true) }}><Printer className="size-3" />Statement</Button>
+   513→              <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => setHistoryOpen(true)}><History className="size-3" />History</Button>
+   514→              <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => setTimelineOpen(true)}><GitBranch className="size-3" />Timeline</Button>
+   515→              {isAdmin && detail.status === 'Active' && <Button size="sm" variant="outline" className="gap-1 text-xs text-orange-600 border-orange-200" onClick={() => { if (detail) setCheckoutOpen(true) }}><LogOut className="size-3" />Checkout</Button>}
+   516→              {isAdmin && <Button size="sm" variant="outline" className="gap-1 text-xs text-red-500 border-red-200" onClick={() => setDeleteOpen(true)}><Trash2 className="size-3" />Archive</Button>}
+   517→            </div>
+   518→          </CardContent>
+   519→        </Card>
+   520→
+   521→        {/* Main Content: Tabs + Overview Panel */}
+   522→        <div className="flex flex-col lg:flex-row gap-4">
+   523→          {/* Tabs */}
+   524→          <div className="flex-1 min-w-0">
+   525→            <Tabs value={activeTab} onValueChange={setActiveTab}>
+   526→              <TabsList className="w-full flex flex-wrap h-auto gap-1 bg-muted/50 p-1">
+   527→                <TabsTrigger value="overview" className="text-xs">Overview</TabsTrigger>
+   528→                <TabsTrigger value="folio" className="text-xs">Current Folio</TabsTrigger>
+   529→                <TabsTrigger value="ledger" className="text-xs">Ledger</TabsTrigger>
+   530→                <TabsTrigger value="bills" className="text-xs">Bills</TabsTrigger>
+   531→                <TabsTrigger value="payments" className="text-xs">Payments</TabsTrigger>
+   532→                <TabsTrigger value="documents" className="text-xs">Documents</TabsTrigger>
+   533→                <TabsTrigger value="notes" className="text-xs">Notes</TabsTrigger>
+   534→                <TabsTrigger value="audit" className="text-xs">Audit</TabsTrigger>
+   535→              </TabsList>
+   536→
+   537→              {/* Overview Tab */}
+   538→              <TabsContent value="overview" className="mt-4">
+   539→                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+   540→                  {[
+   541→                    { label: 'Customer Since', value: fmtDate(detail.createdAt), icon: CalendarDays },
+   542→                    { label: 'Status', value: detail.status, icon: BadgeCheck },
+   543→                    { label: 'Customer Type', value: detail.customerType, icon: Briefcase },
+   544→                    { label: 'Lifetime Revenue', value: fmtCur(detail.lifetimeRevenue || 0), icon: TrendingUp, color: 'text-green-600' },
+   545→                    { label: 'Lifetime Payments', value: fmtCur(detail.lifetimePayments || 0), icon: Wallet, color: 'text-teal-600' },
+   546→                    { label: 'Lifetime Refunds', value: fmtCur(detail.lifetimeRefunds || 0), icon: Undo2, color: 'text-red-500' },
+   547→                    { label: 'Total Bills', value: String(detail.totalBills || 0), icon: FileText },
+   548→                    { label: 'Total Transactions', value: String(detail.totalTransactions || detail.ledgerEntries?.length || 0), icon: Activity },
+   549→                    { label: 'Total Visits', value: String(detail.totalVisits || detail.visits?.length || 0), icon: Users },
+   550→                    { label: 'Outstanding', value: fmtCur(bal), icon: Scale, color: bal > 0 ? 'text-green-600' : bal < 0 ? 'text-red-500' : '' },
+   551→                    { label: 'Credit Limit', value: fmtCur(detail.creditLimit), icon: CreditCard },
+   552→                    { label: 'Last Activity', value: detail.ledgerEntries?.length > 0 ? relTime(detail.ledgerEntries[detail.ledgerEntries.length - 1].createdAt) : '—', icon: Clock },
+   553→                  ].map((item, i) => (
+   554→                    <Card key={i} className="border-0 shadow-sm"><CardContent className="p-3"><div className="flex items-center gap-2 mb-1"><item.icon className={`size-4 text-muted-foreground ${item.color || ''}`} /><span className="text-[10px] text-muted-foreground uppercase tracking-wider">{item.label}</span></div><p className={`text-sm font-bold tabular-nums ${item.color || ''}`}>{item.value}</p></CardContent></Card>
+   555→                  ))}
+   556→                </div>
+   557→              </TabsContent>
+   558→
+   559→              {/* Current Folio Tab */}
+   560→              <TabsContent value="folio" className="mt-4">
+   561→                <Card className="border-0 shadow-sm">
+   562→                  <CardHeader className="pb-2 flex flex-row items-center justify-between">
+   563→                    <CardTitle className="text-sm">Current Folio — Visit #{detail.visits?.length || 1}</CardTitle>
+   564→                    <div className="flex gap-2">
+   565→                      <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => { setStmtFrom(''); setStmtTo(''); setStmtData(null); setStatementOpen(true) }}><Printer className="size-3" />Print</Button>
+   566→                      <Button size="sm" className="gap-1 text-xs bg-emerald-600 hover:bg-emerald-700" onClick={() => setChargeOpen(true)}><Plus className="size-3" />Add Entry</Button>
+   567→                    </div>
+   568→                  </CardHeader>
+   569→                  <CardContent className="p-0">
+   570→                    <ScrollArea className="max-h-[500px]">
+   571→                      <Table>
+   572→                        <TableHeader><TableRow><TableHead className="w-8">#</TableHead><TableHead>Date</TableHead><TableHead>Type</TableHead><TableHead>Description</TableHead><TableHead className="text-right">Debit</TableHead><TableHead className="text-right">Credit</TableHead><TableHead className="text-right">Balance</TableHead><TableHead className="w-8">Status</TableHead></TableRow></TableHeader>
+   573→                        <TableBody>
+   574→                          {!detail.ledgerEntries?.length ? <TableRow><TableCell colSpan={8} className="text-center py-10 text-muted-foreground text-sm">No entries in current folio</TableCell></TableRow> :
+   575→                          detail.ledgerEntries.map((e, i) => (
+   576→                            <TableRow key={e.id}><TableCell className="text-xs text-muted-foreground">{i+1}</TableCell><TableCell className="text-xs whitespace-nowrap">{fmtDate(e.date)}</TableCell><TableCell><Badge variant="outline" className="text-[10px]">{e.type}</Badge></TableCell><TableCell className="text-xs max-w-[200px] truncate">{e.description || '—'}</TableCell><TableCell className={`text-xs text-right font-medium ${e.debit > 0 ? 'text-red-600' : 'text-muted-foreground'}`}>{e.debit > 0 ? fmtCur(e.debit) : '—'}</TableCell><TableCell className={`text-xs text-right font-medium ${e.credit > 0 ? 'text-green-600' : 'text-muted-foreground'}`}>{e.credit > 0 ? fmtCur(e.credit) : '—'}</TableCell><TableCell className={`text-xs text-right font-bold tabular-nums ${e.balance >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmtCur(e.balance)}</TableCell><TableCell><Badge variant={e.status === 'Active' ? 'default' : 'secondary'} className="text-[9px]">{e.status}</Badge></TableCell></TableRow>
+   577→                          ))
+   578→                          }
+   579→                        </TableBody>
+   580→                      </Table>
+   581→                    </ScrollArea>
+   582→                  </CardContent>
+   583→                </Card>
+   584→              </TabsContent>
+   585→
+   586→              {/* Ledger Tab */}
+   587→              <TabsContent value="ledger" className="mt-4">
+   588→                <Card className="border-0 shadow-sm">
+   589→                  <CardHeader className="pb-2"><CardTitle className="text-sm">Full Ledger History</CardTitle></CardHeader>
+   590→                  <CardContent className="p-0">
+   591→                    <ScrollArea className="max-h-[500px]">
+   592→                      <Table>
+   593→                        <TableHeader><TableRow><TableHead className="w-8">#</TableHead><TableHead>Date</TableHead><TableHead>Doc</TableHead><TableHead>Type</TableHead><TableHead>Description</TableHead><TableHead className="text-right">Debit</TableHead><TableHead className="text-right">Credit</TableHead><TableHead className="text-right">Balance</TableHead></TableRow></TableHeader>
+   594→                        <TableBody>
+   595→                          {!detail.ledgerEntries?.length ? <TableRow><TableCell colSpan={8} className="text-center py-10 text-muted-foreground text-sm">No ledger entries</TableCell></TableRow> :
+   596→                          detail.ledgerEntries.map((e, i) => (
+   597→                            <TableRow key={e.id}><TableCell className="text-xs text-muted-foreground">{i+1}</TableCell><TableCell className="text-xs">{fmtDate(e.date)}</TableCell><TableCell className="text-xs font-mono text-muted-foreground">{e.docNo || '—'}</TableCell><TableCell><Badge variant="outline" className="text-[10px]">{e.type}</Badge></TableCell><TableCell className="text-xs max-w-[150px] truncate">{e.description || '—'}</TableCell><TableCell className={`text-xs text-right font-medium ${e.debit > 0 ? 'text-red-600' : ''}`}>{e.debit > 0 ? fmtCur(e.debit) : '—'}</TableCell><TableCell className={`text-xs text-right font-medium ${e.credit > 0 ? 'text-green-600' : ''}`}>{e.credit > 0 ? fmtCur(e.credit) : '—'}</TableCell><TableCell className={`text-xs text-right font-bold tabular-nums ${e.balance >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmtCur(e.balance)}</TableCell></TableRow>
+   598→                          ))
+   599→                          }
+   600→                        </TableBody>
+   601→                      </Table>
+   602→                    </ScrollArea>
+   603→                  </CardContent>
+   604→                </Card>
+   605→              </TabsContent>
+   606→
+   607→              {/* Bills Tab */}
+   608→              <TabsContent value="bills" className="mt-4">
+   609→                <Card className="border-0 shadow-sm">
+   610→                  <CardHeader className="pb-2"><CardTitle className="text-sm">Linked Invoices</CardTitle></CardHeader>
+   611→                  <CardContent><p className="text-sm text-muted-foreground text-center py-10">Invoices linked by customer phone will appear here. Use Bill History for complete invoice management.</p></CardContent>
+   612→                </Card>
+   613→              </TabsContent>
+   614→
+   615→              {/* Payments Tab */}
+   616→              <TabsContent value="payments" className="mt-4">
+   617→                <Card className="border-0 shadow-sm">
+   618→                  <CardHeader className="pb-2 flex flex-row items-center justify-between">
+   619→                    <CardTitle className="text-sm">Payment History</CardTitle>
+   620→                    <Badge variant="secondary">{detail.ledgerEntries?.filter(e => e.type === 'Payment').length || 0} payments</Badge>
+   621→                  </CardHeader>
+   622→                  <CardContent className="p-0">
+   623→                    <ScrollArea className="max-h-[400px]">
+   624→                      {!detail.ledgerEntries?.filter(e => e.type === 'Payment').length ? <p className="text-sm text-muted-foreground text-center py-8">No payments recorded</p> :
+   625→                      <div className="divide-y">
+   626→                        {detail.ledgerEntries.filter(e => e.type === 'Payment').reverse().map(e => (
+   627→                          <div key={e.id} className="flex items-center gap-3 p-3">
+   628→                            <div className="flex size-8 rounded-full bg-green-100 dark:bg-green-900/30 items-center justify-center"><ArrowDownLeft className="size-4 text-green-600" /></div>
+   629→                            <div className="flex-1 min-w-0"><p className="text-sm font-medium truncate">{e.description}</p><p className="text-xs text-muted-foreground">{fmtDateTime(e.createdAt)}{e.userName ? ` · ${e.userName}` : ''}</p></div>
+   630→                            <p className="text-sm font-bold text-green-600 tabular-nums">+{fmtCur(e.credit)}</p>
+   631→                          </div>
+   632→                        ))}
+   633→                      </div>
+   634→                      }
+   635→                    </ScrollArea>
+   636→                  </CardContent>
+   637→                </Card>
+   638→              </TabsContent>
+   639→
+   640→              {/* Documents Tab */}
+   641→              <TabsContent value="documents" className="mt-4">
+   642→                <Card className="border-0 shadow-sm">
+   643→                  <CardHeader className="pb-2 flex flex-row items-center justify-between"><CardTitle className="text-sm">Documents</CardTitle><Button size="sm" className="gap-1 text-xs bg-emerald-600 hover:bg-emerald-700" onClick={() => setDocOpen(true)}><Upload className="size-3" />Upload</Button></CardHeader>
+   644→                  <CardContent>
+   645→                    {!detail.documents?.length ? <p className="text-sm text-muted-foreground text-center py-8">No documents uploaded</p> :
+   646→                    <div className="space-y-2">{detail.documents.map(d => (
+   647→                      <div key={d.id} className="flex items-center gap-3 p-3 rounded-lg border"><div className="flex size-8 rounded-lg bg-muted items-center justify-center"><FileText className="size-4 text-muted-foreground" /></div><div className="flex-1 min-w-0"><p className="text-sm font-medium">{d.name || d.type}</p><p className="text-xs text-muted-foreground">{d.type} · {fmtDate(d.createdAt)}{d.notes ? ` · ${d.notes}` : ''}</p></div>{canDelete && <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-600" onClick={() => handleDeleteDoc(d.id)}><Trash2 className="size-3" /></Button>}</div>
+   648→                    ))}</div>
+   649→                    }
+   650→                  </CardContent>
+   651→                </Card>
+   652→              </TabsContent>
+   653→
+   654→              {/* Notes Tab */}
+   655→              <TabsContent value="notes" className="mt-4">
+   656→                <Card className="border-0 shadow-sm">
+   657→                  <CardHeader className="pb-2 flex flex-row items-center justify-between"><CardTitle className="text-sm">Notes</CardTitle><Button size="sm" className="gap-1 text-xs bg-emerald-600 hover:bg-emerald-700" onClick={() => setNoteOpen(true)}><Plus className="size-3" />Add Note</Button></CardHeader>
+   658→                  <CardContent>
+   659→                    {!detail.notes?.length ? <p className="text-sm text-muted-foreground text-center py-8">No notes yet</p> :
+   660→                    <div className="space-y-2">{detail.notes.map(n => (
+   661→                      <div key={n.id} className="p-3 rounded-lg border"><div className="flex items-center justify-between mb-1"><Badge variant="outline" className="text-[10px]">{n.type}</Badge><div className="flex items-center gap-2"><span className="text-[10px] text-muted-foreground">{n.userName} · {relTime(n.createdAt)}</span>{isAdmin && <Button size="sm" variant="ghost" className="size-6 text-red-500" onClick={() => handleDeleteNote(n.id)}><Trash2 className="size-3" /></Button>}</div></div><p className="text-sm">{n.content}</p></div>
+   662→                    ))}</div>
+   663→                    }
+   664→                  </CardContent>
+   665→                </Card>
+   666→              </TabsContent>
+   667→
+   668→              {/* Audit Tab */}
+   669→              <TabsContent value="audit" className="mt-4">
+   670→                <Card className="border-0 shadow-sm">
+   671→                  <CardHeader className="pb-2"><CardTitle className="text-sm">Audit Trail</CardTitle></CardHeader>
+   672→                  <CardContent className="p-0">
+   673→                    <ScrollArea className="max-h-[400px]">
+   674→                      {!detail.auditLogs?.length ? <p className="text-sm text-muted-foreground text-center py-8">No audit logs</p> :
+   675→                      <Table>
+   676→                        <TableHeader><TableRow><TableHead className="w-8">#</TableHead><TableHead>Date</TableHead><TableHead>Action</TableHead><TableHead>User</TableHead><TableHead>Target</TableHead></TableRow></TableHeader>
+   677→                        <TableBody>
+   678→                          {detail.auditLogs.map((a, i) => (
+   679→                            <TableRow key={a.id}><TableCell className="text-xs">{i+1}</TableCell><TableCell className="text-xs">{fmtDateTime(a.createdAt)}</TableCell><TableCell><Badge variant="outline" className="text-[10px]">{a.action}</Badge></TableCell><TableCell className="text-xs">{a.userName}</TableCell><TableCell className="text-xs text-muted-foreground truncate max-w-[200px]">{a.target || '—'}</TableCell></TableRow>
+   680→                          ))}
+   681→                        </TableBody>
+   682→                      </Table>
+   683→                      }
+   684→                    </ScrollArea>
+   685→                  </CardContent>
+   686→                </Card>
+   687→              </TabsContent>
+   688→            </Tabs>
+   689→          </div>
+   690→
+   691→          {/* Overview Panel (Right Side) */}
+   692→          <div className="hidden lg:block w-72 shrink-0">
+   693→            <Card className="border-0 shadow-md sticky top-16">
+   694→              <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Eye className="size-4" />Overview</CardTitle></CardHeader>
+   695→              <CardContent className="space-y-3">
+   696→                {[
+   697→                  { label: 'Customer Since', value: fmtDate(detail.createdAt) },
+   698→                  { label: 'Lifetime Revenue', value: fmtCur(detail.lifetimeRevenue || 0), color: 'text-green-600' },
+   699→                  { label: 'Lifetime Payments', value: fmtCur(detail.lifetimePayments || 0), color: 'text-teal-600' },
+   700→                  { label: 'Outstanding', value: fmtCur(bal), color: bal > 0 ? 'text-green-600' : bal < 0 ? 'text-red-500' : '' },
+   701→                  { label: 'Total Bills', value: String(detail.totalBills || 0) },
+   702→                  { label: 'Total Transactions', value: String(detail.ledgerEntries?.length || 0) },
+   703→                  { label: 'Total Visits', value: String(detail.visits?.length || 0) },
+   704→                  { label: 'Last Visit', value: detail.lastVisitDate ? relTime(detail.lastVisitDate) : '—' },
+   705→                  { label: 'Last Checkout', value: detail.lastCheckoutDate ? relTime(detail.lastCheckoutDate) : '—' },
+   706→                ].map((item, i) => (
+   707→                  <div key={i} className="flex justify-between items-center"><span className="text-xs text-muted-foreground">{item.label}</span><span className={`text-xs font-semibold tabular-nums ${item.color || ''}`}>{item.value}</span></div>
+   708→                ))}
+   709→                {detail.creditLimit > 0 && (
+   710→                  <div className="pt-2 border-t"><div className="flex justify-between text-xs mb-1"><span className="text-muted-foreground">Credit Limit</span><span className="font-semibold">{fmtCur(bal)}/{fmtCur(detail.creditLimit)}</span></div><Progress value={creditPct} className="h-1.5" /></div>
+   711→                )}
+   712→                <div className="pt-2 border-t"><p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Tags</p><div className="flex flex-wrap gap-1">{detail.tags?.length > 0 ? detail.tags.map(t => <span key={t.id} className={`text-[10px] px-2 py-0.5 rounded-full border ${TAG_COLORS[t.tagName] || TAG_COLORS.Regular}`}>{t.tagName}</span>) : <span className="text-xs text-muted-foreground">No tags</span>}</div></div>
+   713→                {detail.internalNotes && <div className="pt-2 border-t"><p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1">Internal Notes</p><p className="text-xs text-muted-foreground">{detail.internalNotes}</p></div>}
+   714→              </CardContent>
+   715→            </Card>
+   716→          </div>
+   717→        </div>
+   718→      </div>
+   719→    )
+   720→  }
+   721→
+   722→  // ─── LIST VIEW ───
+   723→  return (
+   724→    <div className="space-y-4 animate-fade-in">
+   725→      {!canAccess && <ReadOnlyBanner module="Customer Folio" noAccess />}
+   726→      {/* Summary Stats */}
+   727→      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+   728→        {[
+   729→          { label: 'Total Customers', value: customers.length, icon: Users, color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20' },
+   730→          { label: 'Active', value: activeCount, icon: UserCheck, color: 'text-green-600 bg-green-50 dark:bg-green-900/20' },
+   731→          { label: 'Due', value: dueCount, icon: AlertCircle, color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/20' },
+   732→          { label: 'Settled', value: settledCount, icon: CheckCircle, color: 'text-teal-600 bg-teal-50 dark:bg-teal-900/20' },
+   733→          { label: 'Checked Out', value: checkedOutCount, icon: LogOut, color: 'text-gray-600 bg-gray-50 dark:bg-gray-800/50' },
+   734→          { label: 'Outstanding', value: fmtCur(totalOutstanding), icon: IndianRupee, color: 'text-red-600 bg-red-50 dark:bg-red-900/20' },
+   735→        ].map((s, i) => (
+   736→          <Card key={i} className="border-0 shadow-sm"><CardContent className="p-3 text-center"><s.icon className={`size-5 mx-auto mb-1 ${s.color.split(' ')[1]}`} /><p className="text-[10px] text-muted-foreground uppercase tracking-wider">{s.label}</p><p className={`text-lg font-bold tabular-nums ${s.color.split(' ')[0]}`}>{s.value}</p></CardContent></Card>
+   737→        ))}
+   738→      </div>
+   739→
+   740→      {/* Filters + Search + Actions */}
+   741→      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+   742→        <div className="flex gap-1 flex-wrap">
+   743→          {FILTER_TABS.map(f => (
+   744→            <Button key={f} size="sm" variant={filter === f ? 'default' : 'outline'} className={`text-xs rounded-full px-3 ${filter === f ? 'bg-emerald-600 hover:bg-emerald-700' : ''}`} onClick={() => setFilter(f)}>{f === 'Due' ? 'Due' : f}</Button>
+   745→          ))}
+   746→        </div>
+   747→        <div className="flex-1" />
+   748→        <div className="flex gap-2 items-center w-full sm:w-auto">
+   749→          <div className="relative flex-1 sm:w-64"><Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" /><Input placeholder="Search customers..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9 h-9 text-sm" /></div>
+   750→          <Select value={sort} onValueChange={setSort}><SelectTrigger className="h-9 w-36 text-xs"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="newest">Newest First</SelectItem><SelectItem value="oldest">Oldest First</SelectItem><SelectItem value="name-asc">Name A-Z</SelectItem><SelectItem value="name-desc">Name Z-A</SelectItem><SelectItem value="balance-high">Balance High</SelectItem><SelectItem value="balance-low">Balance Low</SelectItem></SelectContent></Select>
+   751→          <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={migrateLegacy} disabled={submitting}><RefreshCw className={`size-3 ${submitting ? 'animate-spin' : ''}`} />Migrate</Button>
+   752→          {canCreate && <Button size="sm" className="gap-1 text-xs bg-emerald-600 hover:bg-emerald-700" onClick={() => { resetForm(); setDuplicate(null); setAddOpen(true) }}><Plus className="size-3" />Add Customer</Button>}
+   753→        </div>
+   754→      </div>
+   755→
+   756→      {/* Customer Grid */}
+   757→      {loading ? (
+   758→        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">{Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-40 rounded-xl" />)}</div>
+   759→      ) : filteredCustomers.length === 0 ? (
+   760→        <div className="flex flex-col items-center justify-center py-16 text-center">
+   761→          <div className="flex size-20 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-100 dark:from-emerald-900/20 dark:to-teal-900/30 mb-4"><BookOpen className="size-10 text-emerald-400" /></div>
+   762→          <p className="text-base font-semibold">No customers found</p>
+   763→          <p className="text-sm text-muted-foreground mt-1">{filter !== 'All' ? `No ${filter.toLowerCase()} customers` : 'Start by adding your first customer'}</p>
+   764→          {canCreate && <Button className="mt-4 bg-emerald-600 hover:bg-emerald-700 gap-2" onClick={() => { resetForm(); setAddOpen(true) }}><Plus className="size-4" />Add Customer</Button>}
+   765→        </div>
+   766→      ) : (
+   767→        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+   768→          {filteredCustomers.map(c => {
+   769→            const b = c.balance || 0
+   770→            return (
+   771→              <Card key={c.id} className="border-0 shadow-sm hover:shadow-md transition-all cursor-pointer hover:-translate-y-0.5 group" onClick={() => openCustomer(c.id)}>
+   772→                <CardContent className="p-4">
+   773→                  <div className="flex items-start gap-3">
+   774→                    <div className={`flex size-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white bg-gradient-to-br ${getAvatarGrad(c.fullName)}`}>{c.fullName.charAt(0).toUpperCase()}</div>
+   775→                    <div className="flex-1 min-w-0">
+   776→                      <div className="flex items-center gap-1.5 flex-wrap">
+   777→                        <p className="text-sm font-semibold truncate">{c.fullName}</p>
+   778→                        <Badge variant="outline" className="text-[9px] font-mono shrink-0">{c.customerId}</Badge>
+   779→                      </div>
+   780→                      {c.mobile && <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1"><Phone className="size-3" />{c.mobile}</p>}
+   781→                      <div className="flex flex-wrap gap-1 mt-1.5">
+   782→                        <Badge className={`text-[10px] px-1.5 ${TYPE_BADGE[c.customerType] || TYPE_BADGE.Retail}`}>{c.customerType}</Badge>
+   783→                        <Badge className={`text-[10px] px-1.5 ${STATUS_BADGE[c.status] || STATUS_BADGE.Active}`}>{c.status}</Badge>
+   784→                      </div>
+   785→                    </div>
+   786→                  </div>
+   787→                  <div className="flex items-center justify-between mt-3 pt-3 border-t">
+   788→                    <div>
+   789→                      <p className="text-[10px] text-muted-foreground">Balance</p>
+   790→                      <p className={`text-sm font-bold tabular-nums ${b > 0 ? 'text-green-600' : b < 0 ? 'text-red-500' : 'text-muted-foreground'}`}>{b < 0 ? '-' : b > 0 ? '+' : ''}{fmtCur(b)}</p>
+   791→                    </div>
+   792→                    <div className="text-right">
+   793→                      <p className="text-[10px] text-muted-foreground">Last Activity</p>
+   794→                      <p className="text-xs text-muted-foreground">{c.lastTxnDate ? relTime(c.lastTxnDate) : '—'}</p>
+   795→                    </div>
+   796→                  </div>
+   797→                  {c.tags?.length > 0 && <div className="flex flex-wrap gap-1 mt-2">{c.tags.map(t => <span key={t.id} className={`text-[9px] px-1.5 py-0.5 rounded-full border ${TAG_COLORS[t.tagName] || TAG_COLORS.Regular}`}>{t.tagName}</span>)}</div>}
+   798→                </CardContent>
+   799→              </Card>
+   800→            )
+   801→          })}
+   802→        </div>
+   803→      )}
+   804→
+   805→      {/* ─── ALL DIALOGS ─── */}
+   806→
+   807→      {/* Add Customer Dialog */}
+   808→      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+   809→        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+   810→          <DialogHeader><DialogTitle className="text-lg">Add New Customer</DialogTitle><DialogDescription>Create a permanent customer profile with folio</DialogDescription></DialogHeader>
+   811→          {duplicate && <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 flex items-center gap-3"><AlertTriangle className="size-4 text-amber-600 shrink-0" /><div className="flex-1 min-w-0"><p className="text-sm font-medium text-amber-800 dark:text-amber-300">Existing Customer Found</p><p className="text-xs text-amber-600">{duplicate.fullName} — {duplicate.mobile}</p></div><Button size="sm" variant="outline" className="text-amber-600 border-amber-200 shrink-0" onClick={() => { setAddOpen(false); setDuplicate(null); openCustomer(duplicate.id) }}>Open Profile</Button></div>}
+   812→          <div className="grid gap-4 py-2">
+   813→            <div className="grid grid-cols-2 gap-3">
+   814→              <div className="space-y-1"><Label>Full Name *</Label><Input value={form.fullName} onChange={e => setForm(f => ({ ...f, fullName: e.target.value }))} placeholder="Enter full name" /></div>
+   815→              <div className="space-y-1"><Label>Mobile *</Label><Input value={form.mobile} onChange={e => setForm(f => ({ ...f, mobile: e.target.value }))} placeholder="Enter mobile" /></div>
+   816→            </div>
+   817→            <div className="grid grid-cols-2 gap-3">
+   818→              <div className="space-y-1"><Label>WhatsApp</Label><Input value={form.whatsapp} onChange={e => setForm(f => ({ ...f, whatsapp: e.target.value }))} placeholder="WhatsApp number" /></div>
+   819→              <div className="space-y-1"><Label>Email</Label><Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="Email address" /></div>
+   820→            </div>
+   821→            <div className="grid grid-cols-2 gap-3">
+   822→              <div className="space-y-1"><Label>Customer Type</Label><Select value={form.customerType} onValueChange={v => setForm(f => ({ ...f, customerType: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{['Retail','Wholesale','Supplier','Corporate','VIP'].map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent></Select></div>
+   823→              <div className="space-y-1"><Label>Credit Limit</Label><Input type="number" value={form.creditLimit || ''} onChange={e => setForm(f => ({ ...f, creditLimit: parseFloat(e.target.value) || 0 }))} placeholder="0" /></div>
+   824→            </div>
+   825→            <div className="grid grid-cols-2 gap-3">
+   826→              <div className="space-y-1"><Label>GST Number</Label><Input value={form.gstNumber} onChange={e => setForm(f => ({ ...f, gstNumber: e.target.value }))} placeholder="Optional" /></div>
+   827→              <div className="space-y-1"><Label>PAN Number</Label><Input value={form.panNumber} onChange={e => setForm(f => ({ ...f, panNumber: e.target.value }))} placeholder="Optional" /></div>
+   828→            </div>
+   829→            <div className="grid grid-cols-2 gap-3">
+   830→              <div className="space-y-1"><Label>Aadhaar Number</Label><Input value={form.aadhaarNumber} onChange={e => setForm(f => ({ ...f, aadhaarNumber: e.target.value }))} placeholder="Optional" /></div>
+   831→              <div className="space-y-1"><Label>Opening Balance</Label><Input type="number" value={form.openingBalance || ''} onChange={e => setForm(f => ({ ...f, openingBalance: parseFloat(e.target.value) || 0 }))} placeholder="0" /></div>
+   832→            </div>
+   833→            <div className="space-y-1"><Label>Internal Notes</Label><Textarea value={form.internalNotes} onChange={e => setForm(f => ({ ...f, internalNotes: e.target.value }))} placeholder="Internal notes (not visible to customer)" rows={2} /></div>
+   834→          </div>
+   835→          <DialogFooter><Button variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button><Button onClick={handleCreate} disabled={submitting} className="bg-emerald-600 hover:bg-emerald-700">{submitting && <Loader2 className="size-4 animate-spin mr-2" />}Create Customer</Button></DialogFooter>
+   836→        </DialogContent>
+   837→      </Dialog>
+   838→
+   839→      {/* Edit Customer Dialog */}
+   840→      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+   841→        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+   842→          <DialogHeader><DialogTitle>Edit Customer</DialogTitle></DialogHeader>
+   843→          <div className="grid gap-4 py-2">
+   844→            <div className="grid grid-cols-2 gap-3">
+   845→              <div className="space-y-1"><Label>Full Name</Label><Input value={form.fullName} onChange={e => setForm(f => ({ ...f, fullName: e.target.value }))} /></div>
+   846→              <div className="space-y-1"><Label>Mobile</Label><Input value={form.mobile} onChange={e => setForm(f => ({ ...f, mobile: e.target.value }))} /></div>
+   847→            </div>
+   848→            <div className="grid grid-cols-2 gap-3">
+   849→              <div className="space-y-1"><Label>WhatsApp</Label><Input value={form.whatsapp} onChange={e => setForm(f => ({ ...f, whatsapp: e.target.value }))} /></div>
+   850→              <div className="space-y-1"><Label>Email</Label><Input value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} /></div>
+   851→            </div>
+   852→            <div className="grid grid-cols-2 gap-3">
+   853→              <div className="space-y-1"><Label>Customer Type</Label><Select value={form.customerType} onValueChange={v => setForm(f => ({ ...f, customerType: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{['Retail','Wholesale','Supplier','Corporate','VIP'].map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent></Select></div>
+   854→              <div className="space-y-1"><Label>Credit Limit</Label><Input type="number" value={form.creditLimit || ''} onChange={e => setForm(f => ({ ...f, creditLimit: parseFloat(e.target.value) || 0 }))} /></div>
+   855→            </div>
+   856→            <div className="space-y-1"><Label>Internal Notes</Label><Textarea value={form.internalNotes} onChange={e => setForm(f => ({ ...f, internalNotes: e.target.value }))} rows={2} /></div>
+   857→          </div>
+   858→          <DialogFooter><Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button><Button onClick={handleUpdate} disabled={submitting}>{submitting && <Loader2 className="size-4 animate-spin mr-2" />}Save Changes</Button></DialogFooter>
+   859→        </DialogContent>
+   860→      </Dialog>
+   861→
+   862→      {/* Charge Dialog */}
+   863→      <Dialog open={chargeOpen} onOpenChange={setChargeOpen}>
+   864→        <DialogContent className="max-w-md">
+   865→          <DialogHeader><DialogTitle>Add Charge</DialogTitle><DialogDescription>Add a product, service, or manual charge</DialogDescription></DialogHeader>
+   866→          <div className="grid gap-4 py-2">
+   867→            <div className="space-y-1"><Label>Description *</Label><Input value={chargeForm.description} onChange={e => setChargeForm(f => ({ ...f, description: e.target.value }))} placeholder="Charge description" /></div>
+   868→            <div className="grid grid-cols-2 gap-3">
+   869→              <div className="space-y-1"><Label>Amount *</Label><Input type="number" value={chargeForm.amount} onChange={e => setChargeForm(f => ({ ...f, amount: e.target.value }))} placeholder="0" /></div>
+   870→              <div className="space-y-1"><Label>Type</Label><Select value={chargeForm.chargeType} onValueChange={v => setChargeForm(f => ({ ...f, chargeType: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{['Product','Service','Manual Charge','Penalty','Miscellaneous'].map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent></Select></div>
+   871→            </div>
+   872→            <div className="grid grid-cols-2 gap-3">
+   873→              <div className="space-y-1"><Label>Tax</Label><Input type="number" value={chargeForm.tax} onChange={e => setChargeForm(f => ({ ...f, tax: e.target.value }))} placeholder="0" /></div>
+   874→              <div className="space-y-1"><Label>Invoice No</Label><Input value={chargeForm.invoiceNo} onChange={e => setChargeForm(f => ({ ...f, invoiceNo: e.target.value }))} placeholder="Optional" /></div>
+   875→            </div>
+   876→          </div>
+   877→          <DialogFooter><Button variant="outline" onClick={() => setChargeOpen(false)}>Cancel</Button><Button onClick={handleCharge} disabled={submitting} className="bg-emerald-600 hover:bg-emerald-700">{submitting && <Loader2 className="size-4 animate-spin mr-2" />}Add Charge</Button></DialogFooter>
+   878→        </DialogContent>
+   879→      </Dialog>
+   880→
+   881→      {/* Payment Dialog */}
+   882→      <Dialog open={paymentOpen} onOpenChange={setPaymentOpen}>
+   883→        <DialogContent className="max-w-md">
+   884→          <DialogHeader><DialogTitle>Record Payment</DialogTitle><DialogDescription>Record a payment received from customer</DialogDescription></DialogHeader>
+   885→          <div className="grid gap-4 py-2">
+   886→            <div className="space-y-1"><Label>Amount *</Label><Input type="number" value={paymentForm.amount} onChange={e => setPaymentForm(f => ({ ...f, amount: e.target.value }))} placeholder="0" /></div>
+   887→            <div className="space-y-1"><Label>Payment Mode</Label><Select value={paymentForm.mode} onValueChange={v => setPaymentForm(f => ({ ...f, mode: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{['Cash','UPI','Card','Bank','Wallet','Mixed'].map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}</SelectContent></Select></div>
+   888→            <div className="space-y-1"><Label>Reference</Label><Input value={paymentForm.reference} onChange={e => setPaymentForm(f => ({ ...f, reference: e.target.value }))} placeholder="Transaction reference" /></div>
+   889→            <div className="space-y-1"><Label>Description</Label><Input value={paymentForm.description} onChange={e => setPaymentForm(f => ({ ...f, description: e.target.value }))} placeholder="Optional description" /></div>
+   890→          </div>
+   891→          <DialogFooter><Button variant="outline" onClick={() => setPaymentOpen(false)}>Cancel</Button><Button onClick={handlePayment} disabled={submitting} className="bg-teal-600 hover:bg-teal-700">{submitting && <Loader2 className="size-4 animate-spin mr-2" />}Record Payment</Button></DialogFooter>
+   892→        </DialogContent>
+   893→      </Dialog>
+   894→
+   895→      {/* Refund Dialog */}
+   896→      <Dialog open={refundOpen} onOpenChange={setRefundOpen}>
+   897→        <DialogContent className="max-w-md">
+   898→          <DialogHeader><DialogTitle>Process Refund</DialogTitle></DialogHeader>
+   899→          <div className="grid gap-4 py-2">
+   900→            <div className="space-y-1"><Label>Amount *</Label><Input type="number" value={refundForm.amount} onChange={e => setRefundForm(f => ({ ...f, amount: e.target.value }))} /></div>
+   901→            <div className="space-y-1"><Label>Reason</Label><Select value={refundForm.reason} onValueChange={v => setRefundForm(f => ({ ...f, reason: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{['Full Refund','Partial Refund','Return Adjustment','Other'].map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}</SelectContent></Select></div>
+   902→            <div className="space-y-1"><Label>Description *</Label><Input value={refundForm.description} onChange={e => setRefundForm(f => ({ ...f, description: e.target.value }))} placeholder="Refund reason" /></div>
+   903→          </div>
+   904→          <DialogFooter><Button variant="outline" onClick={() => setRefundOpen(false)}>Cancel</Button><Button onClick={handleRefund} disabled={submitting} className="bg-red-600 hover:bg-red-700">{submitting && <Loader2 className="size-4 animate-spin mr-2" />}Process Refund</Button></DialogFooter>
+   905→        </DialogContent>
+   906→      </Dialog>
+   907→
+   908→      {/* Transfer Dialog */}
+   909→      <Dialog open={transferOpen} onOpenChange={setTransferOpen}>
+   910→        <DialogContent className="max-w-md">
+   911→          <DialogHeader><DialogTitle>Transfer Balance</DialogTitle><DialogDescription>Transfer outstanding balance to another customer</DialogDescription></DialogHeader>
+   912→          <div className="grid gap-4 py-2">
+   913→            <div className="space-y-1"><Label>Search Customer</Label><Input value={transferForm.targetName} onChange={e => { setTransferForm(f => ({ ...f, targetName: e.target.value })); searchTransferTargets(e.target.value) }} placeholder="Search by name or mobile" /></div>
+   914→            {transferResults.length > 0 && <div className="border rounded-lg max-h-40 overflow-y-auto">{transferResults.map(c => <button key={c.id} className={`w-full flex items-center gap-3 p-2 hover:bg-muted text-left ${transferForm.targetCustomerId === c.id ? 'bg-muted' : ''}`} onClick={() => setTransferForm(f => ({ ...f, targetCustomerId: c.id, targetName: c.fullName }))}><div className={`flex size-6 rounded-full bg-gradient-to-br ${getAvatarGrad(c.fullName)} items-center justify-center text-white text-[10px] font-bold`}>{c.fullName.charAt(0)}</div><div><p className="text-xs font-medium">{c.fullName}</p><p className="text-[10px] text-muted-foreground">{c.mobile} · {c.customerId}</p></div></button>)}</div>}
+   915→            <div className="space-y-1"><Label>Amount *</Label><Input type="number" value={transferForm.amount} onChange={e => setTransferForm(f => ({ ...f, amount: e.target.value }))} /></div>
+   916→            <div className="space-y-1"><Label>Description</Label><Input value={transferForm.description} onChange={e => setTransferForm(f => ({ ...f, description: e.target.value }))} /></div>
+   917→          </div>
+   918→          <DialogFooter><Button variant="outline" onClick={() => setTransferOpen(false)}>Cancel</Button><Button onClick={handleTransfer} disabled={submitting || !transferForm.targetCustomerId} className="bg-purple-600 hover:bg-purple-700">{submitting && <Loader2 className="size-4 animate-spin mr-2" />}Transfer</Button></DialogFooter>
+   919→        </DialogContent>
+   920→      </Dialog>
+   921→
+   922→      {/* Discount Dialog */}
+   923→      <Dialog open={discountOpen} onOpenChange={setDiscountOpen}>
+   924→        <DialogContent className="max-w-md">
+   925→          <DialogHeader><DialogTitle>Apply Discount</DialogTitle></DialogHeader>
+   926→          <div className="grid gap-4 py-2">
+   927→            <div className="grid grid-cols-2 gap-3">
+   928→              <div className="space-y-1"><Label>Type</Label><Select value={discountForm.discountType} onValueChange={v => setDiscountForm(f => ({ ...f, discountType: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Fixed">Fixed</SelectItem><SelectItem value="Percentage">Percentage</SelectItem></SelectContent></Select></div>
+   929→              <div className="space-y-1"><Label>Amount / % *</Label><Input type="number" value={discountForm.amount} onChange={e => setDiscountForm(f => ({ ...f, amount: e.target.value }))} /></div>
+   930→            </div>
+   931→            <div className="space-y-1"><Label>Description</Label><Input value={discountForm.description} onChange={e => setDiscountForm(f => ({ ...f, description: e.target.value }))} /></div>
+   932→          </div>
+   933→          <DialogFooter><Button variant="outline" onClick={() => setDiscountOpen(false)}>Cancel</Button><Button onClick={handleDiscount} disabled={submitting} className="bg-amber-600 hover:bg-amber-700">{submitting && <Loader2 className="size-4 animate-spin mr-2" />}Apply Discount</Button></DialogFooter>
+   934→        </DialogContent>
+   935→      </Dialog>
+   936→
+   937→      {/* Document Dialog */}
+   938→      <Dialog open={docOpen} onOpenChange={setDocOpen}>
+   939→        <DialogContent className="max-w-md">
+   940→          <DialogHeader><DialogTitle>Upload Document</DialogTitle></DialogHeader>
+   941→          <div className="grid gap-4 py-2">
+   942→            <div className="space-y-1"><Label>Type</Label><Select value={docForm.type} onValueChange={v => setDocForm(f => ({ ...f, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{['Aadhaar','PAN','GST','Agreement','Receipt','Custom'].map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent></Select></div>
+   943→            <div className="space-y-1"><Label>Document Name *</Label><Input value={docForm.name} onChange={e => setDocForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Aadhaar Card Front" /></div>
+   944→            <div className="space-y-1"><Label>Notes</Label><Input value={docForm.notes} onChange={e => setDocForm(f => ({ ...f, notes: e.target.value }))} /></div>
+   945→          </div>
+   946→          <DialogFooter><Button variant="outline" onClick={() => setDocOpen(false)}>Cancel</Button><Button onClick={handleAddDoc} disabled={submitting}>{submitting && <Loader2 className="size-4 animate-spin mr-2" />}Add Document</Button></DialogFooter>
+   947→        </DialogContent>
+   948→      </Dialog>
+   949→
+   950→      {/* Note Dialog */}
+   951→      <Dialog open={noteOpen} onOpenChange={setNoteOpen}>
+   952→        <DialogContent className="max-w-md">
+   953→          <DialogHeader><DialogTitle>Add Note</DialogTitle></DialogHeader>
+   954→          <div className="grid gap-4 py-2">
+   955→            <div className="space-y-1"><Label>Type</Label><Select value={noteForm.type} onValueChange={v => setNoteForm(f => ({ ...f, type: v }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{['Internal','Customer','Staff','Private'].map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent></Select></div>
+   956→            <div className="space-y-1"><Label>Content *</Label><Textarea value={noteForm.content} onChange={e => setNoteForm(f => ({ ...f, content: e.target.value }))} rows={3} /></div>
+   957→          </div>
+   958→          <DialogFooter><Button variant="outline" onClick={() => setNoteOpen(false)}>Cancel</Button><Button onClick={handleAddNote} disabled={submitting}>{submitting && <Loader2 className="size-4 animate-spin mr-2" />}Add Note</Button></DialogFooter>
+   959→        </DialogContent>
+   960→      </Dialog>
+   961→
+   962→      {/* Tags Dialog */}
+   963→      <Dialog open={tagsOpen} onOpenChange={setTagsOpen}>
+   964→        <DialogContent className="max-w-md">
+   965→          <DialogHeader><DialogTitle>Manage Tags</DialogTitle></DialogHeader>
+   966→          <div className="flex flex-wrap gap-2 py-4">{ALL_TAGS.map(tag => (
+   967→            <button key={tag} onClick={() => handleToggleTag(tag)} className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-all ${customerTags.includes(tag) ? (TAG_COLORS[tag] || '') + ' ring-2 ring-offset-1' : 'border-muted-foreground/20 text-muted-foreground hover:border-muted-foreground/40'}`}>{tag}</button>
+   968→          ))}</div>
+   969→        </DialogContent>
+   970→      </Dialog>
+   971→
+   972→      {/* Checkout Confirmation */}
+   973→      <AlertDialog open={checkoutOpen && !!detail} onOpenChange={setCheckoutOpen}>
+   974→        <AlertDialogContent>
+   975→          <AlertDialogHeader><AlertDialogTitle>Confirm Checkout</AlertDialogTitle><AlertDialogDescription>This will checkout the customer and archive the current folio. Customer profile will remain in the database.</AlertDialogDescription></AlertDialogHeader>
+   976→          {detail && <div className="grid gap-2 py-2">
+   977→            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Outstanding Balance</span><span className={`font-semibold ${(detail?.balance ?? 0) > 0 ? 'text-green-600' : ''}`}>{fmtCur(detail?.balance ?? 0)}</span></div>
+   978→            <div className="flex justify-between text-sm"><span className="text-muted-foreground">Pending Entries</span><span className="font-semibold">{detail?.ledgerEntries?.length || 0}</span></div>
+   979→          </div>}
+   980→          <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={handleCheckout} disabled={submitting} className="bg-orange-600 hover:bg-orange-700">{submitting && <Loader2 className="size-4 animate-spin mr-2" />}Confirm Checkout</AlertDialogAction></AlertDialogFooter>
+   981→        </AlertDialogContent>
+   982→      </AlertDialog>
+   983→
+   984→      {/* Delete/Archive Confirmation */}
+   985→      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+   986→        <AlertDialogContent>
+   987→          <AlertDialogHeader><AlertDialogTitle>Archive Customer</AlertDialogTitle><AlertDialogDescription>This will archive the customer profile. The data will be preserved and can be restored later.</AlertDialogDescription></AlertDialogHeader>
+   988→          <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={handleDelete} disabled={submitting} className="bg-red-600 hover:bg-red-700">{submitting && <Loader2 className="size-4 animate-spin mr-2" />}Archive</AlertDialogAction></AlertDialogFooter>
+   989→        </AlertDialogContent>
+   990→      </AlertDialog>
+   991→
+   992→      {/* Statement Dialog */}
+   993→      <Dialog open={statementOpen} onOpenChange={open => { setStatementOpen(open); if (!open) setStmtData(null) }}>
+   994→        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+   995→          <DialogHeader><DialogTitle>Customer Statement</DialogTitle></DialogHeader>
+   996→          <div className="grid grid-cols-2 gap-3">
+   997→            <div className="space-y-1"><Label>From Date</Label><Input type="date" value={stmtFrom} onChange={e => setStmtFrom(e.target.value)} /></div>
+   998→            <div className="space-y-1"><Label>To Date</Label><Input type="date" value={stmtTo} onChange={e => setStmtTo(e.target.value)} /></div>
+   999→          </div>
+  1000→          <div className="flex gap-2">
+  1001→            <Button onClick={fetchStatement} disabled={stmtLoading} className="gap-2 bg-emerald-600 hover:bg-emerald-700">{stmtLoading ? <Loader2 className="size-4 animate-spin" /> : <FileSearch className="size-4" />}Generate Statement</Button>
+  1002→            {stmtData && <Button onClick={printStatement} variant="outline" className="gap-2"><Printer className="size-4" />Print</Button>}
+  1003→          </div>
+  1004→          {stmtData && (
+  1005→            <div className="mt-4 space-y-3">
+  1006→              <div className="grid grid-cols-4 gap-3">
+  1007→                <div className="p-3 rounded-lg bg-muted/50 text-center"><p className="text-[10px] text-muted-foreground uppercase">Opening</p><p className="text-sm font-bold tabular-nums">{fmtCur(stmtData.openingBalance)}</p></div>
+  1008→                <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/20 text-center"><p className="text-[10px] text-muted-foreground uppercase">Debits</p><p className="text-sm font-bold text-red-600 tabular-nums">{fmtCur(stmtData.totalDebits)}</p></div>
+  1009→                <div className="p-3 rounded-lg bg-green-50 dark:bg-green-900/20 text-center"><p className="text-[10px] text-muted-foreground uppercase">Credits</p><p className="text-sm font-bold text-green-600 tabular-nums">{fmtCur(stmtData.totalCredits)}</p></div>
+  1010→                <div className="p-3 rounded-lg bg-muted text-center"><p className="text-[10px] text-muted-foreground uppercase">Closing</p><p className="text-sm font-bold tabular-nums">{fmtCur(stmtData.closingBalance)}</p></div>
+  1011→              </div>
+  1012→              <ScrollArea className="max-h-[300px]">
+  1013→                <Table>
+  1014→                  <TableHeader><TableRow><TableHead className="w-8">#</TableHead><TableHead>Date</TableHead><TableHead>Type</TableHead><TableHead>Description</TableHead><TableHead className="text-right">Debit</TableHead><TableHead className="text-right">Credit</TableHead><TableHead className="text-right">Balance</TableHead></TableRow></TableHeader>
+  1015→                  <TableBody>
+  1016→                    {(stmtData.entries || []).map((e: LedgerEntry, i: number) => (
+  1017→                      <TableRow key={e.id}><TableCell className="text-xs">{i+1}</TableCell><TableCell className="text-xs">{fmtDate(e.date)}</TableCell><TableCell><Badge variant="outline" className="text-[10px]">{e.type}</Badge></TableCell><TableCell className="text-xs">{e.description || '—'}</TableCell><TableCell className={`text-xs text-right ${e.debit > 0 ? 'text-red-600' : ''}`}>{e.debit > 0 ? fmtCur(e.debit) : '—'}</TableCell><TableCell className={`text-xs text-right ${e.credit > 0 ? 'text-green-600' : ''}`}>{e.credit > 0 ? fmtCur(e.credit) : '—'}</TableCell><TableCell className={`text-xs text-right font-bold ${e.balance >= 0 ? 'text-green-700' : 'text-red-600'}`}>{fmtCur(e.balance)}</TableCell></TableRow>
+  1018→                    ))}
+  1019→                  </TableBody>
+  1020→                </Table>
+  1021→              </ScrollArea>
+  1022→            </div>
+  1023→          )}
+  1024→        </DialogContent>
+  1025→      </Dialog>
+  1026→
+  1027→      {/* History Sheet */}
+  1028→      <Sheet open={historyOpen && !!detail} onOpenChange={setHistoryOpen}>
+  1029→        <SheetContent className="w-full sm:w-[500px] overflow-y-auto">
+  1030→          <SheetHeader><SheetTitle>History Center</SheetTitle></SheetHeader>
+  1031→          <div className="mt-4 space-y-4">
+  1032→            <div>
+  1033→              <h3 className="text-sm font-semibold mb-2">Visits</h3>
+  1034→              {(detail?.visits || []).length === 0 ? <p className="text-xs text-muted-foreground">No visit history</p> :
+  1035→              <div className="space-y-2">{(detail?.visits || []).map(v => (
+  1036→                <div key={v.id} className="p-3 rounded-lg border"><div className="flex items-center justify-between"><Badge variant="outline" className="text-[10px]">Visit #{v.visitNumber}</Badge><Badge variant={v.checkOutAt ? 'secondary' : 'default'} className="text-[10px]">{v.checkOutAt ? 'Completed' : 'Active'}</Badge></div><p className="text-xs text-muted-foreground mt-1">Check-in: {fmtDateTime(v.checkInAt)}{v.checkOutAt ? ` · Check-out: ${fmtDateTime(v.checkOutAt)}` : ''}</p></div>
+  1037→              ))}</div>
+  1038→              }
+  1039→            </div>
+  1040→            <div>
+  1041→              <h3 className="text-sm font-semibold mb-2">Settlements</h3>
+  1042→              {(detail?.settlements || []).length === 0 ? <p className="text-xs text-muted-foreground">No settlements</p> :
+  1043→              <div className="space-y-2">{(detail?.settlements || []).map(s => (
+  1044→                <div key={s.id} className="p-3 rounded-lg border flex items-center gap-3"><div className="flex size-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 items-center justify-center"><CheckCircle className="size-4 text-emerald-600" /></div><div className="flex-1"><p className="text-sm font-medium">{fmtCur(s.amount)} via {s.mode}</p><p className="text-xs text-muted-foreground">{s.description || 'Settlement'} · {s.userName} · {fmtDateTime(s.createdAt)}</p></div></div>
+  1045→              ))}</div>
+  1046→              }
+  1047→            </div>
+  1048→          </div>
+  1049→        </SheetContent>
+  1050→      </Sheet>
+  1051→
+  1052→      {/* Timeline Sheet */}
+  1053→      <Sheet open={timelineOpen && !!detail} onOpenChange={setTimelineOpen}>
+  1054→        <SheetContent className="w-full sm:w-[500px] overflow-y-auto">
+  1055→          <SheetHeader><SheetTitle>Activity Timeline</SheetTitle></SheetHeader>
+  1056→          <div className="mt-6">
+  1057→            {(detail?.ledgerEntries || []).length === 0 && (detail?.auditLogs || []).length === 0 ? <p className="text-sm text-muted-foreground text-center py-10">No activity recorded</p> :
+  1058→            <div className="relative pl-6">
+  1059→              <div className="absolute left-2 top-0 bottom-0 w-0.5 bg-border" />
+  1060→              {[...(detail?.auditLogs || []).map(a => ({ date: a.createdAt, type: a.action, desc: a.target || a.action, user: a.userName })), ...(detail?.ledgerEntries || []).map(e => ({ date: e.createdAt, type: e.type, desc: e.description || e.type, user: e.userName }))].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((event, i) => {
+  1061→                const iconMap: Record<string, React.ReactNode> = { Payment: <ArrowDownLeft className="size-3" />, Charge: <ArrowUpRight className="size-3" />, Refund: <Undo2 className="size-3" />, Discount: <Percent className="size-3" />, Settlement: <CheckCircle className="size-3" />, Checkout: <LogOut className="size-3" />, CREATE: <Plus className="size-3" /> }
+  1062→                const colorMap: Record<string, string> = { Payment: 'bg-green-500', Charge: 'bg-red-500', Refund: 'bg-orange-500', Discount: 'bg-amber-500', Settlement: 'bg-emerald-500', Checkout: 'bg-gray-500', CREATE: 'bg-teal-500' }
+  1063→                return (
+  1064→                  <div key={i} className="relative pb-6 last:pb-0">
+  1065→                    <div className={`absolute -left-5 size-4 rounded-full ${colorMap[event.type] || 'bg-muted-foreground'} flex items-center justify-center text-white ring-2 ring-background`}>{iconMap[event.type] || <Activity className="size-2.5" />}</div>
+  1066→                    <div><p className="text-sm font-medium">{event.type}</p><p className="text-xs text-muted-foreground">{event.desc}{event.user ? ` · ${event.user}` : ''}</p><p className="text-[10px] text-muted-foreground">{relTime(event.date)}</p></div>
+  1067→                  </div>
+  1068→                )
+  1069→              })}
+  1070→            </div>
+  1071→            }
+  1072→          </div>
+  1073→        </SheetContent>
+  1074→      </Sheet>
+  1075→    </div>
+  1076→  )
+  1077→}
+  1078→

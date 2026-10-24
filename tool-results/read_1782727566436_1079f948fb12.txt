@@ -1,0 +1,1244 @@
+    35→    74→  calculator: { access: false },
+    36→    75→  settings: { access: false, edit: false, userManagement: false },
+    37→    76→  auditLogs: { access: false },
+    38→    77→});
+    39→    78→
+    40→    79→const permissionPresets: Record<string, UserPermissions> = {
+    41→    80→  Admin: {
+    42→    81→    billing: { access: true, create: true, edit: true, delete: true },
+    43→    82→    reports: { access: true, export: true },
+    44→    83→    inventory: { access: true, create: true, edit: true, delete: true },
+    45→    84→    cashManager: { access: true, create: true, edit: true, delete: true },
+    46→    85→    khata: { access: true, create: true, edit: true, delete: true },
+    47→    86→    staff: { access: true, create: true, edit: true, delete: true },
+    48→    87→    calculator: { access: true },
+    49→    88→    settings: { access: true, edit: true, userManagement: true },
+    50→    89→    auditLogs: { access: true },
+    51→    90→  },
+    52→    91→  Manager: {
+    53→    92→    billing: { access: true, create: true, edit: true, delete: false },
+    54→    93→    reports: { access: true, export: true },
+    55→    94→    inventory: { access: true, create: true, edit: true, delete: false },
+    56→    95→    cashManager: { access: true, create: true, edit: true, delete: false },
+    57→    96→    khata: { access: true, create: true, edit: true, delete: false },
+    58→    97→    staff: { access: true, create: true, edit: true, delete: false },
+    59→    98→    calculator: { access: true },
+    60→    99→    settings: { access: false, edit: false, userManagement: false },
+    61→   100→    auditLogs: { access: true },
+    62→   101→  },
+    63→   102→  Cashier: {
+    64→   103→    billing: { access: true, create: true, edit: true, delete: false },
+    65→   104→    reports: { access: true, export: false },
+    66→   105→    inventory: { access: true, create: false, edit: false, delete: false },
+    67→   106→    cashManager: { access: false, create: false, edit: false, delete: false },
+    68→   107→    khata: { access: true, create: true, edit: true, delete: false },
+    69→   108→    staff: { access: false, create: false, edit: false, delete: false },
+    70→   109→    calculator: { access: true },
+    71→   110→    settings: { access: false, edit: false, userManagement: false },
+    72→   111→    auditLogs: { access: false },
+    73→   112→  },
+    74→   113→  Staff: {
+    75→   114→    billing: { access: true, create: true, edit: false, delete: false },
+    76→   115→    reports: { access: false, export: false },
+    77→   116→    inventory: { access: true, create: false, edit: false, delete: false },
+    78→   117→    cashManager: { access: false, create: false, edit: false, delete: false },
+    79→   118→    khata: { access: true, create: true, edit: false, delete: false },
+    80→   119→    staff: { access: false, create: false, edit: false, delete: false },
+    81→   120→    calculator: { access: true },
+    82→   121→    settings: { access: false, edit: false, userManagement: false },
+    83→   122→    auditLogs: { access: false },
+    84→   123→  },
+    85→   124→};
+    86→   125→
+    87→   126→// ── Role & Status Badge Config ────────────────────────────────────────────
+    88→   127→
+    89→   128→const roleBadgeClasses: Record<string, string> = {
+    90→   129→  Admin: 'bg-red-100 text-red-700 border-red-200 dark:bg-red-950/50 dark:text-red-400 dark:border-red-800',
+    91→   130→  Manager: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-950/50 dark:text-blue-400 dark:border-blue-800',
+    92→   131→  Cashier: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-400 dark:border-amber-800',
+    93→   132→  Staff: 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800/50 dark:text-gray-400 dark:border-gray-700',
+    94→   133→};
+    95→   134→
+    96→   135→const statusBadgeClasses: Record<string, string> = {
+    97→   136→  Active: 'bg-green-100 text-green-700 border-green-200 dark:bg-green-950/50 dark:text-green-400 dark:border-green-800',
+    98→   137→  Suspended: 'bg-red-100 text-red-700 border-red-200 dark:bg-red-950/50 dark:text-red-400 dark:border-red-800',
+    99→   138→};
+   100→   139→
+   101→   140→// ── Permission Group Config ───────────────────────────────────────────────
+   102→   141→
+   103→   142→interface PermGroupConfig {
+   104→   143→  key: keyof UserPermissions;
+   105→   144→  label: string;
+   106→   145→  icon: React.ReactNode;
+   107→   146→  actions: { key: string; label: string }[];
+   108→   147→}
+   109→   148→
+   110→   149→const permissionGroups: PermGroupConfig[] = [
+   111→   150→  {
+   112→   151→    key: 'billing',
+   113→   152→    label: 'Billing',
+   114→   153→    icon: <span className="text-lg">🧾</span>,
+   115→   154→    actions: [
+   116→   155→      { key: 'access', label: 'Access' },
+   117→   156→      { key: 'create', label: 'Create' },
+   118→   157→      { key: 'edit', label: 'Edit' },
+   119→   158→      { key: 'delete', label: 'Delete' },
+   120→   159→    ],
+   121→   160→  },
+   122→   161→  {
+   123→   162→    key: 'reports',
+   124→   163→    label: 'Reports',
+   125→   164→    icon: <span className="text-lg">📊</span>,
+   126→   165→    actions: [
+   127→   166→      { key: 'access', label: 'Access' },
+   128→   167→      { key: 'export', label: 'Export' },
+   129→   168→    ],
+   130→   169→  },
+   131→   170→  {
+   132→   171→    key: 'inventory',
+   133→   172→    label: 'Inventory',
+   134→   173→    icon: <span className="text-lg">📦</span>,
+   135→   174→    actions: [
+   136→   175→      { key: 'access', label: 'Access' },
+   137→   176→      { key: 'create', label: 'Create' },
+   138→   177→      { key: 'edit', label: 'Edit' },
+   139→   178→      { key: 'delete', label: 'Delete' },
+   140→   179→    ],
+   141→   180→  },
+   142→   181→  {
+   143→   182→    key: 'cashManager',
+   144→   183→    label: 'Cash Manager',
+   145→   184→    icon: <span className="text-lg">💰</span>,
+   146→   185→    actions: [
+   147→   186→      { key: 'access', label: 'Access' },
+   148→   187→      { key: 'create', label: 'Create' },
+   149→   188→      { key: 'edit', label: 'Edit' },
+   150→   189→      { key: 'delete', label: 'Delete' },
+   151→   190→    ],
+   152→   191→  },
+   153→   192→  {
+   154→   193→    key: 'khata',
+   155→   194→    label: 'Khata',
+   156→   195→    icon: <span className="text-lg">📒</span>,
+   157→   196→    actions: [
+   158→   197→      { key: 'access', label: 'Access' },
+   159→   198→      { key: 'create', label: 'Create' },
+   160→   199→      { key: 'edit', label: 'Edit' },
+   161→   200→      { key: 'delete', label: 'Delete' },
+   162→   201→    ],
+   163→   202→  },
+   164→   203→  {
+   165→   204→    key: 'staff',
+   166→   205→    label: 'Staff Management',
+   167→   206→    icon: <span className="text-lg">👥</span>,
+   168→   207→    actions: [
+   169→   208→      { key: 'access', label: 'Access' },
+   170→   209→      { key: 'create', label: 'Create' },
+   171→   210→      { key: 'edit', label: 'Edit' },
+   172→   211→      { key: 'delete', label: 'Delete' },
+   173→   212→    ],
+   174→   213→  },
+   175→   214→  {
+   176→   215→    key: 'calculator',
+   177→   216→    label: 'Calculator',
+   178→   217→    icon: <span className="text-lg">🔢</span>,
+   179→   218→    actions: [
+   180→   219→      { key: 'access', label: 'Access' },
+   181→   220→    ],
+   182→   221→  },
+   183→   222→  {
+   184→   223→    key: 'settings',
+   185→   224→    label: 'Settings',
+   186→   225→    icon: <span className="text-lg">⚙️</span>,
+   187→   226→    actions: [
+   188→   227→      { key: 'access', label: 'Access' },
+   189→   228→      { key: 'edit', label: 'Edit' },
+   190→   229→      { key: 'userManagement', label: 'User Mgmt' },
+   191→   230→    ],
+   192→   231→  },
+   193→   232→  {
+   194→   233→    key: 'auditLogs',
+   195→   234→    label: 'Audit Logs',
+   196→   235→    icon: <span className="text-lg">📋</span>,
+   197→   236→    actions: [
+   198→   237→      { key: 'access', label: 'Access' },
+   199→   238→    ],
+   200→   239→  },
+   201→   240→];
+   202→   241→
+   203→   242→// ── Helpers ───────────────────────────────────────────────────────────────
+   204→   243→
+   205→   244→function formatDate(dateStr: string | null): string {
+   206→   245→  if (!dateStr) return '—';
+   207→   246→  try {
+   208→   247→    return new Date(dateStr).toLocaleDateString('en-IN', {
+   209→   248→      day: '2-digit', month: 'short', year: 'numeric',
+   210→   249→    });
+   211→   250→  } catch {
+   212→   251→    return '—';
+   213→   252→  }
+   214→   253→}
+   215→   254→
+   216→   255→function formatDateTime(dateStr: string | null): string {
+   217→   256→  if (!dateStr) return 'Never';
+   218→   257→  try {
+   219→   258→    return new Date(dateStr).toLocaleDateString('en-IN', {
+   220→   259→      day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+   221→   260→    });
+   222→   261→  } catch {
+   223→   262→    return '—';
+   224→   263→  }
+   225→   264→}
+   226→   265→
+   227→   266→function isPermGroup(obj: unknown): obj is Record<string, boolean> {
+   228→   267→  return typeof obj === 'object' && obj !== null && !Array.isArray(obj);
+   229→   268→}
+   230→   269→
+   231→   270→// ── Main Component ────────────────────────────────────────────────────────
+   232→   271→
+   233→   272→export default function UserManagementSection() {
+   234→   273→  const { currentUser, isAdmin, refreshSession, token } = useAuth();
+   235→   274→  const authHeaders: Record<string, string> = token ? { 'Authorization': `Bearer ${token}` } : {};
+   236→   275→
+   237→   276→  // Determine which roles the current user can create
+   238→   277→  // Admin: can create all roles (Admin, Manager, Cashier, Staff)
+   239→   278→  // Non-admin users with userManagement permission: can create Cashier, Staff only
+   240→   279→  const canCreateAdmin = isAdmin;
+   241→   280→  const canCreateManager = isAdmin;
+   242→   281→  const availableRoles = isAdmin
+   243→   282→    ? ['Admin', 'Manager', 'Cashier', 'Staff']
+   244→   283→    : ['Cashier', 'Staff'];
+   245→   284→
+   246→   285→  // ── State ──
+   247→   286→  const [users, setUsers] = useState<User[]>([]);
+   248→   287→  const [loading, setLoading] = useState(true);
+   249→   288→  const [searchQuery, setSearchQuery] = useState('');
+   250→   289→  const [roleFilter, setRoleFilter] = useState<string>('all');
+   251→   290→  const [statusFilter, setStatusFilter] = useState<string>('all');
+   252→   291→
+   253→   292→  // Reset Password dialog
+   254→   293→  const [resetPwdOpen, setResetPwdOpen] = useState(false);
+   255→   294→  const [resetPwdTarget, setResetPwdTarget] = useState<User | null>(null);
+   256→   295→  const [resetPwdNew, setResetPwdNew] = useState('');
+   257→   296→  const [resetPwdConfirm, setResetPwdConfirm] = useState('');
+   258→   297→  const [resetPwdShow, setResetPwdShow] = useState(false);
+   259→   298→  const [resetPwdSubmitting, setResetPwdSubmitting] = useState(false);
+   260→   299→
+   261→   300→  // Modal state
+   262→   301→  const [modalMode, setModalMode] = useState<ModalMode>(null);
+   263→   302→  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+   264→   303→
+   265→   304→  // Form state
+   266→   305→  const [formLoginId, setFormLoginId] = useState('');
+   267→   306→  const [formName, setFormName] = useState('');
+   268→   307→  const [formPassword, setFormPassword] = useState('');
+   269→   308→  const [formShowPassword, setFormShowPassword] = useState(false);
+   270→   309→  const [formRole, setFormRole] = useState<'Admin' | 'Manager' | 'Cashier' | 'Staff'>('Staff');
+   271→   310→  const [formPermissions, setFormPermissions] = useState<UserPermissions>(emptyPermissions());
+   272→   311→  const [permsExpanded, setPermsExpanded] = useState(false);
+   273→   312→  const [submitting, setSubmitting] = useState(false);
+   274→   313→
+   275→   314→  // Confirmation dialogs
+   276→   315→  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+   277→   316→  const [suspendDialogOpen, setSuspendDialogOpen] = useState(false);
+   278→   317→  const [actionTarget, setActionTarget] = useState<User | null>(null);
+   279→   318→
+   280→   319→  // ── Data Fetching (with auto-retry on network failure) ──
+   281→   320→  const fetchUsers = useCallback(async (attempt = 0) => {
+   282→   321→    setLoading(true);
+   283→   322→    try {
+   284→   323→      const res = await fetch('/api/users', { headers: authHeaders });
+   285→   324→      if (res.ok) {
+   286→   325→        const data = await res.json();
+   287→   326→        setUsers(Array.isArray(data) ? data : []);
+   288→   327→      } else {
+   289→   328→        const errData = await res.json().catch(() => ({}));
+   290→   329→        notify({ type: 'error', title: 'Error', message: errData?.error || 'Failed to fetch users' });
+   291→   330→      }
+   292→   331→    } catch {
+   293→   332→      // Network error — retry up to 3 times with delay
+   294→   333→      if (attempt < 3) {
+   295→   334→        const delay = Math.min(1000 * Math.pow(2, attempt), 5000);
+   296→   335→        setTimeout(() => fetchUsers(attempt + 1), delay);
+   297→   336→        return; // Don't set loading=false yet, retry will handle it
+   298→   337→      }
+   299→   338→      notify({ type: 'error', title: 'Network Error', message: 'Network error — server may be starting. Please try again.' });
+   300→   339→    } finally {
+   301→   340→      setLoading(false);
+   302→   341→    }
+   303→   342→  }, []);
+   304→   343→
+   305→   344→  useEffect(() => {
+   306→   345→    fetchUsers();
+   307→   346→  }, [fetchUsers]);
+   308→   347→
+   309→   348→  // ── Filtered Users ──
+   310→   349→  const filteredUsers = users.filter((user) => {
+   311→   350→    const matchesSearch =
+   312→   351→      searchQuery === '' ||
+   313→   352→      user.loginId.toLowerCase().includes(searchQuery.toLowerCase()) ||
+   314→   353→      user.name.toLowerCase().includes(searchQuery.toLowerCase());
+   315→   354→    const matchesRole = roleFilter === 'all' || user.role === roleFilter;
+   316→   355→    const matchesStatus = statusFilter === 'all' || user.status === statusFilter;
+   317→   356→    return matchesSearch && matchesRole && matchesStatus;
+   318→   357→  });
+   319→   358→
+   320→   359→  // ── Form Handlers ──
+   321→   360→  const resetForm = () => {
+   322→   361→    setFormLoginId('');
+   323→   362→    setFormName('');
+   324→   363→    setFormPassword('');
+   325→   364→    setFormShowPassword(false);
+   326→   365→    setFormRole('Staff');
+   327→   366→    setFormPermissions(emptyPermissions());
+   328→   367→    setPermsExpanded(false);
+   329→   368→    setSelectedUser(null);
+   330→   369→  };
+   331→   370→
+   332→   371→  const openCreateModal = () => {
+   333→   372→    resetForm();
+   334→   373→    setModalMode('create');
+   335→   374→  };
+   336→   375→
+   337→   376→  const openEditModal = (user: User) => {
+   338→   377→    setSelectedUser(user);
+   339→   378→    setFormLoginId(user.loginId);
+   340→   379→    setFormName(user.name);
+   341→   380→    setFormPassword('');
+   342→   381→    setFormShowPassword(false);
+   343→   382→    setFormRole(user.role);
+   344→   383→    setFormPermissions({
+   345→   384→      ...emptyPermissions(),
+   346→   385→      ...user.permissions,
+   347→   386→    });
+   348→   387→    setPermsExpanded(false);
+   349→   388→    setModalMode('edit');
+   350→   389→  };
+   351→   390→
+   352→   391→  const closeModal = () => {
+   353→   392→    setModalMode(null);
+   354→   393→    resetForm();
+   355→   394→  };
+   356→   395→
+   357→   396→  const applyRolePreset = (role: string) => {
+   358→   397→    const preset = permissionPresets[role];
+   359→   398→    if (preset) {
+   360→   399→      setFormPermissions(JSON.parse(JSON.stringify(preset)));
+   361→   400→    }
+   362→   401→  };
+   363→   402→
+   364→   403→  const handleRoleChange = (role: string) => {
+   365→   404→    setFormRole(role as 'Admin' | 'Manager' | 'Cashier' | 'Staff');
+   366→   405→    applyRolePreset(role);
+   367→   406→  };
+   368→   407→
+   369→   408→  const togglePermission = (
+   370→   409→    groupKey: keyof UserPermissions,
+   371→   410→    actionKey: string,
+   372→   411→  ) => {
+   373→   412→    setFormPermissions((prev) => {
+   374→   413→      const group = prev[groupKey];
+   375→   414→      if (!isPermGroup(group)) return prev;
+   376→   415→      return {
+   377→   416→        ...prev,
+   378→   417→        [groupKey]: {
+   379→   418→          ...group,
+   380→   419→          [actionKey]: !group[actionKey],
+   381→   420→        },
+   382→   421→      };
+   383→   422→    });
+   384→   423→  };
+   385→   424→
+   386→   425→  const handleSubmit = async () => {
+   387→   426→    // Validation
+   388→   427→    if (!formLoginId.trim()) {
+   389→   428→      notify({ type: 'error', title: 'Validation Error', message: 'Login ID is required' });
+   390→   429→      return;
+   391→   430→    }
+   392→   431→    if (!formName.trim()) {
+   393→   432→      notify({ type: 'error', title: 'Validation Error', message: 'Name is required' });
+   394→   433→      return;
+   395→   434→    }
+   396→   435→    if (modalMode === 'create' && !formPassword) {
+   397→   436→      notify({ type: 'error', title: 'Validation Error', message: 'Password is required for new users' });
+   398→   437→      return;
+   399→   438→    }
+   400→   439→    if (modalMode === 'create' && formPassword.length < 4) {
+   401→   440→      notify({ type: 'error', title: 'Validation Error', message: 'Password must be at least 4 characters' });
+   402→   441→      return;
+   403→   442→    }
+   404→   443→
+   405→   444→    setSubmitting(true);
+   406→   445→    try {
+   407→   446→      const payload: Record<string, unknown> = {
+   408→   447→        loginId: formLoginId.trim().toLowerCase(),
+   409→   448→        name: formName.trim(),
+   410→   449→        role: formRole,
+   411→   450→        permissions: formPermissions,
+   412→   451→      };
+   413→   452→      if (formPassword) {
+   414→   453→        payload.password = formPassword;
+   415→   454→      }
+   416→   455→
+   417→   456→      let res: Response;
+   418→   457→      if (modalMode === 'create') {
+   419→   458→        res = await fetch('/api/users', {
+   420→   459→          method: 'POST',
+   421→   460→          headers: { ...authHeaders, 'Content-Type': 'application/json' },
+   422→   461→          body: JSON.stringify(payload),
+   423→   462→        });
+   424→   463→      } else {
+   425→   464→        res = await fetch(`/api/users/${selectedUser?.id}`, {
+   426→   465→          method: 'PUT',
+   427→   466→          headers: { ...authHeaders, 'Content-Type': 'application/json' },
+   428→   467→          body: JSON.stringify(payload),
+   429→   468→        });
+   430→   469→      }
+   431→   470→
+   432→   471→      if (res.ok) {
+   433→   472→        notify({
+   434→   473→          type: 'success',
+   435→   474→          title: modalMode === 'create' ? 'User Created' : 'User Updated',
+   436→   475→          message: modalMode === 'create'
+   437→   476→            ? `User "${formLoginId}" created successfully`
+   438→   477→            : `User "${formLoginId}" updated successfully`,
+   439→   478→        });
+   440→   479→        closeModal();
+   441→   480→        fetchUsers();
+   442→   481→        // Refresh session to pick up any permission changes (especially if Admin edited own permissions)
+   443→   482→        refreshSession();
+   444→   483→      } else {
+   445→   484→        const errData = await res.json().catch(() => null);
+   446→   485→        notify({ type: 'error', title: 'Error', message: errData?.error || `Failed to ${modalMode} user` });
+   447→   486→      }
+   448→   487→    } catch {
+   449→   488→      notify({ type: 'error', title: 'Network Error', message: 'Network error — server may be starting. Please try again.' });
+   450→   489→    } finally {
+   451→   490→      setSubmitting(false);
+   452→   491→    }
+   453→   492→  };
+   454→   493→
+   455→   494→  // ── Action Handlers ──
+   456→   495→  const handleDeleteClick = (user: User) => {
+   457→   496→    setActionTarget(user);
+   458→   497→    setDeleteDialogOpen(true);
+   459→   498→  };
+   460→   499→
+   461→   500→  const handleDeleteConfirm = async () => {
+   462→   501→    if (!actionTarget) return;
+   463→   502→    try {
+   464→   503→      const res = await fetch(`/api/users/${actionTarget.id}`, {
+   465→   504→        method: 'DELETE',
+   466→   505→        headers: authHeaders,
+   467→   506→      });
+   468→   507→      if (res.ok) {
+   469→   508→        notify({ type: 'success', title: 'User Deleted', message: `User "${actionTarget.loginId}" deleted successfully` });
+   470→   509→        fetchUsers();
+   471→   510→      } else {
+   472→   511→        const errData = await res.json().catch(() => null);
+   473→   512→        notify({ type: 'error', title: 'Error', message: errData?.error || 'Failed to delete user' });
+   474→   513→      }
+   475→   514→    } catch {
+   476→   515→      notify({ type: 'error', title: 'Network Error', message: 'Network error while deleting user' });
+   477→   516→    } finally {
+   478→   517→      setDeleteDialogOpen(false);
+   479→   518→      setActionTarget(null);
+   480→   519→    }
+   481→   520→  };
+   482→   521→
+   483→   522→  // Reset Password handlers
+   484→   523→  const handleResetPwdClick = (user: User) => {
+   485→   524→    setResetPwdTarget(user);
+   486→   525→    setResetPwdNew('');
+   487→   526→    setResetPwdConfirm('');
+   488→   527→    setResetPwdShow(false);
+   489→   528→    setResetPwdOpen(true);
+   490→   529→  };
+   491→   530→
+   492→   531→  const handleResetPwdConfirm = async () => {
+   493→   532→    if (!resetPwdTarget) return;
+   494→   533→    if (!resetPwdNew || resetPwdNew.length < 4) {
+   495→   534→      notify({ type: 'error', title: 'Validation Error', message: 'Password must be at least 4 characters' });
+   496→   535→      return;
+   497→   536→    }
+   498→   537→    if (resetPwdNew !== resetPwdConfirm) {
+   499→   538→      notify({ type: 'error', title: 'Validation Error', message: 'Passwords do not match' });
+   500→   539→      return;
+   501→   540→    }
+   502→   541→    setResetPwdSubmitting(true);
+   503→   542→    try {
+   504→   543→      const res = await fetch(`/api/users/${resetPwdTarget.id}`, {
+   505→   544→        method: 'PUT',
+   506→   545→        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+   507→   546→        body: JSON.stringify({ password: resetPwdNew, _passwordOnly: true }),
+   508→   547→      });
+   509→   548→      if (res.ok) {
+   510→   549→        notify({ type: 'success', title: 'Password Reset', message: `Password reset for "${resetPwdTarget.name}"` });
+   511→   550→        setResetPwdOpen(false);
+   512→   551→        setResetPwdTarget(null);
+   513→   552→      } else {
+   514→   553→        const err = await res.json().catch(() => null);
+   515→   554→        notify({ type: 'error', title: 'Error', message: err?.error || 'Failed to reset password' });
+   516→   555→      }
+   517→   556→    } catch {
+   518→   557→      notify({ type: 'error', title: 'Network Error', message: 'Network error' });
+   519→   558→    } finally {
+   520→   559→      setResetPwdSubmitting(false);
+   521→   560→    }
+   522→   561→  };
+   523→   562→
+   524→   563→  const handleSuspendClick = (user: User) => {
+   525→   564→    setActionTarget(user);
+   526→   565→    setSuspendDialogOpen(true);
+   527→   566→  };
+   528→   567→
+   529→   568→  const handleSuspendConfirm = async () => {
+   530→   569→    if (!actionTarget) return;
+   531→   570→    const newStatus = actionTarget.status === 'Active' ? 'Suspended' : 'Active';
+   532→   571→    try {
+   533→   572→      const res = await fetch(`/api/users/${actionTarget.id}`, {
+   534→   573→        method: 'PUT',
+   535→   574→        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+   536→   575→        body: JSON.stringify({ status: newStatus }),
+   537→   576→      });
+   538→   577→      if (res.ok) {
+   539→   578→        notify({
+   540→   579→          type: 'success',
+   541→   580→          title: newStatus === 'Active' ? 'User Activated' : 'User Suspended',
+   542→   581→          message: `User "${actionTarget.loginId}" ${newStatus === 'Active' ? 'activated' : 'suspended'} successfully`,
+   543→   582→        });
+   544→   583→        fetchUsers();
+   545→   584→      } else {
+   546→   585→        const errData = await res.json().catch(() => null);
+   547→   586→        notify({ type: 'error', title: 'Error', message: errData?.error || `Failed to ${newStatus === 'Active' ? 'activate' : 'suspend'} user` });
+   548→   587→      }
+   549→   588→    } catch {
+   550→   589→      notify({ type: 'error', title: 'Network Error', message: 'Network error. Please try again.' });
+   551→   590→    } finally {
+   552→   591→      setSuspendDialogOpen(false);
+   553→   592→      setActionTarget(null);
+   554→   593→    }
+   555→   594→  };
+   556→   595→
+   557→   596→  // ── Loading State ──
+   558→   597→  if (loading) {
+   559→   598→    return (
+   560→   599→      <Card className="overflow-hidden border-0 shadow-sm">
+   561→   600→        <CardHeader className="pb-4">
+   562→   601→          <Skeleton className="h-7 w-52" />
+   563→   602→          <Skeleton className="h-4 w-72" />
+   564→   603→        </CardHeader>
+   565→   604→        <div className="px-6 pb-6 space-y-4">
+   566→   605→          <Skeleton className="h-10 w-full" />
+   567→   606→          <Skeleton className="h-64 w-full rounded-lg" />
+   568→   607→        </div>
+   569→   608→      </Card>
+   570→   609→    );
+   571→   610→  }
+   572→   611→
+   573→   612→  // ── Render ──
+   574→   613→  return (
+   575→   614→    <div className="space-y-4">
+   576→   615→      {/* Header */}
+   577→   616→      <Card className="overflow-hidden border-0 shadow-sm">
+   578→   617→        <CardHeader className="pb-2">
+   579→   618→          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+   580→   619→            <div className="flex items-center gap-3 min-w-0">
+   581→   620→              <div className="flex size-10 items-center justify-center rounded-xl bg-green-100 dark:bg-green-950/50 text-green-600 dark:text-green-400 shrink-0">
+   582→   621→                <Users className="size-5" />
+   583→   622→              </div>
+   584→   623→              <div className="min-w-0">
+   585→   624→                <CardTitle className="text-lg flex items-center gap-2">
+   586→   625→                  User Management
+   587→   626→                  <Badge variant="outline" className="font-mono text-xs">
+   588→   627→                    {users.length}
+   589→   628→                  </Badge>
+   590→   629→                </CardTitle>
+   591→   630→                <CardDescription className="mt-0.5">
+   592→   631→                  Manage staff accounts, roles, and permissions
+   593→   632→                </CardDescription>
+   594→   633→              </div>
+   595→   634→            </div>
+   596→   635→            <Button
+   597→   636→              onClick={openCreateModal}
+   598→   637→              className="gap-2 bg-green-600 hover:bg-green-700 text-white shrink-0 self-start sm:self-auto"
+   599→   638→            >
+   600→   639→              <UserPlus className="size-4" />
+   601→   640→              Add User
+   602→   641→            </Button>
+   603→   642→          </div>
+   604→   643→        </CardHeader>
+   605→   644→      </Card>
+   606→   645→
+   607→   646→      {/* Search & Filters */}
+   608→   647→      <Card className="overflow-hidden border-0 shadow-sm">
+   609→   648→        <div className="p-4 space-y-3">
+   610→   649→          {/* Search Row */}
+   611→   650→          <div className="relative">
+   612→   651→            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+   613→   652→            <Input
+   614→   653→              placeholder="Search by login ID or name..."
+   615→   654→              value={searchQuery}
+   616→   655→              onChange={(e) => setSearchQuery(e.target.value)}
+   617→   656→              className="pl-9"
+   618→   657→            />
+   619→   658→            {searchQuery && (
+   620→   659→              <button
+   621→   660→                onClick={() => setSearchQuery('')}
+   622→   661→                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+   623→   662→              >
+   624→   663→                <X className="size-4" />
+   625→   664→              </button>
+   626→   665→            )}
+   627→   666→          </div>
+   628→   667→
+   629→   668→          {/* Filter Row */}
+   630→   669→          <div className="flex flex-wrap items-center gap-2">
+   631→   670→            <span className="text-xs font-medium text-muted-foreground">Filter:</span>
+   632→   671→            {['all', ...availableRoles].map((role) => (
+   633→   672→              <button
+   634→   673→                key={role}
+   635→   674→                onClick={() => setRoleFilter(role)}
+   636→   675→                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all border ${
+   637→   676→                  roleFilter === role
+   638→   677→                    ? 'bg-green-600 text-white border-green-600'
+   639→   678→                    : 'border-muted text-muted-foreground hover:border-green-300 hover:text-foreground'
+   640→   679→                }`}
+   641→   680→              >
+   642→   681→                {role === 'all' ? 'All Roles' : role}
+   643→   682→              </button>
+   644→   683→            ))}
+   645→   684→            <Separator orientation="vertical" className="h-5 mx-1" />
+   646→   685→            {['all', 'Active', 'Suspended'].map((status) => (
+   647→   686→              <button
+   648→   687→                key={status}
+   649→   688→                onClick={() => setStatusFilter(status)}
+   650→   689→                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all border ${
+   651→   690→                  statusFilter === status
+   652→   691→                    ? status === 'Active'
+   653→   692→                      ? 'bg-green-600 text-white border-green-600'
+   654→   693→                      : status === 'Suspended'
+   655→   694→                        ? 'bg-red-600 text-white border-red-600'
+   656→   695→                        : 'bg-green-600 text-white border-green-600'
+   657→   696→                    : 'border-muted text-muted-foreground hover:border-green-300 hover:text-foreground'
+   658→   697→                }`}
+   659→   698→              >
+   660→   699→                {status === 'all' ? 'All Status' : status}
+   661→   700→              </button>
+   662→   701→            ))}
+   663→   702→            {(searchQuery || roleFilter !== 'all' || statusFilter !== 'all') && (
+   664→   703→              <button
+   665→   704→                onClick={() => {
+   666→   705→                  setSearchQuery('');
+   667→   706→                  setRoleFilter('all');
+   668→   707→                  setStatusFilter('all');
+   669→   708→                }}
+   670→   709→                className="ml-auto text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+   671→   710→              >
+   672→   711→                <RefreshCw className="size-3" />
+   673→   712→                Clear filters
+   674→   713→              </button>
+   675→   714→            )}
+   676→   715→          </div>
+   677→   716→        </div>
+   678→   717→      </Card>
+   679→   718→
+   680→   719→      {/* User Table */}
+   681→   720→      <Card className="overflow-hidden border-0 shadow-sm">
+   682→   721→        <div className="overflow-x-auto">
+   683→   722→          {filteredUsers.length === 0 ? (
+   684→   723→            /* Empty State / Error State */
+   685→   724→            <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+   686→   725→              <div className="size-16 rounded-2xl bg-muted flex items-center justify-center mb-4">
+   687→   726→                {loading ? (
+   688→   727→                  <Loader2 className="size-8 text-muted-foreground animate-spin" />
+   689→   728→                ) : (
+   690→   729→                  <Users className="size-8 text-muted-foreground" />
+   691→   730→                )}
+   692→   731→              </div>
+   693→   732→              {loading ? (
+   694→   733→                <>
+   695→   734→                  <h3 className="text-base font-semibold text-foreground mb-1">
+   696→   735→                    Loading users...
+   697→   736→                  </h3>
+   698→   737→                  <p className="text-sm text-muted-foreground">
+   699→   738→                    Please wait while we fetch the user list.
+   700→   739→                  </p>
+   701→   740→                </>
+   702→   741→              ) : users.length === 0 ? (
+   703→   742→                <>
+   704→   743→                  <h3 className="text-base font-semibold text-foreground mb-1">
+   705→   744→                    No users yet
+   706→   745→                  </h3>
+   707→   746→                  <p className="text-sm text-muted-foreground mb-4 max-w-sm">
+   708→   747→                    Get started by adding your first staff member. You can assign roles and permissions later.
+   709→   748→                  </p>
+   710→   749→                  <Button
+   711→   750→                    onClick={openCreateModal}
+   712→   751→                    className="gap-2 bg-green-600 hover:bg-green-700 text-white"
+   713→   752→                  >
+   714→   753→                    <UserPlus className="size-4" />
+   715→   754→                    Add Your First User
+   716→   755→                  </Button>
+   717→   756→                </>
+   718→   757→              ) : (
+   719→   758→                <>
+   720→   759→                  <h3 className="text-base font-semibold text-foreground mb-1">
+   721→   760→                    No matching users
+   722→   761→                  </h3>
+   723→   762→                  <p className="text-sm text-muted-foreground mb-4">
+   724→   763→                    Try adjusting your search or filter criteria
+   725→   764→                  </p>
+   726→   765→                </>
+   727→   766→              )}
+   728→   767→              {!loading && (
+   729→   768→                <Button
+   730→   769→                  variant="outline"
+   731→   770→                  size="sm"
+   732→   771→                  onClick={() => fetchUsers()}
+   733→   772→                  className="mt-4 gap-2"
+   734→   773→                >
+   735→   774→                  <RefreshCw className="size-3.5" />
+   736→   775→                  Retry
+   737→   776→                </Button>
+   738→   777→              )}
+   739→   778→            </div>
+   740→   779→          ) : (
+   741→   780→            <Table>
+   742→   781→              <TableHeader>
+   743→   782→                <TableRow className="bg-muted/40 hover:bg-muted/40">
+   744→   783→                  <TableHead className="font-semibold">Login ID</TableHead>
+   745→   784→                  <TableHead className="font-semibold">Name</TableHead>
+   746→   785→                  <TableHead className="font-semibold">Role</TableHead>
+   747→   786→                  <TableHead className="font-semibold">Status</TableHead>
+   748→   787→                  <TableHead className="font-semibold hidden md:table-cell">Last Login</TableHead>
+   749→   788→                  <TableHead className="font-semibold hidden lg:table-cell">Created</TableHead>
+   750→   789→                  <TableHead className="font-semibold text-right">Actions</TableHead>
+   751→   790→                </TableRow>
+   752→   791→              </TableHeader>
+   753→   792→              <TableBody>
+   754→   793→                {filteredUsers.map((user) => (
+   755→   794→                  <TableRow key={user.id} className="group">
+   756→   795→                    <TableCell className="font-mono text-sm font-medium">
+   757→   796→                      {user.loginId}
+   758→   797→                    </TableCell>
+   759→   798→                    <TableCell className="font-medium">{user.name}</TableCell>
+   760→   799→                    <TableCell>
+   761→   800→                      <Badge
+   762→   801→                        variant="outline"
+   763→   802→                        className={roleBadgeClasses[user.role] || ''}
+   764→   803→                      >
+   765→   804→                        {user.role}
+   766→   805→                      </Badge>
+   767→   806→                    </TableCell>
+   768→   807→                    <TableCell>
+   769→   808→                      <Badge
+   770→   809→                        variant="outline"
+   771→   810→                        className={statusBadgeClasses[user.status] || ''}
+   772→   811→                      >
+   773→   812→                        <span className="size-1.5 rounded-full bg-current mr-1.5" />
+   774→   813→                        {user.status}
+   775→   814→                      </Badge>
+   776→   815→                    </TableCell>
+   777→   816→                    <TableCell className="hidden md:table-cell text-muted-foreground text-sm">
+   778→   817→                      {formatDateTime(user.lastLogin)}
+   779→   818→                    </TableCell>
+   780→   819→                    <TableCell className="hidden lg:table-cell text-muted-foreground text-sm">
+   781→   820→                      {formatDate(user.createdAt)}
+   782→   821→                    </TableCell>
+   783→   822→                    <TableCell className="text-right">
+   784→   823→                      <div className="flex items-center justify-end gap-1">
+   785→   824→                        <Button
+   786→   825→                          variant="ghost"
+   787→   826→                          size="sm"
+   788→   827→                          className="size-8 p-0 text-muted-foreground hover:text-emerald-600"
+   789→   828→                          onClick={() => handleResetPwdClick(user)}
+   790→   829→                          title="Reset Password"
+   791→   830→                        >
+   792→   831→                          <Key className="size-4" />
+   793→   832→                        </Button>
+   794→   833→                        <Button
+   795→   834→                          variant="ghost"
+   796→   835→                          size="sm"
+   797→   836→                          className="size-8 p-0 text-muted-foreground hover:text-green-600"
+   798→   837→                          onClick={() => openEditModal(user)}
+   799→   838→                          title="Edit user"
+   800→   839→                        >
+   801→   840→                          <Edit className="size-4" />
+   802→   841→                        </Button>
+   803→   842→                        <Button
+   804→   843→                          variant="ghost"
+   805→   844→                          size="sm"
+   806→   845→                          className={`size-8 p-0 ${
+   807→   846→                            user.status === 'Active'
+   808→   847→                              ? 'text-muted-foreground hover:text-amber-600'
+   809→   848→                              : 'text-muted-foreground hover:text-green-600'
+   810→   849→                          }`}
+   811→   850→                          onClick={() => handleSuspendClick(user)}
+   812→   851→                          title={user.status === 'Active' ? 'Suspend user' : 'Activate user'}
+   813→   852→                        >
+   814→   853→                          {user.status === 'Active' ? (
+   815→   854→                            <Ban className="size-4" />
+   816→   855→                          ) : (
+   817→   856→                            <CheckCircle2 className="size-4" />
+   818→   857→                          )}
+   819→   858→                        </Button>
+   820→   859→                        <Button
+   821→   860→                          variant="ghost"
+   822→   861→                          size="sm"
+   823→   862→                          className="size-8 p-0 text-muted-foreground hover:text-red-600"
+   824→   863→                          onClick={() => handleDeleteClick(user)}
+   825→   864→                          title="Delete user"
+   826→   865→                        >
+   827→   866→                          <Trash2 className="size-4" />
+   828→   867→                        </Button>
+   829→   868→                      </div>
+   830→   869→                    </TableCell>
+   831→   870→                  </TableRow>
+   832→   871→                ))}
+   833→   872→              </TableBody>
+   834→   873→            </Table>
+   835→   874→          )}
+   836→   875→        </div>
+   837→   876→
+   838→   877→        {/* Table Footer */}
+   839→   878→        {filteredUsers.length > 0 && (
+   840→   879→          <div className="px-4 py-3 border-t bg-muted/20 text-xs text-muted-foreground flex items-center justify-between">
+   841→   880→            <span>
+   842→   881→              Showing {filteredUsers.length} of {users.length} user{users.length !== 1 ? 's' : ''}
+   843→   882→            </span>
+   844→   883→            <div className="flex items-center gap-3">
+   845→   884→              <span className="flex items-center gap-1">
+   846→   885→                <span className="size-2 rounded-full bg-green-500" />
+   847→   886→                Active: {users.filter((u) => u.status === 'Active').length}
+   848→   887→              </span>
+   849→   888→              <span className="flex items-center gap-1">
+   850→   889→                <span className="size-2 rounded-full bg-red-500" />
+   851→   890→                Suspended: {users.filter((u) => u.status === 'Suspended').length}
+   852→   891→              </span>
+   853→   892→            </div>
+   854→   893→          </div>
+   855→   894→        )}
+   856→   895→      </Card>
+   857→   896→
+   858→   897→      {/* ── Create / Edit User Dialog ── */}
+   859→   898→      <Dialog
+   860→   899→        open={modalMode !== null}
+   861→   900→        onOpenChange={(open) => {
+   862→   901→          if (!open) closeModal();
+   863→   902→        }}
+   864→   903→      >
+   865→   904→        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto p-0">
+   866→   905→          {/* Dialog Header Banner */}
+   867→   906→          <div className="bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 p-5 text-white rounded-t-lg sticky top-0 z-10">
+   868→   907→            <div className="pointer-events-none absolute -right-6 -top-6 size-24 rounded-full bg-white/10" />
+   869→   908→            <DialogHeader>
+   870→   909→              <DialogTitle className="text-white flex items-center gap-2 text-lg">
+   871→   910→                {modalMode === 'create' ? (
+   872→   911→                  <>
+   873→   912→                    <UserPlus className="size-5" />
+   874→   913→                    Create New User
+   875→   914→                  </>
+   876→   915→                ) : (
+   877→   916→                  <>
+   878→   917→                    <UserCog className="size-5" />
+   879→   918→                    Edit User
+   880→   919→                  </>
+   881→   920→                )}
+   882→   921→              </DialogTitle>
+   883→   922→              <DialogDescription className="text-green-100 text-sm">
+   884→   923→                {modalMode === 'create'
+   885→   924→                  ? 'Add a new staff member to the system with role-based access'
+   886→   925→                  : `Editing user: ${selectedUser?.loginId}`}
+   887→   926→              </DialogDescription>
+   888→   927→            </DialogHeader>
+   889→   928→          </div>
+   890→   929→
+   891→   930→          <div className="p-5 space-y-5">
+   892→   931→            {/* Login ID */}
+   893→   932→            <div className="grid gap-2">
+   894→   933→              <Label htmlFor="login-id" className="text-sm font-medium flex items-center gap-1.5">
+   895→   934→                <Key className="size-3.5 text-green-600" />
+   896→   935→                Login ID
+   897→   936→              </Label>
+   898→   937→              <Input
+   899→   938→                id="login-id"
+   900→   939→                placeholder="e.g. john.doe"
+   901→   940→                value={formLoginId}
+   902→   941→                onChange={(e) => setFormLoginId(e.target.value.toLowerCase())}
+   903→   942→                disabled={modalMode === 'edit'}
+   904→   943→                className="font-mono"
+   905→   944→              />
+   906→   945→              {modalMode === 'edit' && (
+   907→   946→                <p className="text-[11px] text-muted-foreground">
+   908→   947→                  Login ID cannot be changed after creation
+   909→   948→                </p>
+   910→   949→              )}
+   911→   950→            </div>
+   912→   951→
+   913→   952→            {/* Name */}
+   914→   953→            <div className="grid gap-2">
+   915→   954→              <Label htmlFor="user-name" className="text-sm font-medium flex items-center gap-1.5">
+   916→   955→                <Users className="size-3.5 text-green-600" />
+   917→   956→                Full Name
+   918→   957→              </Label>
+   919→   958→              <Input
+   920→   959→                id="user-name"
+   921→   960→                placeholder="e.g. John Doe"
+   922→   961→                value={formName}
+   923→   962→                onChange={(e) => setFormName(e.target.value)}
+   924→   963→              />
+   925→   964→            </div>
+   926→   965→
+   927→   966→            {/* Password */}
+   928→   967→            <div className="grid gap-2">
+   929→   968→              <Label htmlFor="user-password" className="text-sm font-medium flex items-center gap-1.5">
+   930→   969→                <Lock className="size-3.5 text-green-600" />
+   931→   970→                Password
+   932→   971→                {modalMode === 'edit' && (
+   933→   972→                  <span className="text-muted-foreground font-normal text-xs">
+   934→   973→                    (leave empty to keep current)
+   935→   974→                  </span>
+   936→   975→                )}
+   937→   976→              </Label>
+   938→   977→              <div className="relative">
+   939→   978→                <Input
+   940→   979→                  id="user-password"
+   941→   980→                  type={formShowPassword ? 'text' : 'password'}
+   942→   981→                  placeholder={
+   943→   982→                    modalMode === 'create'
+   944→   983→                      ? 'Minimum 4 characters'
+   945→   984→                      : 'Leave empty to keep current password'
+   946→   985→                  }
+   947→   986→                  value={formPassword}
+   948→   987→                  onChange={(e) => setFormPassword(e.target.value)}
+   949→   988→                  className="pr-10"
+   950→   989→                />
+   951→   990→                <button
+   952→   991→                  type="button"
+   953→   992→                  onClick={() => setFormShowPassword(!formShowPassword)}
+   954→   993→                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+   955→   994→                  tabIndex={-1}
+   956→   995→                >
+   957→   996→                  {formShowPassword ? (
+   958→   997→                    <EyeOff className="size-4" />
+   959→   998→                  ) : (
+   960→   999→                    <Eye className="size-4" />
+   961→  1000→                  )}
+   962→  1001→                </button>
+   963→  1002→              </div>
+   964→  1003→            </div>
+   965→  1004→
+   966→  1005→            <Separator />
+   967→  1006→
+   968→  1007→            {/* Role Selector */}
+   969→  1008→            <div className="grid gap-3">
+   970→  1009→              <Label className="text-sm font-medium flex items-center gap-1.5">
+   971→  1010→                <Shield className="size-3.5 text-green-600" />
+   972→  1011→                Role
+   973→  1012→              </Label>
+   974→  1013→              <Select value={formRole} onValueChange={handleRoleChange}>
+   975→  1014→                <SelectTrigger className="w-full">
+   976→  1015→                  <SelectValue placeholder="Select a role" />
+   977→  1016→                </SelectTrigger>
+   978→  1017→                <SelectContent>
+   979→  1018→                  {isAdmin && (
+   980→  1019→                    <SelectItem value="Admin">
+   981→  1020→                      <span className="flex items-center gap-2">
+   982→  1021→                        <span className="size-2 rounded-full bg-red-500" />
+   983→  1022→                        Admin — Full system access
+   984→  1023→                      </span>
+   985→  1024→                    </SelectItem>
+   986→  1025→                  )}
+   987→  1026→                  {isAdmin && (
+   988→  1027→                    <SelectItem value="Manager">
+   989→  1028→                      <span className="flex items-center gap-2">
+   990→  1029→                        <span className="size-2 rounded-full bg-blue-500" />
+   991→  1030→                        Manager — Operational management
+   992→  1031→                      </span>
+   993→  1032→                    </SelectItem>
+   994→  1033→                  )}
+   995→  1034→                  <SelectItem value="Cashier">
+   996→  1035→                    <span className="flex items-center gap-2">
+   997→  1036→                      <span className="size-2 rounded-full bg-amber-500" />
+   998→  1037→                      Cashier — Billing & sales
+   999→  1038→                    </span>
+  1000→  1039→                  </SelectItem>
+  1001→  1040→                  <SelectItem value="Staff">
+  1002→  1041→                    <span className="flex items-center gap-2">
+  1003→  1042→                      <span className="size-2 rounded-full bg-gray-500" />
+  1004→  1043→                      Staff — Basic access
+  1005→  1044→                    </span>
+  1006→  1045→                  </SelectItem>
+  1007→  1046→                </SelectContent>
+  1008→  1047→              </Select>
+  1009→  1048→            </div>
+  1010→  1049→
+  1011→  1050→            {/* Permission Presets Quick Buttons */}
+  1012→  1051→            <div className="grid gap-2">
+  1013→  1052→              <Label className="text-sm font-medium flex items-center gap-1.5">
+  1014→  1053→                Permission Presets
+  1015→  1054→              </Label>
+  1016→  1055→              <div className="flex flex-wrap gap-2">
+  1017→  1056→                {availableRoles.map((presetRole) => (
+  1018→  1057→                  <button
+  1019→  1058→                    key={presetRole}
+  1020→  1059→                    type="button"
+  1021→  1060→                    onClick={() => {
+  1022→  1061→                      setFormRole(presetRole as 'Admin' | 'Manager' | 'Cashier' | 'Staff');
+  1023→  1062→                      applyRolePreset(presetRole);
+  1024→  1063→                    }}
+  1025→  1064→                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border flex items-center gap-1.5 ${
+  1026→  1065→                      formRole === presetRole
+  1027→  1066→                        ? roleBadgeClasses[presetRole] + ' border-current shadow-sm'
+  1028→  1067→                        : 'border-muted text-muted-foreground hover:border-foreground/20 hover:text-foreground'
+  1029→  1068→                    }`}
+  1030→  1069→                  >
+  1031→  1070→                    {formRole === presetRole && <CheckCircle2 className="size-3" />}
+  1032→  1071→                    {presetRole}
+  1033→  1072→                  </button>
+  1034→  1073→                ))}
+  1035→  1074→              </div>
+  1036→  1075→              <p className="text-[11px] text-muted-foreground">
+  1037→  1076→                Click a preset to apply default permissions. You can customize them below.
+  1038→  1077→              </p>
+  1039→  1078→            </div>
+  1040→  1079→
+  1041→  1080→            <Separator />
+  1042→  1081→
+  1043→  1082→            {/* Permission Toggles */}
+  1044→  1083→            <div className="space-y-2">
+  1045→  1084→              <Label className="text-sm font-medium flex items-center gap-1.5">
+  1046→  1085→                <Key className="size-3.5 text-green-600" />
+  1047→  1086→                Permissions
+  1048→  1087→                <span className="text-muted-foreground font-normal text-xs">
+  1049→  1088→                  ({permissionGroups.reduce((sum, g) => sum + g.actions.length, 0)} permissions)
+  1050→  1089→                </span>
+  1051→  1090→              </Label>
+  1052→  1091→
+  1053→  1092→              <Collapsible open={permsExpanded} onOpenChange={setPermsExpanded}>
+  1054→  1093→                <CollapsibleTrigger asChild>
+  1055→  1094→                  <Button
+  1056→  1095→                    variant="outline"
+  1057→  1096→                    size="sm"
+  1058→  1097→                    className="w-full justify-between gap-2 text-sm"
+  1059→  1098→                  >
+  1060→  1099→                    <span className="flex items-center gap-2">
+  1061→  1100→                      {permsExpanded ? (
+  1062→  1101→                        <ChevronUp className="size-4" />
+  1063→  1102→                      ) : (
+  1064→  1103→                        <ChevronDown className="size-4" />
+  1065→  1104→                      )}
+  1066→  1105→                      {permsExpanded ? 'Hide' : 'Show'} permission details
+  1067→  1106→                    </span>
+  1068→  1107→                    <Badge variant="secondary" className="text-[10px] font-mono">
+  1069→  1108→                      {Object.values(formPermissions).reduce((count, group) => {
+  1070→  1109→                        if (isPermGroup(group)) {
+  1071→  1110→                          return count + Object.values(group).filter(Boolean).length;
+  1072→  1111→                        }
+  1073→  1112→                        return count;
+  1074→  1113→                      }, 0)}{' '}
+  1075→  1114→                      /{' '}
+  1076→  1115→                      {permissionGroups.reduce((sum, g) => sum + g.actions.length, 0)} active
+  1077→  1116→                    </Badge>
+  1078→  1117→                  </Button>
+  1079→  1118→                </CollapsibleTrigger>
+  1080→  1119→                <CollapsibleContent className="mt-3">
+  1081→  1120→                  <div className="rounded-xl border bg-muted/20 p-3 space-y-3 max-h-72 overflow-y-auto">
+  1082→  1121→                    {permissionGroups.map((group, groupIdx) => {
+  1083→  1122→                      const groupPerms = formPermissions[group.key];
+  1084→  1123→                      if (!isPermGroup(groupPerms)) return null;
+  1085→  1124→                      const activeCount = Object.values(groupPerms).filter(Boolean).length;
+  1086→  1125→                      const totalActions = group.actions.length;
+  1087→  1126→                      const allActive = activeCount === totalActions;
+  1088→  1127→
+  1089→  1128→                      return (
+  1090→  1129→                        <div key={group.key}>
+  1091→  1130→                          {groupIdx > 0 && <Separator className="mb-3" />}
+  1092→  1131→                          <div className="flex items-center justify-between mb-2">
+  1093→  1132→                            <div className="flex items-center gap-2">
+  1094→  1133→                              {group.icon}
+  1095→  1134→                              <span className="text-sm font-medium">{group.label}</span>
+  1096→  1135→                            </div>
+  1097→  1136→                            <div className="flex items-center gap-2">
+  1098→  1137→                              <span className="text-[10px] text-muted-foreground">
+  1099→  1138→                                {activeCount}/{totalActions}
+  1100→  1139→                              </span>
+  1101→  1140→                              <button
+  1102→  1141→                                type="button"
+  1103→  1142→                                onClick={() => {
+  1104→  1143→                                  setFormPermissions((prev) => ({
+  1105→  1144→                                    ...prev,
+  1106→  1145→                                    [group.key]: Object.fromEntries(
+  1107→  1146→                                      group.actions.map((a) => [a.key, !allActive]),
+  1108→  1147→                                    ),
+  1109→  1148→                                  }));
+  1110→  1149→                                }}
+  1111→  1150→                                className={`text-[10px] px-2 py-0.5 rounded-md transition-all border ${
+  1112→  1151→                                  allActive
+  1113→  1152→                                    ? 'border-muted text-muted-foreground hover:border-green-400 hover:text-green-600'
+  1114→  1153→                                    : 'border-green-400 text-green-600 hover:border-muted hover:text-muted-foreground'
+  1115→  1154→                                }`}
+  1116→  1155→                              >
+  1117→  1156→                                {allActive ? 'Disable All' : 'Enable All'}
+  1118→  1157→                              </button>
+  1119→  1158→                            </div>
+  1120→  1159→                          </div>
+  1121→  1160→                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-4 gap-y-2">
+  1122→  1161→                            {group.actions.map((action) => (
+  1123→  1162→                              <div
+  1124→  1163→                                key={action.key}
+  1125→  1164→                                className="flex items-center justify-between py-1"
+  1126→  1165→                              >
+  1127→  1166→                                <Label className="text-xs text-muted-foreground cursor-pointer">
+  1128→  1167→                                  {action.label}
+  1129→  1168→                                </Label>
+  1130→  1169→                                <Switch
+  1131→  1170→                                  checked={!!groupPerms[action.key]}
+  1132→  1171→                                  onCheckedChange={() =>
+  1133→  1172→                                    togglePermission(group.key, action.key)
+  1134→  1173→                                  }
+  1135→  1174→                                  className="scale-90"
+  1136→  1175→                                />
+  1137→  1176→                              </div>
+  1138→  1177→                            ))}
+  1139→  1178→                          </div>
+  1140→  1179→                        </div>
+  1141→  1180→                      );
+  1142→  1181→                    })}
+  1143→  1182→                  </div>
+  1144→  1183→                </CollapsibleContent>
+  1145→  1184→              </Collapsible>
+  1146→  1185→            </div>
+  1147→  1186→          </div>
+  1148→  1187→
+  1149→  1188→          {/* Dialog Footer */}
+  1150→  1189→          <div className="border-t p-4 flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sticky bottom-0 bg-background rounded-b-lg">
+  1151→  1190→            <Button variant="outline" onClick={closeModal} disabled={submitting}>
+  1152→  1191→              Cancel
+  1153→  1192→            </Button>
+  1154→  1193→            <Button
+  1155→  1194→              onClick={handleSubmit}
+  1156→  1195→              disabled={submitting}
+  1157→  1196→              className="gap-2 bg-green-600 hover:bg-green-700 text-white min-w-[140px]"
+  1158→  1197→            >
+  1159→  1198→              {submitting ? (
+  1160→  1199→                <>
+  1161→  1200→                  <Loader2 className="size-4 animate-spin" />
+  1162→  1201→                  {modalMode === 'create' ? 'Creating...' : 'Saving...'}
+  1163→  1202→                </>
+  1164→  1203→              ) : modalMode === 'create' ? (
+  1165→  1204→                <>
+  1166→  1205→                  <UserPlus className="size-4" />
+  1167→  1206→                  Create User
+  1168→  1207→                </>
+  1169→  1208→              ) : (
+  1170→  1209→                <>
+  1171→  1210→                  <CheckCircle2 className="size-4" />
+  1172→  1211→                  Save Changes
+  1173→  1212→                </>
+  1174→  1213→              )}
+  1175→  1214→            </Button>
+  1176→  1215→          </div>
+  1177→  1216→        </DialogContent>
+  1178→  1217→      </Dialog>
+  1179→  1218→
+  1180→  1219→      {/* ── Delete Confirmation Dialog ── */}
+  1181→  1220→      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+  1182→  1221→        <AlertDialogContent>
+  1183→  1222→          <AlertDialogHeader>
+  1184→  1223→            <AlertDialogTitle className="flex items-center gap-2 text-red-600">
+  1185→  1224→              <AlertTriangle className="size-5" />
+  1186→  1225→              Delete User
+  1187→  1226→            </AlertDialogTitle>
+  1188→  1227→            <AlertDialogDescription className="text-sm">
+  1189→  1228→              Are you sure you want to permanently delete{' '}
+  1190→  1229→              <span className="font-semibold text-foreground">
+  1191→  1230→                &quot;{actionTarget?.name}&quot;
+  1192→  1231→              </span>{' '}
+  1193→  1232→              ({actionTarget?.loginId})? This action cannot be undone.
+  1194→  1233→            </AlertDialogDescription>
+  1195→  1234→          </AlertDialogHeader>
+  1196→  1235→          <AlertDialogFooter>
+  1197→  1236→            <AlertDialogCancel>Cancel</AlertDialogCancel>
+  1198→  1237→            <AlertDialogAction
+  1199→  1238→              onClick={handleDeleteConfirm}
+  1200→  1239→              className="bg-red-600 hover:bg-red-700 text-white focus:ring-red-600"
+  1201→  1240→            >
+  1202→  1241→              <span className="flex items-center gap-2">
+  1203→  1242→                <Trash2 className="size-4" />
+  1204→  1243→                Delete Permanently
+  1205→  1244→              </span>
+  1206→  1245→            </AlertDialogAction>
+  1207→  1246→          </AlertDialogFooter>
+  1208→  1247→        </AlertDialogContent>
+  1209→  1248→      </AlertDialog>
+  1210→  1249→
+  1211→  1250→      {/* ── Suspend / Activate Confirmation Dialog ── */}
+  1212→  1251→      <AlertDialog open={suspendDialogOpen} onOpenChange={setSuspendDialogOpen}>
+  1213→  1252→        <AlertDialogContent>
+  1214→  1253→          <AlertDialogHeader>
+  1215→  1254→            <AlertDialogTitle className="flex items-center gap-2">
+  1216→  1255→              {actionTarget?.status === 'Active' ? (
+  1217→  1256→                <>
+  1218→  1257→                  <Ban className="size-5 text-amber-600" />
+  1219→  1258→                  <span className="text-amber-600">Suspend User</span>
+  1220→  1259→                </>
+  1221→  1260→              ) : (
+  1222→  1261→                <>
+  1223→  1262→                  <CheckCircle2 className="size-5 text-green-600" />
+  1224→  1263→                  <span className="text-green-600">Activate User</span>
+  1225→  1264→                </>
+  1226→  1265→              )}
+  1227→  1266→            </AlertDialogTitle>
+  1228→  1267→            <AlertDialogDescription className="text-sm">
+  1229→  1268→              {actionTarget?.status === 'Active' ? (
+  1230→  1269→                <>
+  1231→  1270→                  Are you sure you want to suspend{' '}
+  1232→  1271→                  <span className="font-semibold text-foreground">
+  1233→  1272→                    &quot;{actionTarget?.name}&quot;
+  1234→  1273→                  </span>{' '}
+  1235→  1274→                  ({actionTarget?.loginId})? They will not be able to log in until reactivated.
+  1236→  1275→                </>
+  1237→  1276→              ) : (
+  1238→  1277→                <>
+  1239→  1278→                  Are you sure you want to reactivate{' '}
+  1240→  1279→                  <span className="font-semibold text-foreground">
+  1241→  1280→                    &quot;{actionTarget?.name}&quot;
+  1242→  1281→                  </span>{' '}
+  1243→  1282→                  ({actionTarget?.loginId})? They will regain access to the system.
+  1244→  1283→                </>
+  1245→  1284→              )}
+  1246→  1285→            </AlertDialogDescription>
+  1247→  1286→          </AlertDialogHeader>
+  1248→  1287→          <AlertDialogFooter>
+  1249→  1288→            <AlertDialogCancel>Cancel</AlertDialogCancel>
+  1250→  1289→            <AlertDialogAction
+  1251→  1290→              onClick={handleSuspendConfirm}
+  1252→  1291→              className={
+  1253→  1292→                actionTarget?.status === 'Active'
+  1254→  1293→                  ? 'bg-amber-600 hover:bg-amber-700 text-white focus:ring-amber-600'
+  1255→  1294→                  : 'bg-green-600 hover:bg-green-700 text-white focus:ring-green-600'
+  1256→  1295→              }
+  1257→  1296→            >
+  1258→  1297→              <span className="flex items-center gap-2">
+  1259→  1298→                {actionTarget?.status === 'Active' ? (
+  1260→  1299→                  <>
+  1261→  1300→                    <Ban className="size-4" />
+  1262→  1301→                    Suspend User
+  1263→  1302→                  </>
+  1264→  1303→                ) : (
+  1265→  1304→                  <>
+  1266→  1305→                    <CheckCircle2 className="size-4" />
+  1267→  1306→                    Activate User
+  1268→  1307→                  </>
+  1269→  1308→                )}
+  1270→  1309→              </span>
+  1271→  1310→            </AlertDialogAction>
+  1272→  1311→          </AlertDialogFooter>
+  1273→  1312→        </AlertDialogContent>
+  1274→  1313→      </AlertDialog>
+  1275→  1314→    </div>
+  1276→  1315→  );
+  1277→  1316→}
+  1278→  1317→

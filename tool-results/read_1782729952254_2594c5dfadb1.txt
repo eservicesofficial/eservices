@@ -1,0 +1,1657 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→import React from 'react'
+     4→     4→
+     5→     5→// Safe JSON parse: handles cases where server returns HTML instead of JSON
+     6→     6→const safeJson = async (res: Response): Promise<Record<string, unknown>> => {
+     7→     7→  try { return await res.json() } catch { return { error: `Server error (${res.status})` } }
+     8→     8→}
+     9→     9→
+    10→    10→import {
+    11→    11→  UserPlus, Edit3, CircleDollarSign, Landmark, ArrowDownLeft, ArrowRightLeft,
+    12→    12→  Trash2, FileCheck2, FileText, FileUp, StickyNote, Tag, Loader2, Eye, Phone,
+    13→    13→  Layers, Wallet, CreditCard, Building2, BedDouble, Bitcoin, QrCode, CheckCircle2, Printer,
+    14→    14→  Flame, Hash, Stamp, Receipt, IndianRupee, CircleCheck, PartyPopper, ArrowLeft, Plus, X,
+    15→    15→  History, ChevronDown, LogOut,
+    16→    16→} from 'lucide-react'
+    17→    17→import { Button } from '@/components/ui/button'
+    18→    18→import { Input } from '@/components/ui/input'
+    19→    19→import { Badge } from '@/components/ui/badge'
+    20→    20→import { Label } from '@/components/ui/label'
+    21→    21→import { Separator } from '@/components/ui/separator'
+    22→    22→import { Textarea } from '@/components/ui/textarea'
+    23→    23→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+    24→    24→import {
+    25→    25→  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+    26→    26→} from '@/components/ui/dialog'
+    27→    27→import {
+    28→    28→  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+    29→    29→  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+    30→    30→} from '@/components/ui/alert-dialog'
+    31→    31→import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+    32→    32→import { ScrollArea } from '@/components/ui/scroll-area'
+    33→    33→import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+    34→    34→import { Checkbox } from '@/components/ui/checkbox'
+    35→    35→import { fmtCur, fmtDate, fmtINR, fmtDateTime, relTime, TYPE_BADGE, STATUS_BADGE, ALL_TAGS, TAG_COLORS, fmtFolioNum, ALL_PAYMENT_MODES, stripInternalDescriptions, TYPE_ICON } from './customer-folio-helpers'
+    36→    36→import { notify } from '@/lib/notification-store'
+    37→    37→import type {
+    38→    38→  CustomerDetail, Folio, Customer, CustomerForm, ChargeForm, PaymentForm,
+    39→    39→  RefundForm, TransferForm, DiscountForm, DocForm, NoteForm, SplitAmountForm,
+    40→    40→  HistoricalFolio, CustomerHistory,
+    41→    41→} from './customer-folio-types'
+    42→    42→
+    43→    43→// ─── Props interface for all dialogs ───
+    44→    44→interface DialogsProps {
+    45→    45→  detail: CustomerDetail | null
+    46→    46→  allFolios: Folio[]
+    47→    47→  selectedEntries: Set<string>
+    48→    48→  submitting: boolean
+    49→    49→  settlingMode: boolean
+    50→    50→  selectedFolioId: string | null
+    51→    51→  bal: number
+    52→    52→  selectedEntryObj: any
+    53→    53→  isActive: boolean
+    54→    54→  isCheckedOut: boolean
+    55→    55→  invoiceData: any
+    56→    56→  invoiceLoading: boolean
+    57→    57→  folioStatementData: any
+    58→    58→  customerTags: string[]
+    59→    59→  transferResults: Customer[]
+    60→    60→  paymentEntries: any[]
+    61→    61→
+    62→    62→  // Dialog open states
+    63→    63→  addOpen: boolean; editOpen: boolean; chargeOpen: boolean; paymentOpen: boolean
+    64→    64→  refundOpen: boolean; transferOpen: boolean; discountOpen: boolean; docOpen: boolean
+    65→    65→  noteOpen: boolean; tagsOpen: boolean; checkoutOpen: boolean; deleteOpen: boolean
+    66→    66→  splitAmountOpen: boolean; shiftOpen: boolean; removeOpen: boolean; voucherOpen: boolean
+    67→    67→  invoiceOpen: boolean; detailsSheetOpen: boolean
+    68→    68→
+    69→    69→  // Form values
+    70→    70→  form: CustomerForm; chargeForm: ChargeForm; paymentForm: PaymentForm
+    71→    71→  refundForm: RefundForm; transferForm: TransferForm; discountForm: DiscountForm
+    72→    72→  docForm: DocForm; noteForm: NoteForm; splitAmountForm: SplitAmountForm
+    73→    73→  invoiceFrom: string; invoiceTo: string
+    74→    74→  shiftTargetFolioId: string; duplicate: Customer | null
+    75→    75→
+    76→    76→  deleteFolioOpen: boolean; folioToDelete: string | null
+    77→    77→  setDeleteFolioOpen: (v: boolean) => void; handleDeleteFolio: () => void
+    78→    78→
+    79→    79→  // Setters
+    80→    80→  setAddOpen: (v: boolean) => void; setEditOpen: (v: boolean) => void
+    81→    81→  setChargeOpen: (v: boolean) => void; setPaymentOpen: (v: boolean) => void
+    82→    82→  setRefundOpen: (v: boolean) => void; setTransferOpen: (v: boolean) => void
+    83→    83→  setDiscountOpen: (v: boolean) => void; setDocOpen: (v: boolean) => void
+    84→    84→  setNoteOpen: (v: boolean) => void; setTagsOpen: (v: boolean) => void
+    85→    85→  setCheckoutOpen: (v: boolean) => void; setDeleteOpen: (v: boolean) => void
+    86→    86→  setSplitAmountOpen: (v: boolean) => void; setShiftOpen: (v: boolean) => void
+    87→    87→  setRemoveOpen: (v: boolean) => void; setVoucherOpen: (v: boolean) => void
+    88→    88→  setInvoiceOpen: (v: boolean) => void; setDetailsSheetOpen: (v: boolean) => void
+    89→    89→  setForm: (f: CustomerForm) => void; setChargeForm: (f: ChargeForm) => void
+    90→    90→  setPaymentForm: (f: PaymentForm) => void; setRefundForm: (f: RefundForm) => void
+    91→    91→  setTransferForm: (f: TransferForm) => void; setDiscountForm: (f: DiscountForm) => void
+    92→    92→  setDocForm: (f: DocForm) => void; setNoteForm: (f: NoteForm) => void
+    93→    93→  setSplitAmountForm: (f: SplitAmountForm) => void
+    94→    94→  setInvoiceFrom: (v: string) => void; setInvoiceTo: (v: string) => void
+    95→    95→  setShiftTargetFolioId: (v: string) => void
+    96→    96→  setDuplicate: (v: Customer | null) => void
+    97→    97→
+    98→    98→  // Handlers
+    99→    99→  handleCreate: () => void; handleUpdate: () => void; handleCharge: () => void
+   100→   100→  handlePayment: () => void; handleSettle: () => void; handleRefund: () => void
+   101→   101→  handleDiscount: () => void; handleTransfer: () => void; handleShift: () => void
+   102→   102→  handleSplitAmount: () => void; handleRemove: () => void; handleCheckout: () => void
+   103→   103→  handleDelete: () => void; handleAddDoc: () => void; handleAddNote: () => void
+   104→   104→  handleToggleTag: (tagName: string) => void; handleDeleteDoc: (docId: string) => void
+   105→   105→  handleDeleteNote: (noteId: string) => void
+   106→   106→  fetchInvoiceData: () => void; fetchFolioStatement: (folioId: string) => void
+   107→   107→  printInvoice: () => void; printCompleteInvoice: () => void; printSingleFolio: () => void; printVoucherHistory: (entries?: any[]) => void
+   108→   108→  closeDialogs: () => void
+   109→   109→  searchTransferTargets: (q: string) => void
+   110→   110→
+   111→   111→  // Enhanced props (optional — for TXN numbers, invoice generation, post-checkout)
+   112→   112→  apiHeaders?: Record<string, string>
+   113→   113→  onRefresh?: () => void
+   114→   114→  onPrintReceipt?: () => void
+   115→   115→  onThermalPrintReceipt?: () => void
+   116→   116→  onThermalPrintInvoice?: () => void
+   117→   117→  onThermalPrintVoucher?: () => void
+   118→   118→  lastCreatedDocNo?: string | null
+   119→   119→  lastCreatedType?: string | null
+   120→   120→
+   121→   121→  // History
+   122→   122→  historyOpen: boolean
+   123→   123→  setHistoryOpen: (v: boolean) => void
+   124→   124→  onPrintHistoryFolio?: (folioData: { entries: any[]; openingBalance: number; closingBalance: number }) => void
+   125→   125→}
+   126→   126→
+   127→   127→export function CustomerFolioDialogs({
+   128→   128→  detail, allFolios, selectedEntries, submitting, settlingMode,
+   129→   129→  selectedFolioId, bal, selectedEntryObj, isActive, isCheckedOut,
+   130→   130→  invoiceData, invoiceLoading, folioStatementData, customerTags,
+   131→   131→  transferResults, paymentEntries,
+   132→   132→  addOpen, editOpen, chargeOpen, paymentOpen, refundOpen, transferOpen,
+   133→   133→  discountOpen, docOpen, noteOpen, tagsOpen, checkoutOpen, deleteOpen,
+   134→   134→  splitAmountOpen, shiftOpen, removeOpen, voucherOpen, invoiceOpen,
+   135→   135→  detailsSheetOpen,
+   136→   136→  form, chargeForm, paymentForm, refundForm, transferForm, discountForm,
+   137→   137→  docForm, noteForm, splitAmountForm, invoiceFrom, invoiceTo,
+   138→   138→  shiftTargetFolioId, duplicate,
+   139→   139→  setAddOpen, setEditOpen, setChargeOpen, setPaymentOpen, setRefundOpen,
+   140→   140→  setTransferOpen, setDiscountOpen, setDocOpen, setNoteOpen, setTagsOpen,
+   141→   141→  setCheckoutOpen, setDeleteOpen, setSplitAmountOpen, setShiftOpen,
+   142→   142→  setRemoveOpen, setVoucherOpen, setInvoiceOpen, setDetailsSheetOpen,
+   143→   143→  setForm, setChargeForm, setPaymentForm, setRefundForm, setTransferForm,
+   144→   144→  setDiscountForm, setDocForm, setNoteForm, setSplitAmountForm,
+   145→   145→  setInvoiceFrom, setInvoiceTo, setShiftTargetFolioId, setDuplicate,
+   146→   146→  handleCreate, handleUpdate, handleCharge, handlePayment, handleSettle,
+   147→   147→  handleRefund, handleDiscount, handleTransfer, handleShift, handleSplitAmount,
+   148→   148→  handleRemove, handleCheckout, handleDelete, handleAddDoc, handleAddNote,
+   149→   149→  handleToggleTag, handleDeleteDoc, handleDeleteNote,
+   150→   150→  fetchInvoiceData, fetchFolioStatement, printInvoice, printCompleteInvoice, printSingleFolio, printVoucherHistory,
+   151→   151→  closeDialogs, searchTransferTargets,
+   152→   152→  deleteFolioOpen, folioToDelete,
+   153→   153→  setDeleteFolioOpen, handleDeleteFolio,
+   154→   154→  // Enhanced props
+   155→   155→  apiHeaders, onRefresh, onPrintReceipt, onThermalPrintReceipt,
+   156→   156→  onThermalPrintInvoice, onThermalPrintVoucher,
+   157→   157→  lastCreatedDocNo, lastCreatedType,
+   158→   158→  // History
+   159→   159→  historyOpen, setHistoryOpen, onPrintHistoryFolio,
+   160→   160→}: DialogsProps) {
+   161→   161→
+   162→   162→  // ─── Internal State ───
+   163→   163→  const [invoiceNumber, setInvoiceNumber] = React.useState('')
+   164→   164→  const [invNumLoading, setInvNumLoading] = React.useState(false)
+   165→   165→  const [localSubmitting, setLocalSubmitting] = React.useState(false)
+   166→   166→  const [entrySuccess, setEntrySuccess] = React.useState<{ show: boolean; docNo: string; type: string } | null>(null)
+   167→   167→  const [postCheckoutOpen, setPostCheckoutOpen] = React.useState(false)
+   168→   168→  // ─── History state ───
+   169→   169→  const [historyLoading, setHistoryLoading] = React.useState(false)
+   170→   170→  const [customerHistory, setCustomerHistory] = React.useState<CustomerHistory | null>(null)
+   171→   171→  const [expandedFolioId, setExpandedFolioId] = React.useState<string | null>(null)
+   172→   172→  const [expandedFolioEntries, setExpandedFolioEntries] = React.useState<Record<string, any[]>>({})
+   173→   173→  const [selectedVoucherIds, setSelectedVoucherIds] = React.useState<Set<string>>(new Set())
+   174→   174→
+   175→   175→  // Fetch history for the CURRENT customer (not all checked-out customers)
+   176→   176→  React.useEffect(() => {
+   177→   177→    if (historyOpen && detail && apiHeaders) {
+   178→   178→      fetchCustomerHistory()
+   179→   179→    } else if (!historyOpen) {
+   180→   180→      setCustomerHistory(null)
+   181→   181→      setExpandedFolioId(null)
+   182→   182→      setExpandedFolioEntries({})
+   183→   183→    }
+   184→   184→  }, [historyOpen, detail?.id])
+   185→   185→
+   186→   186→  const fetchCustomerHistory = React.useCallback(async () => {
+   187→   187→    if (!detail || !apiHeaders) return
+   188→   188→    try {
+   189→   189→      setHistoryLoading(true)
+   190→   190→      const res = await fetch(`/api/folio/customers/${detail.id}/history`, { headers: apiHeaders })
+   191→   191→      if (res.ok) {
+   192→   192→        const data = await res.json() as CustomerHistory
+   193→   193→        setCustomerHistory(data)
+   194→   194→      }
+   195→   195→    } catch { /* ignore */ } finally { setHistoryLoading(false) }
+   196→   196→  }, [detail?.id, apiHeaders])
+   197→   197→
+   198→   198→  const toggleFolioEntries = (folioId: string) => {
+   199→   199→    if (expandedFolioId === folioId) {
+   200→   200→      setExpandedFolioId(null)
+   201→   201→    } else {
+   202→   202→      const folio = customerHistory?.historicalFolios.find(f => f.folioId === folioId)
+   203→   203→      if (folio) {
+   204→   204→        setExpandedFolioId(folioId)
+   205→   205→        setExpandedFolioEntries(prev => ({
+   206→   206→          ...prev,
+   207→   207→          [folioId]: (folio.entries || []),
+   208→   208→        }))
+   209→   209→      }
+   210→   210→    }
+   211→   211→  }
+   212→   212→
+   213→   213→  // ─── Track checkout transition ───
+   214→   214→  const wasCheckedOut = React.useRef(isCheckedOut)
+   215→   215→  React.useEffect(() => {
+   216→   216→    if (isCheckedOut && !wasCheckedOut.current) {
+   217→   217→      setPostCheckoutOpen(true)
+   218→   218→    }
+   219→   219→    wasCheckedOut.current = isCheckedOut
+   220→   220→  }, [isCheckedOut])
+   221→   221→
+   222→   222→  // ─── Show TXN number when lastCreatedDocNo changes ───
+   223→   223→  React.useEffect(() => {
+   224→   224→    if (lastCreatedDocNo && lastCreatedType) {
+   225→   225→      setEntrySuccess({ show: true, docNo: lastCreatedDocNo, type: lastCreatedType })
+   226→   226→      const timer = setTimeout(() => setEntrySuccess(null), 4000)
+   227→   227→      return () => clearTimeout(timer)
+   228→   228→    }
+   229→   229→  }, [lastCreatedDocNo, lastCreatedType])
+   230→   230→
+   231→   231→  // ─── Items for charge selector (Req 5) ───
+   232→   232→  const [items, setItems] = React.useState<{ id: string; name: string; price: number }[]>([])
+   233→   233→  const [itemsLoading, setItemsLoading] = React.useState(false)
+   234→   234→  React.useEffect(() => {
+   235→   235→    if (chargeOpen && apiHeaders) {
+   236→   236→      setItemsLoading(true)
+   237→   237→      fetch('/api/items', { headers: apiHeaders }).then(r => r.ok ? r.json() : []).then((list: any[]) => {
+   238→   238→        setItems((list || []).map((it: any) => ({ id: it.id, name: it.name, price: it.price || 0 })))
+   239→   239→      }).catch(() => {}).finally(() => setItemsLoading(false))
+   240→   240→    }
+   241→   241→  }, [chargeOpen, apiHeaders])
+   242→   242→
+   243→   243→  // Handle item selection
+   244→   244→  const handleItemSelect = React.useCallback((itemId: string) => {
+   245→   245→    const item = items.find(it => it.id === itemId)
+   246→   246→    if (item) {
+   247→   247→      setChargeForm({
+   248→   248→        ...chargeForm,
+   249→   249→        selectedItem: itemId,
+   250→   250→        selectedItemPrice: String(item.price),
+   251→   251→        description: item.name,
+   252→   252→        amount: item.price > 0 ? String(item.price) : chargeForm.amount,
+   253→   253→      })
+   254→   254→    }
+   255→   255→  }, [items, chargeForm])
+   256→   256→
+   257→   257→  // ─── Fetch invoice number ───
+   258→   258→  const fetchInvoiceNumber = React.useCallback(async () => {
+   259→   259→    if (!detail || !apiHeaders) return
+   260→   260→    try {
+   261→   261→      setInvNumLoading(true)
+   262→   262→      const res = await fetch(`/api/folio/customers/${detail.id}/invoice-number`, {
+   263→   263→        method: 'POST',
+   264→   264→        headers: apiHeaders,
+   265→   265→      })
+   266→   266→      if (res.ok) {
+   267→   267→        const data = await res.json()
+   268→   268→        setInvoiceNumber(data.invoiceNumber)
+   269→   269→      }
+   270→   270→    } catch { /* ignore */ } finally { setInvNumLoading(false) }
+   271→   271→  }, [detail?.id, apiHeaders])
+   272→   272→
+   273→   273→  // ─── Fetch invoice number when invoice dialog opens ───
+   274→   274→  React.useEffect(() => {
+   275→   275→    if (invoiceOpen && detail && apiHeaders && !invoiceNumber) {
+   276→   276→      fetchInvoiceNumber()
+   277→   277→    }
+   278→   278→  }, [invoiceOpen, detail?.id, apiHeaders])
+   279→   279→
+   280→   280→  React.useEffect(() => {
+   281→   281→    if (invoiceOpen && !invoiceData && detail && selectedFolioId) {
+   282→   282→      fetchInvoiceData()
+   283→   283→    }
+   284→   284→  }, [invoiceOpen])
+   285→   285→
+   286→   286→  // ─── Entry creation with TXN tracking ───
+   287→   287→  const createEntryWithTxn = React.useCallback(async (type: string, data: any) => {
+   288→   288→    if (!detail || !selectedFolioId || !apiHeaders) {
+   289→   289→      return null
+   290→   290→    }
+   291→   291→    try {
+   292→   292→      setLocalSubmitting(true)
+   293→   293→      const res = await fetch(`/api/folio/customers/${detail.id}/ledger`, {
+   294→   294→        method: 'POST',
+   295→   295→        headers: { ...apiHeaders, 'Content-Type': 'application/json' },
+   296→   296→        body: JSON.stringify({ type, folioId: selectedFolioId, ...data }),
+   297→   297→      })
+   298→   298→      if (res.ok) {
+   299→   299→        const entry = await res.json()
+   300→   300→        const docNo = entry?.docNo || ''
+   301→   301→        setEntrySuccess({ show: true, docNo, type })
+   302→   302→        notify({ type: 'success', title: `${type} ${docNo}`, message: `${type} entry ${docNo} created successfully` })
+   303→   303→        closeDialogs()
+   304→   304→        onRefresh?.()
+   305→   305→        setTimeout(() => setEntrySuccess(null), 4000)
+   306→   306→        return entry
+   307→   307→      } else {
+   308→   308→        const e = await safeJson(res)
+   309→   309→        notify({ type: 'error', title: 'Error', message: (e.error as string) || 'Failed' })
+   310→   310→        return null
+   311→   311→      }
+   312→   312→    } catch {
+   313→   313→      notify({ type: 'error', title: 'Error', message: 'Network error' })
+   314→   314→      return null
+   315→   315→    } finally {
+   316→   316→      setLocalSubmitting(false)
+   317→   317→    }
+   318→   318→  }, [detail?.id, selectedFolioId, apiHeaders, closeDialogs, onRefresh])
+   319→   319→
+   320→   320→  // ─── Settlement with TXN tracking ───
+   321→   321→  const settleWithTxn = React.useCallback(async () => {
+   322→   322→    if (!detail || !paymentForm.amount || !apiHeaders) {
+   323→   323→      handleSettle()
+   324→   324→      return
+   325→   325→    }
+   326→   326→    try {
+   327→   327→      setLocalSubmitting(true)
+   328→   328→      // When master folio is selected, use autoAllocate to distribute across all folios
+   329→   329→      const isMaster = selectedFolioId === 'master'
+   330→   330→      const payload = isMaster
+   331→   331→        ? { amount: parseFloat(paymentForm.amount), mode: paymentForm.mode, reference: paymentForm.reference, description: paymentForm.description || `Settlement via ${paymentForm.mode}`, autoAllocate: true }
+   332→   332→        : { amount: parseFloat(paymentForm.amount), mode: paymentForm.mode, reference: paymentForm.reference, description: paymentForm.description || `Settlement via ${paymentForm.mode}`, folioId: selectedFolioId }
+   333→   333→      const res = await fetch(`/api/folio/customers/${detail.id}/settle`, {
+   334→   334→        method: 'POST',
+   335→   335→        headers: { ...apiHeaders, 'Content-Type': 'application/json' },
+   336→   336→        body: JSON.stringify(payload),
+   337→   337→      })
+   338→   338→      if (res.ok) {
+   339→   339→        const data = await res.json()
+   340→   340→        // Auto-allocate may return settledFolios array instead of single ledgerEntry
+   341→   341→        const docNo = data?.ledgerEntry?.docNo || (data?.settledFolios?.[0] ? 'Multi-Folio' : '')
+   342→   342→        setEntrySuccess({ show: true, docNo, type: 'Settlement' })
+   343→   343→        notify({ type: 'success', title: `Settlement ${docNo}`, message: data.message || `Settlement ${docNo} processed successfully` })
+   344→   344→        closeDialogs()
+   345→   345→        onRefresh?.()
+   346→   346→        setTimeout(() => setEntrySuccess(null), 4000)
+   347→   347→      } else {
+   348→   348→        const e = await safeJson(res)
+   349→   349→        notify({ type: 'error', title: 'Settlement Failed', message: (e.error as string) || 'Failed to process settlement' })
+   350→   350→      }
+   351→   351→    } catch {
+   352→   352→      notify({ type: 'error', title: 'Error', message: 'Network error' })
+   353→   353→    } finally {
+   354→   354→      setLocalSubmitting(false)
+   355→   355→    }
+   356→   356→  }, [detail?.id, selectedFolioId, apiHeaders, paymentForm, handleSettle, closeDialogs, onRefresh])
+   357→   357→
+   358→   358→  // ─── Transfer with TXN tracking ───
+   359→   359→  const transferWithTxn = React.useCallback(async () => {
+   360→   360→    if (!detail || !transferForm.targetCustomerId || !apiHeaders) {
+   361→   361→      handleTransfer()
+   362→   362→      return
+   363→   363→    }
+   364→   364→    try {
+   365→   365→      setLocalSubmitting(true)
+   366→   366→      // If entries are selected, transfer only those; otherwise pure balance transfer
+   367→   367→      const selectedEntryIds = selectedEntries.size > 0 ? Array.from(selectedEntries) : undefined
+   368→   368→      const res = await fetch(`/api/folio/customers/${detail.id}/transfer`, {
+   369→   369→        method: 'POST',
+   370→   370→        headers: { ...apiHeaders, 'Content-Type': 'application/json' },
+   371→   371→        body: JSON.stringify({
+   372→   372→          targetCustomerId: transferForm.targetCustomerId,
+   373→   373→          amount: parseFloat(transferForm.amount) || 0,
+   374→   374→          description: transferForm.description,
+   375→   375→          entryIds: selectedEntryIds,
+   376→   376→        }),
+   377→   377→      })
+   378→   378→      if (res.ok) {
+   379→   379→        const data = await res.json()
+   380→   380→        const docNo = data?.source?.entry?.docNo || ''
+   381→   381→        setEntrySuccess({ show: true, docNo, type: 'Transfer' })
+   382→   382→        notify({ type: 'success', title: `Transfer ${docNo}`, message: data.message || `Transfer ${docNo} processed successfully` })
+   383→   383→        closeDialogs()
+   384→   384→        onRefresh?.()
+   385→   385→        setTimeout(() => setEntrySuccess(null), 4000)
+   386→   386→      } else {
+   387→   387→        const e = await safeJson(res)
+   388→   388→        notify({ type: 'error', title: 'Error', message: (e.error as string) || 'Failed' })
+   389→   389→      }
+   390→   390→    } catch {
+   391→   391→      notify({ type: 'error', title: 'Error', message: 'Network error' })
+   392→   392→    } finally {
+   393→   393→      setLocalSubmitting(false)
+   394→   394→    }
+   395→   395→  }, [detail?.id, apiHeaders, transferForm, handleTransfer, closeDialogs, onRefresh])
+   396→   396→
+   397→   397→  // ─── Computed GST data from invoiceData ───
+   398→   398→  const gstData = React.useMemo(() => {
+   399→   399→    if (!invoiceData?.entries) return null
+   400→   400→    const entries = invoiceData.entries as any[]
+   401→   401→    const taxableEntries = entries.filter((e: any) => e.debit > 0)
+   402→   402→    const taxableAmount = taxableEntries.reduce((sum: number, e: any) => sum + (e.debit || 0) - (e.tax || 0) - (e.discount || 0), 0)
+   403→   403→    const totalTax = entries.reduce((sum: number, e: any) => sum + (e.tax || 0), 0)
+   404→   404→    const totalDiscount = entries.reduce((sum: number, e: any) => sum + (e.discount || 0), 0)
+   405→   405→    const totalCharges = entries.reduce((sum: number, e: any) => sum + (e.debit || 0), 0)
+   406→   406→    const cgst = totalTax / 2
+   407→   407→    const sgst = totalTax / 2
+   408→   408→    const totalPayments = entries.reduce((sum: number, e: any) => sum + (e.credit || 0), 0)
+   409→   409→    const advancePayment = bal < 0 ? Math.abs(bal) : 0
+   410→   410→    return { taxableAmount, totalTax, totalDiscount, totalCharges, cgst, sgst, totalPayments, advancePayment, entryCount: taxableEntries.length }
+   411→   411→  }, [invoiceData, bal])
+   412→   412→
+   413→   413→  // ─── Active submitting state (local or prop) ───
+   414→   414→  const isSubmitting = localSubmitting || submitting
+   415→   415→
+   416→   416→  // ─── Entry success banner component ───
+   417→   417→  const EntrySuccessBanner = () => {
+   418→   418→    if (!entrySuccess?.show) return null
+   419→   419→    return (
+   420→   420→      <div className="fixed bottom-4 right-4 z-[100] animate-in slide-in-from-bottom-2 fade-in duration-300">
+   421→   421→        <div className="bg-emerald-600 text-white rounded-xl shadow-lg px-4 py-3 flex items-center gap-3 min-w-[260px]">
+   422→   422→          <div className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center shrink-0">
+   423→   423→            <CircleCheck className="size-4 text-white" />
+   424→   424→          </div>
+   425→   425→          <div className="min-w-0">
+   426→   426→            <div className="text-xs font-bold">{entrySuccess.type} Created</div>
+   427→   427→            <div className="text-[11px] text-emerald-100 flex items-center gap-1 mt-0.5">
+   428→   428→              <Hash className="size-3" />
+   429→   429→              <span className="font-mono font-bold">{entrySuccess.docNo}</span>
+   430→   430→            </div>
+   431→   431→          </div>
+   432→   432→        </div>
+   433→   433→      </div>
+   434→   434→    )
+   435→   435→  }
+   436→   436→
+   437→   437→  // ─── Tax calculation preview ───
+   438→   438→  const TaxPreview = ({ chargeForm }: { chargeForm: ChargeForm }) => {
+   439→   439→    if (!chargeForm.taxEnabled || !chargeForm.amount || parseFloat(chargeForm.amount) <= 0) return null
+   440→   440→    const taxPct = parseFloat(chargeForm.tax) || 0
+   441→   441→    const amt = parseFloat(chargeForm.amount) || 0
+   442→   442→    if (taxPct <= 0) return null
+   443→   443→    if (chargeForm.taxType === 'exclude') {
+   444→   444→      const taxAmt = amt * (taxPct / 100)
+   445→   445→      const total = amt + taxAmt
+   446→   446→      return <div className="pl-6 bg-emerald-50 dark:bg-emerald-900/20 rounded-md p-2 text-[11px] space-y-0.5"><div className="text-muted-foreground">Base: <span className="font-semibold text-foreground">₹{amt.toLocaleString('en-IN')}</span></div><div className="text-muted-foreground">Tax ({taxPct}%): <span className="font-semibold text-emerald-600">+₹{taxAmt.toFixed(2)}</span></div><div className="font-bold">Total Charge: ₹{total.toFixed(2)}</div></div>
+   447→   447→    }
+   448→   448→    const taxAmt = amt - (amt / (1 + taxPct / 100))
+   449→   449→    const base = amt - taxAmt
+   450→   450→    return <div className="pl-6 bg-emerald-50 dark:bg-emerald-900/20 rounded-md p-2 text-[11px] space-y-0.5"><div className="text-muted-foreground">Total (incl. tax): <span className="font-semibold text-foreground">₹{amt.toLocaleString('en-IN')}</span></div><div className="text-muted-foreground">Base Amount: <span className="font-semibold">₹{base.toFixed(2)}</span></div><div className="text-muted-foreground">Tax ({taxPct}%): <span className="font-semibold text-emerald-600">₹{taxAmt.toFixed(2)}</span></div></div>
+   451→   451→  }
+   452→   452→
+   453→   453→  // ─── Per-entry-type success wrapper ───
+   454→   454→  const SuccessOverlay = ({ docNo, type, label }: { docNo: string; type: string; label: string }) => (
+   455→   455→    <div className="flex flex-col items-center justify-center py-6 gap-3">
+   456→   456→      <div className="w-14 h-14 rounded-2xl bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center">
+   457→   457→        <PartyPopper className="size-7 text-emerald-600 dark:text-emerald-400" />
+   458→   458→      </div>
+   459→   459→      <div className="text-center">
+   460→   460→        <div className="text-sm font-bold text-slate-800 dark:text-slate-100">{label}</div>
+   461→   461→        <div className="mt-2 inline-flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-lg px-4 py-2.5">
+   462→   462→          <Hash className="size-4 text-emerald-600 dark:text-emerald-400" />
+   463→   463→          <span className="font-mono text-base font-bold text-emerald-700 dark:text-emerald-300">{docNo}</span>
+   464→   464→        </div>
+   465→   465→        <div className="text-[11px] text-slate-400 mt-2">Transaction recorded successfully</div>
+   466→   466→      </div>
+   467→   467→    </div>
+   468→   468→  )
+   469→   469→
+   470→   470→  return (
+   471→   471→    <>
+   472→   472→    {/* Entry Success Banner (floating) */}
+   473→   473→    <EntrySuccessBanner />
+   474→   474→
+   475→   475→    {/* Add Customer Dialog */}
+   476→   476→    <Dialog open={addOpen} onOpenChange={setAddOpen}>
+   477→   477→      <DialogContent className="max-w-md">
+   478→   478→        <DialogHeader><DialogTitle className="flex items-center gap-2"><UserPlus className="size-4 text-emerald-600" />New Guest</DialogTitle></DialogHeader>
+   479→   479→        <div className="grid gap-3 py-2">
+   480→   480→          <div><Label className="text-xs">Full Name *</Label><Input value={form.fullName} onChange={e => setForm({ ...form, fullName: e.target.value })} placeholder="Guest name" /></div>
+   481→   481→          <div><Label className="text-xs">Mobile *</Label><Input value={form.mobile} onChange={e => setForm({ ...form, mobile: e.target.value })} placeholder="10-digit mobile" /></div>
+   482→   482→          <div className="grid grid-cols-2 gap-2">
+   483→   483→            <div><Label className="text-xs">WhatsApp</Label><Input value={form.whatsapp} onChange={e => setForm({ ...form, whatsapp: e.target.value })} /></div>
+   484→   484→            <div><Label className="text-xs">Email</Label><Input value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
+   485→   485→          </div>
+   486→   486→          <div className="grid grid-cols-2 gap-2">
+   487→   487→            <div><Label className="text-xs">Type</Label><Select value={form.customerType} onValueChange={v => setForm({ ...form, customerType: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Retail">Retail</SelectItem><SelectItem value="Wholesale">Wholesale</SelectItem><SelectItem value="Corporate">Corporate</SelectItem><SelectItem value="VIP">VIP</SelectItem><SelectItem value="Supplier">Supplier</SelectItem></SelectContent></Select></div>
+   488→   488→            <div><Label className="text-xs">Credit Limit</Label><Input type="number" value={form.creditLimit || ''} onChange={e => setForm({ ...form, creditLimit: parseFloat(e.target.value) || 0 })} /></div>
+   489→   489→          </div>
+   490→   490→          <div><Label className="text-xs">Address</Label><Textarea value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} rows={2} placeholder="Customer address" /></div>
+   491→   491→          <div><Label className="text-xs">GST Number</Label><Input value={form.gstNumber} onChange={e => setForm({ ...form, gstNumber: e.target.value })} /></div>
+   492→   492→          <div><Label className="text-xs">GST Address</Label><Textarea value={form.gstAddress} onChange={e => setForm({ ...form, gstAddress: e.target.value })} rows={2} placeholder="Separate billing address for GST invoices" /></div>
+   493→   493→          {duplicate && (
+   494→   494→            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md p-2 text-[11px]">
+   495→   495→              <span className="font-semibold text-amber-700 dark:text-amber-400">Duplicate:</span> {duplicate.fullName} ({duplicate.mobile}) — ID: {duplicate.customerId}
+   496→   496→            </div>
+   497→   497→          )}
+   498→   498→        </div>
+   499→   499→        <DialogFooter>
+   500→   500→          <Button variant="outline" onClick={() => { setAddOpen(false); setDuplicate(null) }}>Cancel</Button>
+   501→   501→          <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleCreate} disabled={submitting}>{submitting ? <Loader2 className="size-3 animate-spin" /> : 'Create'}</Button>
+   502→   502→        </DialogFooter>
+   503→   503→      </DialogContent>
+   504→   504→    </Dialog>
+   505→   505→
+   506→   506→    {/* Edit Customer Dialog */}
+   507→   507→    <Dialog open={editOpen} onOpenChange={setEditOpen}>
+   508→   508→      <DialogContent className="max-w-md">
+   509→   509→        <DialogHeader><DialogTitle className="flex items-center gap-2"><Edit3 className="size-4 text-emerald-600" />Edit Guest</DialogTitle></DialogHeader>
+   510→   510→        <div className="grid gap-3 py-2">
+   511→   511→          <div><Label className="text-xs">Full Name</Label><Input value={form.fullName} onChange={e => setForm({ ...form, fullName: e.target.value })} /></div>
+   512→   512→          <div className="grid grid-cols-2 gap-2">
+   513→   513→            <div><Label className="text-xs">Mobile</Label><Input value={form.mobile} onChange={e => setForm({ ...form, mobile: e.target.value })} /></div>
+   514→   514→            <div><Label className="text-xs">WhatsApp</Label><Input value={form.whatsapp} onChange={e => setForm({ ...form, whatsapp: e.target.value })} /></div>
+   515→   515→          </div>
+   516→   516→          <div><Label className="text-xs">Email</Label><Input value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></div>
+   517→   517→          <div><Label className="text-xs">Address</Label><Textarea value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} rows={2} placeholder="Customer address" /></div>
+   518→   518→          <div className="grid grid-cols-2 gap-2">
+   519→   519→            <div><Label className="text-xs">Type</Label><Select value={form.customerType} onValueChange={v => setForm({ ...form, customerType: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Retail">Retail</SelectItem><SelectItem value="Wholesale">Wholesale</SelectItem><SelectItem value="Corporate">Corporate</SelectItem><SelectItem value="VIP">VIP</SelectItem><SelectItem value="Supplier">Supplier</SelectItem></SelectContent></Select></div>
+   520→   520→            <div><Label className="text-xs">Credit Limit</Label><Input type="number" value={form.creditLimit || ''} onChange={e => setForm({ ...form, creditLimit: parseFloat(e.target.value) || 0 })} /></div>
+   521→   521→          </div>
+   522→   522→          <div className="grid grid-cols-2 gap-2">
+   523→   523→            <div><Label className="text-xs">GST Number</Label><Input value={form.gstNumber} onChange={e => setForm({ ...form, gstNumber: e.target.value })} /></div>
+   524→   524→            <div><Label className="text-xs">PAN</Label><Input value={form.panNumber} onChange={e => setForm({ ...form, panNumber: e.target.value })} /></div>
+   525→   525→          </div>
+   526→   526→          <div><Label className="text-xs">GST Address</Label><Textarea value={form.gstAddress} onChange={e => setForm({ ...form, gstAddress: e.target.value })} rows={2} placeholder="Separate billing address for GST invoices" /></div>
+   527→   527→          <div><Label className="text-xs">Notes</Label><Textarea value={form.internalNotes} onChange={e => setForm({ ...form, internalNotes: e.target.value })} rows={2} /></div>
+   528→   528→        </div>
+   529→   529→        <DialogFooter>
+   530→   530→          <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+   531→   531→          <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleUpdate} disabled={submitting}>{submitting ? <Loader2 className="size-3 animate-spin" /> : 'Save'}</Button>
+   532→   532→        </DialogFooter>
+   533→   533→      </DialogContent>
+   534→   534→    </Dialog>
+   535→   535→
+   536→   536→    {/* Charge Dialog */}
+   537→   537→    <Dialog open={chargeOpen} onOpenChange={setChargeOpen}>
+   538→   538→      <DialogContent className="max-w-sm">
+   539→   539→        <DialogHeader>
+   540→   540→          <DialogTitle className="flex items-center gap-2"><CircleDollarSign className="size-4 text-emerald-600" />Post Charge</DialogTitle>
+   541→   541→          <DialogDescription>Add a new charge to the selected folio</DialogDescription>
+   542→   542→        </DialogHeader>
+   543→   543→        {entrySuccess?.show && entrySuccess.type === 'Charge' ? (
+   544→   544→          <SuccessOverlay docNo={entrySuccess.docNo} type="Charge" label="Charge Posted" />
+   545→   545→        ) : (
+   546→   546→          <>
+   547→   547→            <div className="grid gap-3 py-2">
+   548→   548→              <div><Label className="text-xs">Select Item</Label>
+   549→   549→                <Select value={chargeForm.selectedItem} onValueChange={(v) => { if (v === '__custom__') { setChargeForm({ ...chargeForm, selectedItem: '', selectedItemPrice: '', description: '', amount: '' }) } else { handleItemSelect(v) } }}>
+   550→   550→                  <SelectTrigger className="h-9 text-xs w-full"><SelectValue placeholder="Choose item or type custom..." /></SelectTrigger>
+   551→   551→                  <SelectContent className="max-h-[320px] overflow-y-auto min-w-[300px]">
+   552→   552→                    {itemsLoading ? <div className="px-3 py-4 text-xs text-muted-foreground text-center">Loading items...</div> : (
+   553→   553→                      <>
+   554→   554→                        <SelectItem value="__custom__" className="text-xs py-2.5">
+   555→   555→                          <span className="flex items-center gap-1.5">✏️ <span>Custom Description</span></span>
+   556→   556→                        </SelectItem>
+   557→   557→                        {items.length === 0 && (
+   558→   558→                          <div className="px-3 py-3 text-xs text-muted-foreground text-center">No items configured. Use Custom.</div>
+   559→   559→                        )}
+   560→   560→                        {items.map(it => (
+   561→   561→                          <SelectItem key={it.id} value={it.id} className="text-xs py-2.5 pr-10">
+   562→   562→                            <span className="flex items-center justify-between gap-3 min-w-0 w-full">
+   563→   563→                              <span className="truncate min-w-0 flex-1" title={it.name}>{it.name}</span>
+   564→   564→                              <span className="text-muted-foreground whitespace-nowrap shrink-0 tabular-nums font-medium">₹{it.price.toLocaleString('en-IN')}</span>
+   565→   565→                            </span>
+   566→   566→                          </SelectItem>
+   567→   567→                        ))}
+   568→   568→                      </>
+   569→   569→                    )}
+   570→   570→                  </SelectContent>
+   571→   571→                </Select>
+   572→   572→              </div>
+   573→   573→              <div><Label className="text-xs">Description *</Label><Input value={chargeForm.description} onChange={e => setChargeForm({ ...chargeForm, description: e.target.value })} placeholder="e.g. Room Rent" /></div>
+   574→   574→              <div className="grid grid-cols-2 gap-2">
+   575→   575→                <div><Label className="text-xs">Amount *</Label><Input type="number" value={chargeForm.amount} onChange={e => setChargeForm({ ...chargeForm, amount: e.target.value })} /></div>
+   576→   576→                <div><Label className="text-xs">Invoice No</Label><Input value={chargeForm.invoiceNo} onChange={e => setChargeForm({ ...chargeForm, invoiceNo: e.target.value })} placeholder="Auto-generated if empty" /></div>
+   577→   577→              </div>
+   578→   578→              {/* Tax Options */}
+   579→   579→              <div className="border rounded-lg p-3 space-y-2">
+   580→   580→                <div className="flex items-center gap-2">
+   581→   581→                  <Checkbox checked={chargeForm.taxEnabled} onCheckedChange={(v: boolean) => setChargeForm({ ...chargeForm, taxEnabled: v, tax: v ? (chargeForm.tax === '0' ? '18' : chargeForm.tax) : '0' })} />
+   582→   582→                  <Label className="text-xs font-semibold">Enable Tax</Label>
+   583→   583→                </div>
+   584→   584→                {chargeForm.taxEnabled && (
+   585→   585→                  <div className="space-y-2 pl-6">
+   586→   586→                    <div className="flex items-center gap-4">
+   587→   587→                      <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+   588→   588→                        <input type="radio" name="taxType" className="accent-emerald-600" checked={chargeForm.taxType === 'include'} onChange={() => setChargeForm({ ...chargeForm, taxType: 'include' })} />
+   589→   589→                        Include Tax
+   590→   590→                      </label>
+   591→   591→                      <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+   592→   592→                        <input type="radio" name="taxType" className="accent-emerald-600" checked={chargeForm.taxType === 'exclude'} onChange={() => setChargeForm({ ...chargeForm, taxType: 'exclude' })} />
+   593→   593→                        Exclude Tax
+   594→   594→                      </label>
+   595→   595→                    </div>
+   596→   596→                    {chargeForm.taxType === 'exclude' && (
+   597→   597→                      <div className="flex items-center gap-2">
+   598→   598→                        <Label className="text-xs w-16 shrink-0">Tax %</Label>
+   599→   599→                        <Select value={chargeForm.tax} onValueChange={v => setChargeForm({ ...chargeForm, tax: v })}>
+   600→   600→                          <SelectTrigger className="h-8 text-xs w-full"><SelectValue placeholder="Select" /></SelectTrigger>
+   601→   601→                          <SelectContent>
+   602→   602→                            {['5', '10', '12', '14', '18', '28'].map(p => <SelectItem key={p} value={p}>{p}%</SelectItem>)}
+   603→   603→                          <SelectItem value="custom">Custom...</SelectItem>
+   604→   604→                          </SelectContent>
+   605→   605→                        </Select>
+   606→   606→                        {chargeForm.tax === 'custom' && (
+   607→   607→                          <Input type="number" className="h-8 text-xs w-20" placeholder="%" value={chargeForm.tax === 'custom' ? '' : chargeForm.tax} onChange={e => setChargeForm({ ...chargeForm, tax: e.target.value })} />
+   608→   608→                        )}
+   609→   609→                      </div>
+   610→   610→                    )}
+   611→   611→                    {chargeForm.taxType === 'include' && (
+   612→   612→                      <div className="flex items-center gap-2">
+   613→   613→                        <Label className="text-xs w-16 shrink-0">Tax %</Label>
+   614→   614→                        <Select value={chargeForm.tax} onValueChange={v => setChargeForm({ ...chargeForm, tax: v })}>
+   615→   615→                          <SelectTrigger className="h-8 text-xs w-full"><SelectValue placeholder="Select" /></SelectTrigger>
+   616→   616→                          <SelectContent>
+   617→   617→                            {['5', '10', '12', '14', '18', '28'].map(p => <SelectItem key={p} value={p}>{p}%</SelectItem>)}
+   618→   618→                            <SelectItem value="custom">Custom...</SelectItem>
+   619→   619→                          </SelectContent>
+   620→   620→                        </Select>
+   621→   621→                        {chargeForm.tax === 'custom' && (
+   622→   622→                          <Input type="number" className="h-8 text-xs w-20" placeholder="%" value={chargeForm.tax === 'custom' ? '' : chargeForm.tax} onChange={e => setChargeForm({ ...chargeForm, tax: e.target.value })} />
+   623→   623→                        )}
+   624→   624→                        <p className="text-[10px] text-muted-foreground">Amount includes tax</p>
+   625→   625→                      </div>
+   626→   626→                    )}
+   627→   627→                  </div>
+   628→   628→                )}
+   629→   629→                <TaxPreview chargeForm={chargeForm} />
+   630→   630→              </div>
+   631→   631→            </div>
+   632→   632→            <DialogFooter>
+   633→   633→              <Button variant="outline" onClick={() => setChargeOpen(false)}>Cancel</Button>
+   634→   634→              <Button className="bg-red-600 hover:bg-red-700" onClick={() => {
+   635→   635→                if (!chargeForm.amount || !chargeForm.description) {
+   636→   636→                  notify({ type: 'error', title: 'Error', message: 'Amount and description required' }); return
+   637→   637→                }
+   638→   638→                let taxAmt = 0
+   639→   639→                let finalAmount = parseFloat(chargeForm.amount) || 0
+   640→   640→                if (chargeForm.taxEnabled) {
+   641→   641→                  const taxPct = parseFloat(chargeForm.tax) || 0
+   642→   642→                  const amt = parseFloat(chargeForm.amount) || 0
+   643→   643→                  if (chargeForm.taxType === 'exclude') {
+   644→   644→                    // Tax is extra on top of amount — final = base + tax
+   645→   645→                    taxAmt = amt * (taxPct / 100)
+   646→   646→                    finalAmount = amt + taxAmt
+   647→   647→                  } else {
+   648→   648→                    // Tax included in amount — final stays same, calc tax portion
+   649→   649→                    taxAmt = amt - (amt / (1 + taxPct / 100))
+   650→   650→                    finalAmount = amt
+   651→   651→                  }
+   652→   652→                }
+   653→   653→                if (apiHeaders) {
+   654→   654→                  createEntryWithTxn('Charge', {
+   655→   655→                    description: chargeForm.description,
+   656→   656→                    amount: finalAmount,
+   657→   657→                    tax: taxAmt,
+   658→   658→                    invoiceNo: chargeForm.invoiceNo,
+   659→   659→                  })
+   660→   660→                } else {
+   661→   661→                  handleCharge()
+   662→   662→                }
+   663→   663→              }} disabled={isSubmitting}>
+   664→   664→                {isSubmitting ? <Loader2 className="size-3 animate-spin" /> : 'Charge'}
+   665→   665→              </Button>
+   666→   666→            </DialogFooter>
+   667→   667→          </>
+   668→   668→        )}
+   669→   669→      </DialogContent>
+   670→   670→    </Dialog>
+   671→   671→
+   672→   672→    {/* Payment / Settlement Dialog */}
+   673→   673→    <Dialog open={paymentOpen} onOpenChange={v => { if (!v) closeDialogs(); setPaymentOpen(v) }}>
+   674→   674→      <DialogContent className="max-w-sm">
+   675→   675→        <DialogHeader>
+   676→   676→          <DialogTitle className="flex items-center gap-2"><Landmark className="size-4 text-emerald-600" />{settlingMode ? 'Settle Folio' : 'Record Payment'}</DialogTitle>
+   677→   677→          <DialogDescription>{settlingMode ? `Outstanding: ${fmtCur(bal)}` : 'Add a payment transaction'}</DialogDescription>
+   678→   678→        </DialogHeader>
+   679→   679→        {entrySuccess?.show && (entrySuccess.type === 'Payment' || entrySuccess.type === 'Settlement') ? (
+   680→   680→          <SuccessOverlay docNo={entrySuccess.docNo} type={entrySuccess.type} label={settlingMode ? 'Folio Settled' : 'Payment Recorded'} />
+   681→   681→        ) : (
+   682→   682→          <>
+   683→   683→            <div className="grid gap-3 py-2">
+   684→   684→              <div><Label className="text-xs">Amount *</Label><Input type="number" value={paymentForm.amount} onChange={e => setPaymentForm({ ...paymentForm, amount: e.target.value })} placeholder={settlingMode ? String(Math.abs(bal)) : ''} /></div>
+   685→   685→              <div><Label className="text-xs">Mode</Label><Select value={paymentForm.mode} onValueChange={v => setPaymentForm({ ...paymentForm, mode: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{ALL_PAYMENT_MODES.map(m => (<SelectItem key={m} value={m}>{m}</SelectItem>))}</SelectContent></Select></div>
+   686→   686→              <div><Label className="text-xs">Reference</Label><Input value={paymentForm.reference} onChange={e => setPaymentForm({ ...paymentForm, reference: e.target.value })} /></div>
+   687→   687→              <div><Label className="text-xs">Description</Label><Input value={paymentForm.description} onChange={e => setPaymentForm({ ...paymentForm, description: e.target.value })} /></div>
+   688→   688→            </div>
+   689→   689→            <DialogFooter>
+   690→   690→              <Button variant="outline" onClick={() => { closeDialogs(); setPaymentOpen(false) }}>Cancel</Button>
+   691→   691→              <Button className={settlingMode ? 'bg-blue-600 hover:bg-blue-700' : 'bg-emerald-600 hover:bg-emerald-700'} onClick={() => {
+   692→   692→                if (!paymentForm.amount) { notify({ type: 'error', title: 'Error', message: 'Amount required' }); return }
+   693→   693→                if (settlingMode) {
+   694→   694→                  if (apiHeaders) settleWithTxn()
+   695→   695→                  else handleSettle()
+   696→   696→                } else {
+   697→   697→                  if (apiHeaders) {
+   698→   698→                    createEntryWithTxn('Payment', {
+   699→   699→                      description: paymentForm.description || `Payment via ${paymentForm.mode}`,
+   700→   700→                      amount: parseFloat(paymentForm.amount),
+   701→   701→                      paymentMode: paymentForm.mode,
+   702→   702→                      reference: paymentForm.reference,
+   703→   703→                    })
+   704→   704→                  } else {
+   705→   705→                    handlePayment()
+   706→   706→                  }
+   707→   707→                }
+   708→   708→              }} disabled={isSubmitting}>
+   709→   709→                {isSubmitting ? <Loader2 className="size-3 animate-spin" /> : settlingMode ? 'Settle' : 'Pay'}
+   710→   710→              </Button>
+   711→   711→            </DialogFooter>
+   712→   712→          </>
+   713→   713→        )}
+   714→   714→      </DialogContent>
+   715→   715→    </Dialog>
+   716→   716→
+   717→   717→    {/* Refund Dialog */}
+   718→   718→    <Dialog open={refundOpen} onOpenChange={setRefundOpen}>
+   719→   719→      <DialogContent className="max-w-sm">
+   720→   720→        <DialogHeader><DialogTitle>Process Refund</DialogTitle></DialogHeader>
+   721→   721→        {entrySuccess?.show && entrySuccess.type === 'Refund' ? (
+   722→   722→          <SuccessOverlay docNo={entrySuccess.docNo} type="Refund" label="Refund Processed" />
+   723→   723→        ) : (
+   724→   724→          <>
+   725→   725→            <div className="grid gap-3 py-2">
+   726→   726→              {/* Credit balance indicator */}
+   727→   727→              <div className={`rounded-lg p-3 ${bal < 0 ? 'bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800' : 'bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700'}`}>
+   728→   728→                <div className="flex items-center justify-between">
+   729→   729→                  <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">Credit Balance Available</span>
+   730→   730→                  <span className={`text-sm font-bold tabular-nums ${bal < 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500'}`}>
+   731→   731→                    {bal < 0 ? fmtCur(Math.abs(bal)) : fmtCur(0)}
+   732→   732→                  </span>
+   733→   733→                </div>
+   734→   734→                {bal >= 0 && (
+   735→   735→                  <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1.5 font-medium">No credit balance available for refund. Customer has outstanding balance of {fmtCur(bal)}.</p>
+   736→   736→                )}
+   737→   737→              </div>
+   738→   738→              <div><Label className="text-xs">Amount *</Label><Input type="number" value={refundForm.amount} onChange={e => setRefundForm({ ...refundForm, amount: e.target.value })} /></div>
+   739→   739→              <div><Label className="text-xs">Reason</Label><Select value={refundForm.reason} onValueChange={v => setRefundForm({ ...refundForm, reason: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Partial Refund">Partial Refund</SelectItem><SelectItem value="Full Refund">Full Refund</SelectItem><SelectItem value="Cancellation">Cancellation</SelectItem><SelectItem value="Error Correction">Error Correction</SelectItem></SelectContent></Select></div>
+   740→   740→              <div><Label className="text-xs">Description *</Label><Input value={refundForm.description} onChange={e => setRefundForm({ ...refundForm, description: e.target.value })} /></div>
+   741→   741→              <div><Label className="text-xs">Invoice No</Label><Input value={refundForm.invoiceNo} onChange={e => setRefundForm({ ...refundForm, invoiceNo: e.target.value })} /></div>
+   742→   742→            </div>
+   743→   743→            <DialogFooter>
+   744→   744→              <Button variant="outline" onClick={() => setRefundOpen(false)}>Cancel</Button>
+   745→   745→              <Button className="bg-orange-600 hover:bg-orange-700" onClick={() => {
+   746→   746→                if (!refundForm.amount || !refundForm.description) { notify({ type: 'error', title: 'Error', message: 'Amount and reason required' }); return }
+   747→   747→                if (apiHeaders) {
+   748→   748→                  createEntryWithTxn('Refund', {
+   749→   749→                    description: `${refundForm.reason}: ${refundForm.description}`,
+   750→   750→                    amount: parseFloat(refundForm.amount),
+   751→   751→                    invoiceNo: refundForm.invoiceNo,
+   752→   752→                  })
+   753→   753→                } else {
+   754→   754→                  handleRefund()
+   755→   755→                }
+   756→   756→              }} disabled={isSubmitting || bal >= 0}>
+   757→   757→                {isSubmitting ? <Loader2 className="size-3 animate-spin" /> : 'Refund'}
+   758→   758→              </Button>
+   759→   759→            </DialogFooter>
+   760→   760→          </>
+   761→   761→        )}
+   762→   762→      </DialogContent>
+   763→   763→    </Dialog>
+   764→   764→
+   765→   765→    {/* Discount Dialog */}
+   766→   766→    <Dialog open={discountOpen} onOpenChange={setDiscountOpen}>
+   767→   767→      <DialogContent className="max-w-sm">
+   768→   768→        <DialogHeader><DialogTitle>Apply Discount</DialogTitle></DialogHeader>
+   769→   769→        {entrySuccess?.show && entrySuccess.type === 'Discount' ? (
+   770→   770→          <SuccessOverlay docNo={entrySuccess.docNo} type="Discount" label="Discount Applied" />
+   771→   771→        ) : (
+   772→   772→          <>
+   773→   773→            <div className="grid gap-3 py-2">
+   774→   774→              <div><Label className="text-xs">Type</Label><Select value={discountForm.discountType} onValueChange={v => setDiscountForm({ ...discountForm, discountType: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Fixed">Fixed</SelectItem><SelectItem value="Percentage">Percentage</SelectItem></SelectContent></Select></div>
+   775→   775→              <div><Label className="text-xs">Amount *</Label><Input type="number" value={discountForm.amount} onChange={e => setDiscountForm({ ...discountForm, amount: e.target.value })} /></div>
+   776→   776→              <div><Label className="text-xs">Description</Label><Input value={discountForm.description} onChange={e => setDiscountForm({ ...discountForm, description: e.target.value })} /></div>
+   777→   777→            </div>
+   778→   778→            <DialogFooter>
+   779→   779→              <Button variant="outline" onClick={() => setDiscountOpen(false)}>Cancel</Button>
+   780→   780→              <Button className="bg-teal-600 hover:bg-teal-700" onClick={() => {
+   781→   781→                if (!discountForm.amount) { notify({ type: 'error', title: 'Error', message: 'Amount required' }); return }
+   782→   782→                if (apiHeaders) {
+   783→   783→                  createEntryWithTxn('Discount', {
+   784→   784→                    description: discountForm.description || 'Discount applied',
+   785→   785→                    amount: parseFloat(discountForm.amount),
+   786→   786→                    discountType: discountForm.discountType,
+   787→   787→                  })
+   788→   788→                } else {
+   789→   789→                  handleDiscount()
+   790→   790→                }
+   791→   791→              }} disabled={isSubmitting}>
+   792→   792→                {isSubmitting ? <Loader2 className="size-3 animate-spin" /> : 'Apply'}
+   793→   793→              </Button>
+   794→   794→            </DialogFooter>
+   795→   795→          </>
+   796→   796→        )}
+   797→   797→      </DialogContent>
+   798→   798→    </Dialog>
+   799→   799→
+   800→   800→    {/* Transfer Dialog */}
+   801→   801→    <Dialog open={transferOpen} onOpenChange={setTransferOpen}>
+   802→   802→      <DialogContent className="max-w-md">
+   803→   803→        <DialogHeader>
+   804→   804→          <DialogTitle className="flex items-center gap-2"><ArrowRightLeft className="size-4 text-purple-600" />Transfer Folio</DialogTitle>
+   805→   805→          <DialogDescription>Transfer balance and transactions to another customer</DialogDescription>
+   806→   806→        </DialogHeader>
+   807→   807→        {entrySuccess?.show && entrySuccess.type === 'Transfer' ? (
+   808→   808→          <SuccessOverlay docNo={entrySuccess.docNo} type="Transfer" label="Transfer Complete" />
+   809→   809→        ) : (
+   810→   810→          <>
+   811→   811→            <div className="grid gap-3 py-2">
+   812→   812→              <div>
+   813→   813→                <Label className="text-xs">Search Customer *</Label>
+   814→   814→                <Input value={transferForm.targetName} onChange={e => { setTransferForm({ ...transferForm, targetName: e.target.value, targetCustomerId: '' }); searchTransferTargets(e.target.value) }} placeholder="Type name or mobile..." />
+   815→   815→                {transferResults.length > 0 && (
+   816→   816→                  <div className="border border-slate-200 dark:border-slate-700 rounded-md mt-1 max-h-32 overflow-auto">
+   817→   817→                    {transferResults.map(c => (
+   818→   818→                      <button key={c.id} onClick={() => setTransferForm({ ...transferForm, targetCustomerId: c.id, targetName: c.fullName })} className="w-full text-left px-3 py-1.5 text-[11px] hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+   819→   819→                        {c.fullName} — {c.mobile} ({c.customerId})
+   820→   820→                      </button>
+   821→   821→                    ))}
+   822→   822→                  </div>
+   823→   823→                )}
+   824→   824→              </div>
+   825→   825→              <div><Label className="text-xs">Amount (optional — 0 transfers only transactions)</Label><Input type="number" value={transferForm.amount} onChange={e => setTransferForm({ ...transferForm, amount: e.target.value })} /></div>
+   826→   826→              <div><Label className="text-xs">Description</Label><Input value={transferForm.description} onChange={e => setTransferForm({ ...transferForm, description: e.target.value })} /></div>
+   827→   827→            </div>
+   828→   828→            <DialogFooter>
+   829→   829→              <Button variant="outline" onClick={() => setTransferOpen(false)}>Cancel</Button>
+   830→   830→              <Button className="bg-purple-600 hover:bg-purple-700" onClick={() => {
+   831→   831→                if (!transferForm.targetCustomerId) { notify({ type: 'error', title: 'Error', message: 'Target customer required' }); return }
+   832→   832→                if (apiHeaders) transferWithTxn()
+   833→   833→                else handleTransfer()
+   834→   834→              }} disabled={isSubmitting}>
+   835→   835→                {isSubmitting ? <Loader2 className="size-3 animate-spin" /> : 'Transfer'}
+   836→   836→              </Button>
+   837→   837→            </DialogFooter>
+   838→   838→          </>
+   839→   839→        )}
+   840→   840→      </DialogContent>
+   841→   841→    </Dialog>
+   842→   842→
+   843→   843→    {/* Shift Dialog */}
+   844→   844→    <Dialog open={shiftOpen} onOpenChange={setShiftOpen}>
+   845→   845→      <DialogContent className="max-w-sm">
+   846→   846→        <DialogHeader>
+   847→   847→          <DialogTitle>Shift Transactions</DialogTitle>
+   848→   848→          <DialogDescription>Move {selectedEntries.size} selected entries to another folio</DialogDescription>
+   849→   849→        </DialogHeader>
+   850→   850→        <div className="py-2">
+   851→   851→          <Label className="text-xs">Target Folio *</Label>
+   852→   852→          <Select value={shiftTargetFolioId} onValueChange={setShiftTargetFolioId}>
+   853→   853→            <SelectTrigger><SelectValue placeholder="Select folio" /></SelectTrigger>
+   854→   854→            <SelectContent>{allFolios.filter(f => f.id !== selectedFolioId).map(f => (<SelectItem key={f.id} value={f.id}>{fmtFolioNum(f.folioNumber)} ({f.status})</SelectItem>))}</SelectContent>
+   855→   855→          </Select>
+   856→   856→        </div>
+   857→   857→        <DialogFooter>
+   858→   858→          <Button variant="outline" onClick={() => setShiftOpen(false)}>Cancel</Button>
+   859→   859→          <Button onClick={handleShift} disabled={submitting || !shiftTargetFolioId}>{submitting ? <Loader2 className="size-3 animate-spin" /> : 'Shift'}</Button>
+   860→   860→        </DialogFooter>
+   861→   861→      </DialogContent>
+   862→   862→    </Dialog>
+   863→   863→
+   864→   864→    {/* Split Amount Dialog */}
+   865→   865→    <Dialog open={splitAmountOpen} onOpenChange={setSplitAmountOpen}>
+   866→   866→      <DialogContent className="max-w-sm">
+   867→   867→        <DialogHeader>
+   868→   868→          <DialogTitle>Split Amount</DialogTitle>
+   869→   869→          <DialogDescription>Split amount from selected entry to another folio</DialogDescription>
+   870→   870→        </DialogHeader>
+   871→   871→        <div className="grid gap-3 py-2">
+   872→   872→          {selectedEntryObj && <div className="bg-slate-50 dark:bg-slate-800 rounded-md p-2 text-[11px]"><strong>Entry:</strong> {selectedEntryObj.description} — {fmtCur(selectedEntryObj.debit || selectedEntryObj.credit)}</div>}
+   873→   873→          <div><Label className="text-xs">Amount *</Label><Input type="number" value={splitAmountForm.amount} onChange={e => setSplitAmountForm({ ...splitAmountForm, amount: e.target.value })} /></div>
+   874→   874→          <div>
+   875→   875→            <Label className="text-xs">Target Folio *</Label>
+   876→   876→            <Select value={splitAmountForm.targetFolioId} onValueChange={v => setSplitAmountForm({ ...splitAmountForm, targetFolioId: v })}>
+   877→   877→              <SelectTrigger><SelectValue placeholder="Select folio" /></SelectTrigger>
+   878→   878→              <SelectContent>{allFolios.filter(f => f.id !== selectedFolioId).map(f => (<SelectItem key={f.id} value={f.id}>{fmtFolioNum(f.folioNumber)}</SelectItem>))}</SelectContent>
+   879→   879→            </Select>
+   880→   880→          </div>
+   881→   881→        </div>
+   882→   882→        <DialogFooter>
+   883→   883→          <Button variant="outline" onClick={() => setSplitAmountOpen(false)}>Cancel</Button>
+   884→   884→          <Button onClick={handleSplitAmount} disabled={submitting}>{submitting ? <Loader2 className="size-3 animate-spin" /> : 'Split'}</Button>
+   885→   885→        </DialogFooter>
+   886→   886→      </DialogContent>
+   887→   887→    </Dialog>
+   888→   888→
+   889→   889→    {/* Remove Entries Alert */}
+   890→   890→    <AlertDialog open={removeOpen} onOpenChange={setRemoveOpen}>
+   891→   891→      <AlertDialogContent>
+   892→   892→        <AlertDialogHeader>
+   893→   893→          <AlertDialogTitle>Remove {selectedEntries.size} Entries?</AlertDialogTitle>
+   894→   894→          <AlertDialogDescription>This will cancel the selected entries. This action cannot be undone.</AlertDialogDescription>
+   895→   895→        </AlertDialogHeader>
+   896→   896→        <AlertDialogFooter>
+   897→   897→          <AlertDialogCancel>Cancel</AlertDialogCancel>
+   898→   898→          <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={handleRemove} disabled={submitting}>{submitting ? <Loader2 className="size-3 animate-spin" /> : 'Remove'}</AlertDialogAction>
+   899→   899→        </AlertDialogFooter>
+   900→   900→      </AlertDialogContent>
+   901→   901→    </AlertDialog>
+   902→   902→
+   903→   903→    {/* ══════════════════════════════════════════════════════════ */}
+   904→   904→    {/* ─── CHECKOUT DIALOG (Simplified: Invoice + Proceed) ── */}
+   905→   905→    {/* ══════════════════════════════════════════════════════════ */}
+   906→   906→    <Dialog open={checkoutOpen} onOpenChange={setCheckoutOpen}>
+   907→   907→      <DialogContent className="max-w-sm">
+   908→   908→        <DialogHeader>
+   909→   909→          <DialogTitle className="flex items-center gap-2"><LogOut className="size-4 text-orange-600" />Checkout Customer</DialogTitle>
+   910→   910→          <DialogDescription>
+   911→   911→            {detail?.fullName} — Balance: <strong>{fmtCur(bal)}</strong>
+   912→   912→          </DialogDescription>
+   913→   913→        </DialogHeader>
+   914→   914→        <div className="py-2">
+   915→   915→          <div className="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 rounded-lg p-3 text-center mb-3">
+   916→   916→            <CheckCircle2 className="size-6 text-emerald-500 mx-auto mb-1" />
+   917→   917→            <div className="text-xs font-bold text-emerald-700 dark:text-emerald-300">Balance Settled</div>
+   918→   918→            <div className="text-[10px] text-emerald-600/70 mt-0.5">No outstanding balance. Ready for checkout.</div>
+   919→   919→          </div>
+   920→   920→        </div>
+   921→   921→        <DialogFooter className="flex-col gap-2 sm:flex-row">
+   922→   922→          <Button variant="outline" className="flex-1 gap-1.5" onClick={() => { setCheckoutOpen(false); printCompleteInvoice?.() }}>
+   923→   923→            <Stamp className="size-3.5" />Invoice
+   924→   924→          </Button>
+   925→   925→          <Button className="flex-1 gap-1.5 bg-orange-600 hover:bg-orange-700" onClick={handleCheckout} disabled={submitting}>
+   926→   926→            {submitting ? <Loader2 className="size-3 animate-spin" /> : <><LogOut className="size-3.5" />Proceed Checkout</>}
+   927→   927→          </Button>
+   928→   928→        </DialogFooter>
+   929→   929→      </DialogContent>
+   930→   930→    </Dialog>
+   931→   931→
+   932→   932→    {/* ══════════════════════════════════════════════════════════ */}
+   933→   933→    {/* ─── POST-CHECKOUT SUCCESS DIALOG ──────────────────────── */}
+   934→   934→    {/* ══════════════════════════════════════════════════════════ */}
+   935→   935→    <Dialog open={postCheckoutOpen} onOpenChange={setPostCheckoutOpen}>
+   936→   936→      <DialogContent className="max-w-md w-[92vw]">
+   937→   937→        <div className="flex flex-col items-center justify-center py-4 gap-3">
+   938→   938→          {/* Success Icon */}
+   939→   939→          <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center animate-in zoom-in duration-500">
+   940→   940→            <CheckCircle2 className="size-8 text-emerald-600 dark:text-emerald-400" />
+   941→   941→          </div>
+   942→   942→          <div className="text-center">
+   943→   943→            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Checkout Complete</h3>
+   944→   944→            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{detail?.fullName} has been checked out successfully</p>
+   945→   945→          </div>
+   946→   946→          {detail && (
+   947→   947→            <div className="w-full bg-slate-50 dark:bg-slate-800 rounded-xl p-3 border border-slate-200 dark:border-slate-700">
+   948→   948→              <div className="flex justify-between items-center text-xs">
+   949→   949→                <span className="text-slate-500 dark:text-slate-400">Final Balance</span>
+   950→   950→                <span className={`font-bold text-sm tabular-nums ${bal > 0 ? 'text-red-600' : bal < 0 ? 'text-emerald-600' : 'text-slate-500'}`}>
+   951→   951→                  {bal > 0 ? '+' : bal < 0 ? '-' : ''}{fmtCur(bal)}
+   952→   952→                </span>
+   953→   953→              </div>
+   954→   954→              {bal < 0 && (
+   955→   955→                <div className="text-[10px] text-amber-600 dark:text-amber-400 mt-1.5 flex items-center gap-1">
+   956→   956→                  <Wallet className="size-3" />Customer has {fmtCur(Math.abs(bal))} credit balance
+   957→   957→                </div>
+   958→   958→              )}
+   959→   959→            </div>
+   960→   960→          )}
+   961→   961→          <div className="w-full space-y-2">
+   962→   962→            <Popover>
+   963→   963→              <PopoverTrigger asChild>
+   964→   964→                <Button className="w-full h-10 bg-emerald-600 hover:bg-emerald-700 text-white gap-2 text-sm font-semibold">
+   965→   965→                  <Printer className="size-4" />Print Folio <ChevronDown className="size-3" />
+   966→   966→                </Button>
+   967→   967→              </PopoverTrigger>
+   968→   968→              <PopoverContent className="w-44 p-1" side="top">
+   969→   969→                <button onClick={() => { setPostCheckoutOpen(false); onPrintReceipt?.() }} className="flex items-center gap-2 w-full px-3 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md">
+   970→   970→                  <Printer className="size-3.5 text-slate-500" /><div className="text-left"><div className="font-medium">A4 Print Folio</div><div className="text-[9px] text-slate-400">Standard paper</div></div>
+   971→   971→                </button>
+   972→   972→                <button onClick={() => { setPostCheckoutOpen(false); onThermalPrintReceipt?.() }} className="flex items-center gap-2 w-full px-3 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md">
+   973→   973→                  <Flame className="size-3.5 text-orange-500" /><div className="text-left"><div className="font-medium">Thermal Print Folio</div><div className="text-[9px] text-slate-400">Receipt printer</div></div>
+   974→   974→                </button>
+   975→   975→              </PopoverContent>
+   976→   976→            </Popover>
+   977→   977→            <Popover>
+   978→   978→              <PopoverTrigger asChild>
+   979→   979→                <Button className="w-full h-10 bg-orange-600 hover:bg-orange-700 text-white gap-2 text-sm font-semibold">
+   980→   980→                  <Stamp className="size-4" />Print Invoice <ChevronDown className="size-3" />
+   981→   981→                </Button>
+   982→   982→              </PopoverTrigger>
+   983→   983→              <PopoverContent className="w-44 p-1" side="top">
+   984→   984→                <button onClick={() => { setPostCheckoutOpen(false); printCompleteInvoice() }} className="flex items-center gap-2 w-full px-3 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md">
+   985→   985→                  <Printer className="size-3.5 text-slate-500" /><div className="text-left"><div className="font-medium">A4 Print Invoice</div><div className="text-[9px] text-slate-400">Complete transaction history</div></div>
+   986→   986→                </button>
+   987→   987→                <button onClick={() => { setPostCheckoutOpen(false); onThermalPrintInvoice?.() }} className="flex items-center gap-2 w-full px-3 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md">
+   988→   988→                  <Flame className="size-3.5 text-orange-500" /><div className="text-left"><div className="font-medium">Thermal Print Invoice</div><div className="text-[9px] text-slate-400">Receipt printer</div></div>
+   989→   989→                </button>
+   990→   990→              </PopoverContent>
+   991→   991→            </Popover>
+   992→   992→            <Button variant="outline" className="w-full h-10 gap-2 text-sm" onClick={() => setPostCheckoutOpen(false)}>
+   993→   993→              <ArrowLeft className="size-4" />Close
+   994→   994→            </Button>
+   995→   995→          </div>
+   996→   996→        </div>
+   997→   997→      </DialogContent>
+   998→   998→    </Dialog>
+   999→   999→
+  1000→  1000→    {/* Delete / Archive Alert */}
+  1001→  1001→    <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+  1002→  1002→      <AlertDialogContent>
+  1003→  1003→        <AlertDialogHeader>
+  1004→  1004→          <AlertDialogTitle>Archive Customer?</AlertDialogTitle>
+  1005→  1005→          <AlertDialogDescription>Archive {detail?.fullName}? Their data will be preserved but hidden from active lists.</AlertDialogDescription>
+  1006→  1006→        </AlertDialogHeader>
+  1007→  1007→        <AlertDialogFooter>
+  1008→  1008→          <AlertDialogCancel>Cancel</AlertDialogCancel>
+  1009→  1009→          <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={handleDelete} disabled={submitting}>{submitting ? <Loader2 className="size-3 animate-spin" /> : 'Archive'}</AlertDialogAction>
+  1010→  1010→        </AlertDialogFooter>
+  1011→  1011→      </AlertDialogContent>
+  1012→  1012→    </AlertDialog>
+  1013→  1013→
+  1014→  1014→    {/* Voucher / Payment History Dialog */}
+  1015→  1015→    <Dialog open={voucherOpen} onOpenChange={(v) => { if (!v) setSelectedVoucherIds(new Set()); setVoucherOpen(v) }}>
+  1016→  1016→      <DialogContent className="max-w-xl max-h-[85vh] flex flex-col">
+  1017→  1017→        <DialogHeader>
+  1018→  1018→          <DialogTitle className="flex items-center gap-2"><FileCheck2 className="size-4 text-emerald-600" />Voucher / Payment History</DialogTitle>
+  1019→  1019→          <DialogDescription>Select payments to print vouchers for</DialogDescription>
+  1020→  1020→        </DialogHeader>
+  1021→  1021→        <ScrollArea className="flex-1 max-h-64">
+  1022→  1022→          {paymentEntries.length === 0 ? (
+  1023→  1023→            <div className="py-8 text-center text-muted-foreground text-xs">No payment entries found</div>
+  1024→  1024→          ) : (
+  1025→  1025→            <table className="w-full text-[11px]">
+  1026→  1026→              <thead><tr className="border-b dark:border-slate-700">
+  1027→  1027→                <th className="p-2 w-8"><Checkbox checked={selectedVoucherIds.size === paymentEntries.length && paymentEntries.length > 0} onCheckedChange={(c) => { if (c) setSelectedVoucherIds(new Set(paymentEntries.map(e => e.id))); else setSelectedVoucherIds(new Set()) }} /></th>
+  1028→  1028→                <th className="text-left p-2">Date</th><th className="text-left p-2">Description</th><th className="text-right p-2">Amount</th><th className="text-left p-2">Mode</th>
+  1029→  1029→              </tr></thead>
+  1030→  1030→              <tbody>
+  1031→  1031→                {paymentEntries.map(e => (
+  1032→  1032→                  <tr key={e.id} className={`border-b border-slate-100 dark:border-slate-800 ${selectedVoucherIds.has(e.id) ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''}`}>
+  1033→  1033→                    <td className="p-2"><Checkbox checked={selectedVoucherIds.has(e.id)} onCheckedChange={(c) => { const s = new Set(selectedVoucherIds); if (c) s.add(e.id); else s.delete(e.id); setSelectedVoucherIds(s) }} /></td>
+  1034→  1034→                    <td className="p-2">{fmtDate(e.date)}</td>
+  1035→  1035→                    <td className="p-2">{e.description}</td>
+  1036→  1036→                    <td className="p-2 text-right font-semibold text-emerald-600">{fmtCur(e.credit)}</td>
+  1037→  1037→                    <td className="p-2"><Badge variant="outline" className="text-[9px]">{e.paymentMode || '—'}</Badge></td>
+  1038→  1038→                  </tr>
+  1039→  1039→                ))}
+  1040→  1040→              </tbody>
+  1041→  1041→            </table>
+  1042→  1042→          )}
+  1043→  1043→        </ScrollArea>
+  1044→  1044→        <DialogFooter>
+  1045→  1045→          {selectedVoucherIds.size > 0 && <span className="text-[10px] text-slate-500 mr-2">{selectedVoucherIds.size} selected</span>}
+  1046→  1046→          <Popover>
+  1047→  1047→            <PopoverTrigger asChild>
+  1048→  1048→              <Button variant="outline" size="sm" disabled={paymentEntries.length === 0} className="gap-1.5">
+  1049→  1049→                <Printer className="size-3.5" />Print <ChevronDown className="size-3" />
+  1050→  1050→              </Button>
+  1051→  1051→            </PopoverTrigger>
+  1052→  1052→            <PopoverContent className="w-44 p-1" side="top">
+  1053→  1053→              <button onClick={() => { const sel = selectedVoucherIds.size > 0 ? paymentEntries.filter(e => selectedVoucherIds.has(e.id)) : undefined; setVoucherOpen(false); printVoucherHistory(sel) }} className="flex items-center gap-2 w-full px-3 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md">
+  1054→  1054→                <Printer className="size-3.5 text-slate-500" /><div className="text-left"><div className="font-medium">A4 Print</div><div className="text-[9px] text-slate-400">Standard paper</div></div>
+  1055→  1055→              </button>
+  1056→  1056→              <button onClick={() => { setVoucherOpen(false); onThermalPrintVoucher?.() }} className="flex items-center gap-2 w-full px-3 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md">
+  1057→  1057→                <Flame className="size-3.5 text-orange-500" /><div className="text-left"><div className="font-medium">Thermal Print</div><div className="text-[9px] text-slate-400">Receipt printer</div></div>
+  1058→  1058→              </button>
+  1059→  1059→            </PopoverContent>
+  1060→  1060→          </Popover>
+  1061→  1061→          <Button variant="outline" size="sm" onClick={() => setVoucherOpen(false)}>Close</Button>
+  1062→  1062→        </DialogFooter>
+  1063→  1063→      </DialogContent>
+  1064→  1064→    </Dialog>
+  1065→  1065→
+  1066→  1066→    {/* ══════════════════════════════════════════════════════════ */}
+  1067→  1067→    {/* ─── INVOICE DIALOG (Redesigned) ───────────────────────── */}
+  1068→  1068→    {/* ══════════════════════════════════════════════════════════ */}
+  1069→  1069→    <Dialog open={invoiceOpen} onOpenChange={setInvoiceOpen}>
+  1070→  1070→      <DialogContent className="max-w-2xl w-[95vw] max-h-[90vh] flex flex-col">
+  1071→  1071→        <ScrollArea className="flex-1 min-h-0">
+  1072→  1072→          {/* Invoice Header */}
+  1073→  1073→          <div className="bg-gradient-to-r from-emerald-600 to-emerald-700 px-5 sm:px-6 pt-5 pb-4 rounded-t-lg">
+  1074→  1074→            <div className="flex items-start justify-between gap-3">
+  1075→  1075→              <div className="min-w-0">
+  1076→  1076→                <DialogTitle className="flex items-center gap-2 text-white text-sm sm:text-base">
+  1077→  1077→                  <Stamp className="size-4 sm:size-5 shrink-0" />
+  1078→  1078→                  Tax Invoice
+  1079→  1079→                </DialogTitle>
+  1080→  1080→                <DialogDescription className="text-emerald-100 text-[11px] sm:text-xs mt-1">
+  1081→  1081→                  Professional invoice for this transaction
+  1082→  1082→                </DialogDescription>
+  1083→  1083→              </div>
+  1084→  1084→              {/* Invoice Number */}
+  1085→  1085→              <div className="bg-white/15 backdrop-blur-sm rounded-lg px-3 py-2 text-right shrink-0">
+  1086→  1086→                {invNumLoading ? (
+  1087→  1087→                  <div className="flex items-center gap-1.5 text-white/80 text-[11px]">
+  1088→  1088→                    <Loader2 className="size-3 animate-spin" />Generating...
+  1089→  1089→                  </div>
+  1090→  1090→                ) : invoiceNumber ? (
+  1091→  1091→                  <div>
+  1092→  1092→                    <div className="text-[9px] text-emerald-100 uppercase tracking-wider font-semibold">Invoice No</div>
+  1093→  1093→                    <div className="text-sm sm:text-base font-mono font-bold text-white">{invoiceNumber}</div>
+  1094→  1094→                  </div>
+  1095→  1095→                ) : (
+  1096→  1096→                  <button
+  1097→  1097→                    onClick={fetchInvoiceNumber}
+  1098→  1098→                    className="text-[10px] text-white/80 hover:text-white flex items-center gap-1 font-medium"
+  1099→  1099→                  >
+  1100→  1100→                    <Hash className="size-3" />Generate No.
+  1101→  1101→                  </button>
+  1102→  1102→                )}
+  1103→  1103→              </div>
+  1104→  1104→            </div>
+  1105→  1105→          </div>
+  1106→  1106→
+  1107→  1107→          <div className="px-5 sm:px-6 py-4 space-y-4">
+  1108→  1108→            {/* Business & Customer Info */}
+  1109→  1109→            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+  1110→  1110→              {/* Business Details */}
+  1111→  1111→              <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl p-3 sm:p-4 border border-slate-200 dark:border-slate-700">
+  1112→  1112→                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-2">From (Business)</div>
+  1113→  1113→                <div className="text-xs font-bold text-slate-800 dark:text-slate-100 mb-1">Your Business</div>
+  1114→  1114→                <div className="space-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+  1115→  1115→                  <div className="flex items-center gap-1.5">
+  1116→  1116→                    <Building2 className="size-3 text-emerald-500" />
+  1117→  1117→                    <span className="font-mono text-[10px]">GSTIN: —</span>
+  1118→  1118→                  </div>
+  1119→  1119→                </div>
+  1120→  1120→              </div>
+  1121→  1121→
+  1122→  1122→              {/* Customer Details */}
+  1123→  1123→              <div className="bg-emerald-50 dark:bg-emerald-950/20 rounded-xl p-3 sm:p-4 border border-emerald-200 dark:border-emerald-800">
+  1124→  1124→                <div className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-2">Bill To (Customer)</div>
+  1125→  1125→                <div className="text-xs font-bold text-slate-800 dark:text-slate-100">{detail?.fullName}</div>
+  1126→  1126→                {detail?.mobile && <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">{detail.mobile}</div>}
+  1127→  1127→                {detail?.gstNumber && (
+  1128→  1128→                  <div className="flex items-center gap-1.5 mt-1.5">
+  1129→  1129→                    <Building2 className="size-3 text-emerald-500" />
+  1130→  1130→                    <span className="font-mono text-[10px] text-slate-600 dark:text-slate-300 font-semibold">GSTIN: {detail.gstNumber}</span>
+  1131→  1131→                  </div>
+  1132→  1132→                )}
+  1133→  1133→                {!detail?.gstNumber && (
+  1134→  1134→                  <div className="text-[10px] text-slate-400 mt-1 italic">No GSTIN on file</div>
+  1135→  1135→                )}
+  1136→  1136→              </div>
+  1137→  1137→            </div>
+  1138→  1138→
+  1139→  1139→            {/* Date Range Filter */}
+  1140→  1140→            <div className="bg-white dark:bg-slate-800/50 rounded-xl p-3 border border-slate-200 dark:border-slate-700">
+  1141→  1141→              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-2">Invoice Period</div>
+  1142→  1142→              <div className="grid grid-cols-2 gap-3">
+  1143→  1143→                <div><Label className="text-[10px]">From</Label><Input type="date" className="h-8 text-xs" value={invoiceFrom} onChange={e => setInvoiceFrom(e.target.value)} /></div>
+  1144→  1144→                <div><Label className="text-[10px]">To</Label><Input type="date" className="h-8 text-xs" value={invoiceTo} onChange={e => setInvoiceTo(e.target.value)} /></div>
+  1145→  1145→              </div>
+  1146→  1146→              <Button variant="outline" size="sm" className="mt-2 h-7 text-[10px] gap-1.5" onClick={() => { if (detail && selectedFolioId) fetchFolioStatement(selectedFolioId) }} disabled={!selectedFolioId}>
+  1147→  1147→                <FileText className="size-3" />Fetch Statement
+  1148→  1148→              </Button>
+  1149→  1149→            </div>
+  1150→  1150→
+  1151→  1151→            {/* Invoice Data Display */}
+  1152→  1152→            {invoiceLoading && (
+  1153→  1153→              <div className="flex items-center justify-center py-8 gap-2 text-slate-400">
+  1154→  1154→                <Loader2 className="size-4 animate-spin" />
+  1155→  1155→                <span className="text-xs">Loading invoice data...</span>
+  1156→  1156→              </div>
+  1157→  1157→            )}
+  1158→  1158→
+  1159→  1159→            {invoiceData && !invoiceLoading && (
+  1160→  1160→              <>
+  1161→  1161→                {/* Line Items Table */}
+  1162→  1162→                <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+  1163→  1163→                  <div className="bg-slate-50 dark:bg-slate-800 px-3 py-2">
+  1164→  1164→                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+  1165→  1165→                      Line Items ({gstData?.entryCount || 0} charge{gstData && gstData.entryCount !== 1 ? 's' : ''})
+  1166→  1166→                    </span>
+  1167→  1167→                  </div>
+  1168→  1168→                  <div className="overflow-x-auto">
+  1169→  1169→                    <table className="w-full text-[11px]">
+  1170→  1170→                      <thead>
+  1171→  1171→                        <tr className="border-b border-slate-100 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/30">
+  1172→  1172→                          <th className="text-left px-3 py-2 text-slate-500 font-semibold text-[10px]">#</th>
+  1173→  1173→                          <th className="text-left px-3 py-2 text-slate-500 font-semibold text-[10px]">Description</th>
+  1174→  1174→                          <th className="text-right px-3 py-2 text-slate-500 font-semibold text-[10px] whitespace-nowrap">Amount</th>
+  1175→  1175→                          <th className="text-right px-3 py-2 text-slate-500 font-semibold text-[10px] whitespace-nowrap">Tax</th>
+  1176→  1176→                          <th className="text-right px-3 py-2 text-slate-500 font-semibold text-[10px] whitespace-nowrap">Discount</th>
+  1177→  1177→                          <th className="text-right px-3 py-2 text-slate-500 font-semibold text-[10px] whitespace-nowrap">Total</th>
+  1178→  1178→                        </tr>
+  1179→  1179→                      </thead>
+  1180→  1180→                      <tbody>
+  1181→  1181→                        {(invoiceData.entries as any[]).filter((e: any) => e.debit > 0).map((entry: any, idx: number) => (
+  1182→  1182→                          <tr key={entry.id} className="border-b border-slate-50 dark:border-slate-800 last:border-b-0 hover:bg-slate-50/50 dark:hover:bg-slate-800/20">
+  1183→  1183→                            <td className="px-3 py-2 text-slate-400">{idx + 1}</td>
+  1184→  1184→                            <td className="px-3 py-2 text-slate-700 dark:text-slate-300 max-w-[200px] truncate" title={entry.description}>{entry.description}</td>
+  1185→  1185→                            <td className="px-3 py-2 text-right tabular-nums">{fmtINR(entry.debit - (entry.tax || 0) - (entry.discount || 0))}</td>
+  1186→  1186→                            <td className="px-3 py-2 text-right text-amber-600 tabular-nums">{entry.tax > 0 ? fmtINR(entry.tax) : '—'}</td>
+  1187→  1187→                            <td className="px-3 py-2 text-right text-teal-600 tabular-nums">{entry.discount > 0 ? fmtINR(entry.discount) : '—'}</td>
+  1188→  1188→                            <td className="px-3 py-2 text-right font-bold tabular-nums text-slate-800 dark:text-slate-100">{fmtINR(entry.debit)}</td>
+  1189→  1189→                          </tr>
+  1190→  1190→                        ))}
+  1191→  1191→                      </tbody>
+  1192→  1192→                    </table>
+  1193→  1193→                  </div>
+  1194→  1194→                </div>
+  1195→  1195→
+  1196→  1196→                {/* GST Summary */}
+  1197→  1197→                {gstData && gstData.totalTax > 0 && (
+  1198→  1198→                  <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3 sm:p-4">
+  1199→  1199→                    <div className="flex items-center gap-2 mb-3">
+  1200→  1200→                      <Landmark className="size-4 text-amber-600 dark:text-amber-400" />
+  1201→  1201→                      <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 uppercase tracking-wider">GST Summary</span>
+  1202→  1202→                    </div>
+  1203→  1203→                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+  1204→  1204→                      <div className="bg-white dark:bg-slate-800 rounded-lg p-2.5 text-center">
+  1205→  1205→                        <div className="text-[9px] text-slate-400 uppercase font-semibold">Taxable Amt</div>
+  1206→  1206→                        <div className="text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200 tabular-nums mt-0.5">{fmtINR(gstData.taxableAmount)}</div>
+  1207→  1207→                      </div>
+  1208→  1208→                      <div className="bg-white dark:bg-slate-800 rounded-lg p-2.5 text-center">
+  1209→  1209→                        <div className="text-[9px] text-slate-400 uppercase font-semibold">CGST</div>
+  1210→  1210→                        <div className="text-xs sm:text-sm font-bold text-amber-700 dark:text-amber-300 tabular-nums mt-0.5">{fmtINR(gstData.cgst)}</div>
+  1211→  1211→                      </div>
+  1212→  1212→                      <div className="bg-white dark:bg-slate-800 rounded-lg p-2.5 text-center">
+  1213→  1213→                        <div className="text-[9px] text-slate-400 uppercase font-semibold">SGST</div>
+  1214→  1214→                        <div className="text-xs sm:text-sm font-bold text-amber-700 dark:text-amber-300 tabular-nums mt-0.5">{fmtINR(gstData.sgst)}</div>
+  1215→  1215→                      </div>
+  1216→  1216→                      <div className="bg-white dark:bg-slate-800 rounded-lg p-2.5 text-center">
+  1217→  1217→                        <div className="text-[9px] text-slate-400 uppercase font-semibold">Total Tax</div>
+  1218→  1218→                        <div className="text-xs sm:text-sm font-bold text-amber-700 dark:text-amber-300 tabular-nums mt-0.5">{fmtINR(gstData.totalTax)}</div>
+  1219→  1219→                      </div>
+  1220→  1220→                    </div>
+  1221→  1221→                  </div>
+  1222→  1222→                )}
+  1223→  1223→
+  1224→  1224→                {/* Advance / Payment Summary */}
+  1225→  1225→                <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-xl p-3 sm:p-4">
+  1226→  1226→                  <div className="flex items-center gap-2 mb-3">
+  1227→  1227→                    <Wallet className="size-4 text-blue-600 dark:text-blue-400" />
+  1228→  1228→                    <span className="text-[10px] font-bold text-blue-700 dark:text-blue-300 uppercase tracking-wider">Advance & Payment Details</span>
+  1229→  1229→                  </div>
+  1230→  1230→                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+  1231→  1231→                    <div className="bg-white dark:bg-slate-800 rounded-lg p-2.5 text-center">
+  1232→  1232→                      <div className="text-[9px] text-slate-400 uppercase font-semibold">Opening Bal</div>
+  1233→  1233→                      <div className={`text-xs sm:text-sm font-bold tabular-nums mt-0.5 ${(invoiceData.openingBalance || 0) >= 0 ? 'text-slate-700 dark:text-slate-200' : 'text-emerald-600'}`}>
+  1234→  1234→                        {fmtINR(invoiceData.openingBalance || 0)}
+  1235→  1235→                      </div>
+  1236→  1236→                    </div>
+  1237→  1237→                    <div className="bg-white dark:bg-slate-800 rounded-lg p-2.5 text-center">
+  1238→  1238→                      <div className="text-[9px] text-slate-400 uppercase font-semibold">Total Charges</div>
+  1239→  1239→                      <div className="text-xs sm:text-sm font-bold text-red-600 dark:text-red-400 tabular-nums mt-0.5">{fmtINR(gstData?.totalCharges || 0)}</div>
+  1240→  1240→                    </div>
+  1241→  1241→                    <div className="bg-white dark:bg-slate-800 rounded-lg p-2.5 text-center">
+  1242→  1242→                      <div className="text-[9px] text-slate-400 uppercase font-semibold">Payments</div>
+  1243→  1243→                      <div className="text-xs sm:text-sm font-bold text-emerald-600 dark:text-emerald-400 tabular-nums mt-0.5">{fmtINR(gstData?.totalPayments || 0)}</div>
+  1244→  1244→                    </div>
+  1245→  1245→                    <div className="bg-white dark:bg-slate-800 rounded-lg p-2.5 text-center">
+  1246→  1246→                      <div className="text-[9px] text-slate-400 uppercase font-semibold">Credit/Advance</div>
+  1247→  1247→                      <div className={`text-xs sm:text-sm font-bold tabular-nums mt-0.5 ${(gstData?.advancePayment || 0) > 0 ? 'text-emerald-600' : 'text-slate-500'}`}>
+  1248→  1248→                        {gstData?.advancePayment ? fmtINR(gstData.advancePayment) : '₹0.00'}
+  1249→  1249→                      </div>
+  1250→  1250→                    </div>
+  1251→  1251→                  </div>
+  1252→  1252→                  {detail && detail.openingBalance != null && detail.openingBalance !== 0 && (
+  1253→  1253→                    <div className="mt-2 text-[10px] text-slate-500 dark:text-slate-400">
+  1254→  1254→                      Opening balance of {fmtINR(Math.abs(detail.openingBalance))} carried forward from previous period
+  1255→  1255→                    </div>
+  1256→  1256→                  )}
+  1257→  1257→                </div>
+  1258→  1258→
+  1259→  1259→                {/* Grand Total */}
+  1260→  1260→                <div className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30 border border-emerald-200 dark:border-emerald-800 rounded-xl p-3 sm:p-4">
+  1261→  1261→                  <div className="flex items-center justify-between gap-3">
+  1262→  1262→                    <div>
+  1263→  1263→                      <div className="text-[9px] text-emerald-600 dark:text-emerald-400 uppercase tracking-wider font-bold">Grand Total</div>
+  1264→  1264→                      <div className="text-xl sm:text-2xl font-bold text-emerald-700 dark:text-emerald-300 tabular-nums mt-0.5">
+  1265→  1265→                        {fmtINR(gstData?.totalCharges || 0)}
+  1266→  1266→                      </div>
+  1267→  1267→                    </div>
+  1268→  1268→                    <div className="text-right">
+  1269→  1269→                      <div className="text-[9px] text-slate-400">Discount</div>
+  1270→  1270→                      <div className="text-xs font-bold text-teal-600 dark:text-teal-400 tabular-nums">-{fmtINR(gstData?.totalDiscount || 0)}</div>
+  1271→  1271→                    </div>
+  1272→  1272→                    <div className="text-right">
+  1273→  1273→                      <div className="text-[9px] text-slate-400">Closing Bal</div>
+  1274→  1274→                      <div className={`text-xs font-bold tabular-nums ${(invoiceData.closingBalance || 0) > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+  1275→  1275→                        {fmtINR(invoiceData.closingBalance || 0)}
+  1276→  1276→                      </div>
+  1277→  1277→                    </div>
+  1278→  1278→                  </div>
+  1279→  1279→                </div>
+  1280→  1280→              </>
+  1281→  1281→            )}
+  1282→  1282→
+  1283→  1283→            {!invoiceData && !invoiceLoading && (
+  1284→  1284→              <div className="text-center py-6 text-slate-400">
+  1285→  1285→                <FileText className="size-8 mx-auto mb-2 opacity-40" />
+  1286→  1286→                <p className="text-xs">Select a date range and click "Fetch Statement" to preview the invoice</p>
+  1287→  1287→              </div>
+  1288→  1288→            )}
+  1289→  1289→          </div>
+  1290→  1290→        </ScrollArea>
+  1291→  1291→
+  1292→  1292→        {/* Footer */}
+  1293→  1293→        <div className="px-5 sm:px-6 py-3 border-t border-slate-200 dark:border-slate-700 flex flex-wrap gap-2 shrink-0">
+  1294→  1294→          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setInvoiceOpen(false)}>
+  1295→  1295→            <X className="size-3" />Cancel
+  1296→  1296→          </Button>
+  1297→  1297→          <div className="flex-1" />
+  1298→  1298→          <Popover>
+  1299→  1299→            <PopoverTrigger asChild>
+  1300→  1300→              <Button className="bg-emerald-600 hover:bg-emerald-700 gap-1.5" disabled={!invoiceData}>
+  1301→  1301→                {invoiceLoading ? <Loader2 className="size-3 animate-spin" /> : <Printer className="size-3" />}
+  1302→  1302→                Print Invoice <ChevronDown className="size-3" />
+  1303→  1303→              </Button>
+  1304→  1304→            </PopoverTrigger>
+  1305→  1305→            <PopoverContent className="w-44 p-1" side="top">
+  1306→  1306→              <button onClick={() => { setInvoiceOpen(false); printInvoice() }} className="flex items-center gap-2 w-full px-3 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md">
+  1307→  1307→                <Printer className="size-3.5 text-slate-500" /><div className="text-left"><div className="font-medium">A4 Print Invoice</div><div className="text-[9px] text-slate-400">Standard paper</div></div>
+  1308→  1308→              </button>
+  1309→  1309→              <button onClick={() => { setInvoiceOpen(false); onThermalPrintInvoice?.() }} className="flex items-center gap-2 w-full px-3 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md">
+  1310→  1310→                <Flame className="size-3.5 text-orange-500" /><div className="text-left"><div className="font-medium">Thermal Print</div><div className="text-[9px] text-slate-400">Receipt printer</div></div>
+  1311→  1311→              </button>
+  1312→  1312→            </PopoverContent>
+  1313→  1313→          </Popover>
+  1314→  1314→        </div>
+  1315→  1315→      </DialogContent>
+  1316→  1316→    </Dialog>
+  1317→  1317→
+  1318→  1318→    {/* Document Dialog */}
+  1319→  1319→    <Dialog open={docOpen} onOpenChange={setDocOpen}>
+  1320→  1320→      <DialogContent className="max-w-sm">
+  1321→  1321→        <DialogHeader><DialogTitle className="flex items-center gap-2"><FileUp className="size-4 text-emerald-600" />Documents</DialogTitle></DialogHeader>
+  1322→  1322→        <div className="space-y-3 py-2">
+  1323→  1323→          <div className="grid grid-cols-2 gap-2">
+  1324→  1324→            <div><Label className="text-xs">Type</Label><Select value={docForm.type} onValueChange={v => setDocForm({ ...docForm, type: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Aadhaar">Aadhaar</SelectItem><SelectItem value="PAN">PAN</SelectItem><SelectItem value="GST">GST</SelectItem><SelectItem value="Voter ID">Voter ID</SelectItem><SelectItem value="Passport">Passport</SelectItem><SelectItem value="Driving License">Driving License</SelectItem><SelectItem value="Other">Other</SelectItem></SelectContent></Select></div>
+  1325→  1325→            <div><Label className="text-xs">Name *</Label><Input value={docForm.name} onChange={e => setDocForm({ ...docForm, name: e.target.value })} /></div>
+  1326→  1326→          </div>
+  1327→  1327→          <div><Label className="text-xs">URL</Label><Input value={docForm.url} onChange={e => setDocForm({ ...docForm, url: e.target.value })} /></div>
+  1328→  1328→          <div><Label className="text-xs">Notes</Label><Input value={docForm.notes} onChange={e => setDocForm({ ...docForm, notes: e.target.value })} /></div>
+  1329→  1329→        </div>
+  1330→  1330→        <div className="max-h-48 overflow-auto border border-slate-100 dark:border-slate-700 rounded-lg mt-2">
+  1331→  1331→          {detail?.documents.length === 0 ? (
+  1332→  1332→            <div className="py-4 text-center text-muted-foreground text-[10px]">No documents uploaded yet</div>
+  1333→  1333→          ) : detail?.documents.map(doc => (
+  1334→  1334→            <div key={doc.id} className="flex items-center justify-between px-2.5 py-2 text-[11px] border-b border-slate-50 dark:border-slate-800 last:border-b-0">
+  1335→  1335→              <div className="min-w-0">
+  1336→  1336→                <div className="font-medium text-slate-700 dark:text-slate-300 truncate">{doc.name}</div>
+  1337→  1337→                <div className="text-[9px] text-slate-400 mt-0.5">{doc.type} — {fmtDate(doc.createdAt)}</div>
+  1338→  1338→              </div>
+  1339→  1339→              <button onClick={() => handleDeleteDoc(doc.id)} className="text-red-500 hover:text-red-700 text-[10px] shrink-0 ml-2">Delete</button>
+  1340→  1340→            </div>
+  1341→  1341→          ))}
+  1342→  1342→        </div>
+  1343→  1343→        <DialogFooter>
+  1344→  1344→          <Button variant="outline" onClick={() => setDocOpen(false)}>Cancel</Button>
+  1345→  1345→          <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleAddDoc} disabled={submitting}>{submitting ? <Loader2 className="size-3 animate-spin" /> : 'Add'}</Button>
+  1346→  1346→        </DialogFooter>
+  1347→  1347→      </DialogContent>
+  1348→  1348→    </Dialog>
+  1349→  1349→
+  1350→  1350→    {/* Note Dialog */}
+  1351→  1351→    <Dialog open={noteOpen} onOpenChange={setNoteOpen}>
+  1352→  1352→      <DialogContent className="max-w-sm">
+  1353→  1353→        <DialogHeader><DialogTitle className="flex items-center gap-2"><StickyNote className="size-4 text-emerald-600" />Notes</DialogTitle></DialogHeader>
+  1354→  1354→        <div className="space-y-3 py-2">
+  1355→  1355→          <div><Label className="text-xs">Type</Label><Select value={noteForm.type} onValueChange={v => setNoteForm({ ...noteForm, type: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Internal">Internal</SelectItem><SelectItem value="Customer">Customer</SelectItem></SelectContent></Select></div>
+  1356→  1356→          <div><Label className="text-xs">Content *</Label><Textarea value={noteForm.content} onChange={e => setNoteForm({ ...noteForm, content: e.target.value })} rows={3} /></div>
+  1357→  1357→        </div>
+  1358→  1358→        <div className="max-h-48 overflow-auto border border-slate-100 dark:border-slate-700 rounded-lg mt-2">
+  1359→  1359→          {detail?.notes.length === 0 ? (
+  1360→  1360→            <div className="py-4 text-center text-muted-foreground text-[10px]">No notes added yet</div>
+  1361→  1361→          ) : detail?.notes.map(note => (
+  1362→  1362→            <div key={note.id} className="px-2.5 py-2 text-[11px] border-b border-slate-50 dark:border-slate-800 last:border-b-0">
+  1363→  1363→              <div className="flex justify-between items-start gap-2">
+  1364→  1364→                <span className="font-medium text-slate-700 dark:text-slate-300 break-all">{note.content}</span>
+  1365→  1365→                <button onClick={() => handleDeleteNote(note.id)} className="text-red-500 hover:text-red-700 text-[10px] shrink-0">Delete</button>
+  1366→  1366→              </div>
+  1367→  1367→              <span className="text-[9px] text-slate-400">{note.type} — {note.userName || ''} — {fmtDate(note.createdAt)}</span>
+  1368→  1368→            </div>
+  1369→  1369→          ))}
+  1370→  1370→        </div>
+  1371→  1371→        <DialogFooter>
+  1372→  1372→          <Button variant="outline" onClick={() => setNoteOpen(false)}>Cancel</Button>
+  1373→  1373→          <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleAddNote} disabled={submitting}>{submitting ? <Loader2 className="size-3 animate-spin" /> : 'Add'}</Button>
+  1374→  1374→        </DialogFooter>
+  1375→  1375→      </DialogContent>
+  1376→  1376→    </Dialog>
+  1377→  1377→
+  1378→  1378→    {/* Delete Folio Confirmation */}
+  1379→  1379→    <AlertDialog open={deleteFolioOpen} onOpenChange={setDeleteFolioOpen}>
+  1380→  1380→      <AlertDialogContent>
+  1381→  1381→        <AlertDialogHeader>
+  1382→  1382→          <AlertDialogTitle>Delete Empty Folio?</AlertDialogTitle>
+  1383→  1383→          <AlertDialogDescription>Permanently delete this empty folio? This cannot be undone.</AlertDialogDescription>
+  1384→  1384→        </AlertDialogHeader>
+  1385→  1385→        <AlertDialogFooter>
+  1386→  1386→          <AlertDialogCancel>Cancel</AlertDialogCancel>
+  1387→  1387→          <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={handleDeleteFolio} disabled={submitting}>{submitting ? <Loader2 className="size-3 animate-spin" /> : 'Delete Folio'}</AlertDialogAction>
+  1388→  1388→        </AlertDialogFooter>
+  1389→  1389→      </AlertDialogContent>
+  1390→  1390→    </AlertDialog>
+  1391→  1391→
+  1392→  1392→    {/* Tags Dialog */}
+  1393→  1393→    <Dialog open={tagsOpen} onOpenChange={setTagsOpen}>
+  1394→  1394→      <DialogContent className="max-w-sm">
+  1395→  1395→        <DialogHeader><DialogTitle className="flex items-center gap-2"><Tag className="size-4 text-emerald-600" />Customer Tags</DialogTitle></DialogHeader>
+  1396→  1396→        <div className="flex flex-wrap gap-2 py-3">
+  1397→  1397→          {ALL_TAGS.map(tag => {
+  1398→  1398→            const active = customerTags.includes(tag)
+  1399→  1399→            return (
+  1400→  1400→              <button key={tag} onClick={() => handleToggleTag(tag)}
+  1401→  1401→                className={`text-[11px] font-medium px-3 py-1.5 rounded-full border transition-all
+  1402→  1402→                  ${active ? TAG_COLORS[tag] || TAG_COLORS.Regular : 'bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-700 hover:border-slate-400'}`}
+  1403→  1403→              >
+  1404→  1404→                {active && '✓ '}{tag}
+  1405→  1405→              </button>
+  1406→  1406→            )
+  1407→  1407→          })}
+  1408→  1408→        </div>
+  1409→  1409→      </DialogContent>
+  1410→  1410→    </Dialog>
+  1411→  1411→
+  1412→  1412→    {/* ══════════════════════════════════════════════════════════ */}
+  1413→  1413→    {/* ─── HISTORY DIALOG (per-customer checkout history) ──── */}
+  1414→  1414→    {/* ══════════════════════════════════════════════════════════ */}
+  1415→  1415→    <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+  1416→  1416→      <DialogContent className="max-w-4xl w-[95vw] max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
+  1417→  1417→        <div className="px-5 sm:px-6 pt-5 pb-3 shrink-0 bg-white dark:bg-slate-900">
+  1418→  1418→          <DialogHeader>
+  1419→  1419→            <DialogTitle className="flex items-center gap-2 text-sm sm:text-base">
+  1420→  1420→              <History className="size-4 sm:size-5 text-teal-600 shrink-0" />
+  1421→  1421→              <span className="truncate">{detail?.fullName} — Checkout History</span>
+  1422→  1422→            </DialogTitle>
+  1423→  1423→            <DialogDescription className="text-[11px] sm:text-xs">
+  1424→  1424→              Previous checkout records and bills for this customer
+  1425→  1425→            </DialogDescription>
+  1426→  1426→          </DialogHeader>
+  1427→  1427→        </div>
+  1428→  1428→
+  1429→  1429→        <ScrollArea className="flex-1 min-h-0 px-5 sm:px-6 pb-4">
+  1430→  1430→          {historyLoading ? (
+  1431→  1431→            <div className="flex items-center justify-center py-12 gap-2 text-slate-400">
+  1432→  1432→              <Loader2 className="size-5 animate-spin" />
+  1433→  1433→              <span className="text-sm">Loading history...</span>
+  1434→  1434→            </div>
+  1435→  1435→          ) : !customerHistory || customerHistory.historicalFolios.length === 0 ? (
+  1436→  1436→            <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+  1437→  1437→              <History className="size-10 opacity-30 mb-3" />
+  1438→  1438→              <p className="text-sm font-medium">No checkout history found</p>
+  1439→  1439→              <p className="text-xs mt-1">Previous folios will appear here after checkout</p>
+  1440→  1440→            </div>
+  1441→  1441→          ) : (
+  1442→  1442→            <div className="space-y-3 mt-2">
+  1443→  1443→              {customerHistory.historicalFolios.map((folio: HistoricalFolio) => {
+  1444→  1444→                const isExpanded = expandedFolioId === folio.folioId
+  1445→  1445→                const entries = expandedFolioEntries[folio.folioId]
+  1446→  1446→                return (
+  1447→  1447→                  <div key={folio.id} className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+  1448→  1448→                    {/* Folio Header Row */}
+  1449→  1449→                    <button
+  1450→  1450→                      onClick={() => toggleFolioEntries(folio.folioId)}
+  1451→  1451→                      className="w-full flex items-center justify-between px-3 sm:px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors text-left"
+  1452→  1452→                    >
+  1453→  1453→                      <div className="flex items-center gap-2.5 min-w-0">
+  1454→  1454→                        <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded shrink-0">#{folio.visitNumber}</span>
+  1455→  1455→                        <div className="min-w-0">
+  1456→  1456→                          <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">Folio {folio.folioId}</span>
+  1457→  1457→                          <div className="text-[10px] text-slate-400 mt-0.5">{folio.startDate} → {folio.endDate || '—'}</div>
+  1458→  1458→                        </div>
+  1459→  1459→                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium shrink-0 ${STATUS_BADGE[folio.status] || 'bg-slate-100 text-slate-500'}`}>{folio.status}</span>
+  1460→  1460→                      </div>
+  1461→  1461→                      <div className="flex items-center gap-2 shrink-0">
+  1462→  1462→                        {folio.entryCount > 0 && (
+  1463→  1463→                          <button
+  1464→  1464→                            onClick={(e) => { e.stopPropagation(); onPrintHistoryFolio?.({ entries: folio.entries || entries || [], openingBalance: folio.openingBalance, closingBalance: folio.closingBalance }) }}
+  1465→  1465→                            className="flex items-center gap-1 text-[10px] text-orange-600 dark:text-orange-400 hover:text-orange-700 dark:hover:text-orange-300 font-medium transition-colors"
+  1466→  1466→                          >
+  1467→  1467→                            <Stamp className="size-3" />Final Invoice
+  1468→  1468→                          </button>
+  1469→  1469→                        )}
+  1470→  1470→                        <ChevronDown className={`size-4 text-slate-400 shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+  1471→  1471→                      </div>
+  1472→  1472→                    </button>
+  1473→  1473→
+  1474→  1474→                    {/* Folio Summary */}
+  1475→  1475→                    <div className="grid grid-cols-4 gap-1.5 px-3 sm:px-4 pb-2 text-center">
+  1476→  1476→                      <div className="bg-slate-50 dark:bg-slate-800 rounded-md p-1.5">
+  1477→  1477→                        <div className="text-[8px] text-slate-400 uppercase">Entries</div>
+  1478→  1478→                        <div className="text-[11px] font-bold text-slate-700 dark:text-slate-200">{folio.entryCount}</div>
+  1479→  1479→                      </div>
+  1480→  1480→                      <div className="bg-slate-50 dark:bg-slate-800 rounded-md p-1.5">
+  1481→  1481→                        <div className="text-[8px] text-slate-400 uppercase">Debit</div>
+  1482→  1482→                        <div className="text-[11px] font-bold text-red-600">{fmtCur(folio.totalDebit)}</div>
+  1483→  1483→                      </div>
+  1484→  1484→                      <div className="bg-slate-50 dark:bg-slate-800 rounded-md p-1.5">
+  1485→  1485→                        <div className="text-[8px] text-slate-400 uppercase">Credit</div>
+  1486→  1486→                        <div className="text-[11px] font-bold text-emerald-600">{fmtCur(folio.totalCredit)}</div>
+  1487→  1487→                      </div>
+  1488→  1488→                      <div className="bg-slate-50 dark:bg-slate-800 rounded-md p-1.5">
+  1489→  1489→                        <div className="text-[8px] text-slate-400 uppercase">Balance</div>
+  1490→  1490→                        <div className={`text-[11px] font-bold ${folio.finalBalance > 0 ? 'text-red-600' : 'text-emerald-600'}`}>{fmtCur(folio.finalBalance)}</div>
+  1491→  1491→                      </div>
+  1492→  1492→                    </div>
+  1493→  1493→
+  1494→  1494→                    {/* Print Bill button (when expanded) */}
+  1495→  1495→                    {isExpanded && entries && entries.length > 0 && (
+  1496→  1496→                      <div className="px-3 sm:px-4 pb-2">
+  1497→  1497→                        <button
+  1498→  1498→                          onClick={(e) => { e.stopPropagation(); onPrintHistoryFolio?.({ entries, openingBalance: folio.openingBalance, closingBalance: folio.closingBalance }) }}
+  1499→  1499→                          className="flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 font-medium transition-colors"
+  1500→  1500→                        >
+  1501→  1501→                          <Printer className="size-3" />Print Bill
+  1502→  1502→                        </button>
+  1503→  1503→                      </div>
+  1504→  1504→                    )}
+  1505→  1505→
+  1506→  1506→                    {/* Expanded Entries */}
+  1507→  1507→                    {isExpanded && entries && entries.length > 0 && (
+  1508→  1508→                      <div className="border-t border-slate-100 dark:border-slate-800 max-h-72 overflow-auto">
+  1509→  1509→                        <table className="w-full text-[10px]">
+  1510→  1510→                          <thead>
+  1511→  1511→                            <tr className="bg-slate-50 dark:bg-slate-800">
+  1512→  1512→                              <th className="text-left px-2 py-1 font-semibold text-slate-500">#</th>
+  1513→  1513→                              <th className="text-left px-2 py-1 font-semibold text-slate-500">Date</th>
+  1514→  1514→                              <th className="text-left px-2 py-1 font-semibold text-slate-500">Type</th>
+  1515→  1515→                              <th className="text-left px-2 py-1 font-semibold text-slate-500">Desc</th>
+  1516→  1516→                              <th className="text-right px-2 py-1 font-semibold text-slate-500">Dr</th>
+  1517→  1517→                              <th className="text-right px-2 py-1 font-semibold text-slate-500">Cr</th>
+  1518→  1518→                              <th className="text-right px-2 py-1 font-semibold text-slate-500">Bal</th>
+  1519→  1519→                            </tr>
+  1520→  1520→                          </thead>
+  1521→  1521→                          <tbody>
+  1522→  1522→                            {entries.map((e: any, i: number) => (
+  1523→  1523→                              <tr key={e.id} className="border-t border-slate-50 dark:border-slate-800">
+  1524→  1524→                                <td className="px-2 py-1 text-slate-400">{i + 1}</td>
+  1525→  1525→                                <td className="px-2 py-1 whitespace-nowrap">{fmtDate(e.date)}</td>
+  1526→  1526→                                <td className="px-2 py-1"><span className={`text-[8px] px-1 py-0.5 rounded font-medium ${TYPE_ICON[e.type] || 'bg-gray-100 text-gray-600'}`}>{e.type}</span></td>
+  1527→  1527→                                <td className="px-2 py-1 truncate max-w-[120px]">{stripInternalDescriptions(e.description)}</td>
+  1528→  1528→                                <td className="px-2 py-1 text-right text-red-600">{e.debit > 0 ? fmtINR(e.debit) : ''}</td>
+  1529→  1529→                                <td className="px-2 py-1 text-right text-emerald-600">{e.credit > 0 ? fmtINR(e.credit) : ''}</td>
+  1530→  1530→                                <td className={`px-2 py-1 text-right font-bold ${e.balance > 0 ? 'text-red-600' : e.balance < 0 ? 'text-emerald-600' : 'text-slate-500'}`}>{fmtINR(e.balance)}</td>
+  1531→  1531→                              </tr>
+  1532→  1532→                            ))}
+  1533→  1533→                          </tbody>
+  1534→  1534→                        </table>
+  1535→  1535→                      </div>
+  1536→  1536→                    )}
+  1537→  1537→                  </div>
+  1538→  1538→                )
+  1539→  1539→              })}
+  1540→  1540→            </div>
+  1541→  1541→          )}
+  1542→  1542→        </ScrollArea>
+  1543→  1543→
+  1544→  1544→        <div className="px-5 sm:px-6 py-3 border-t border-slate-200 dark:border-slate-700 shrink-0">
+  1545→  1545→          <Button variant="outline" size="sm" className="w-full" onClick={() => setHistoryOpen(false)}>Close</Button>
+  1546→  1546→        </div>
+  1547→  1547→      </DialogContent>
+  1548→  1548→    </Dialog>
+  1549→  1549→
+  1550→  1550→    {/* ══════════════════════════════════════════════════════════ */}
+  1551→  1551→    {/* ─── DETAILS SHEET (slides in from right) ─────────────────── */}
+  1552→  1552→    {/* ══════════════════════════════════════════════════════════ */}
+  1553→  1553→    {detail && (
+  1554→  1554→      <Sheet open={detailsSheetOpen} onOpenChange={setDetailsSheetOpen}>
+  1555→  1555→        <SheetContent className="w-[320px] sm:w-[360px] p-0 overflow-y-auto">
+  1556→  1556→          <SheetHeader className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 sticky top-0 z-10">
+  1557→  1557→            <SheetTitle className="flex items-center gap-2 text-sm font-bold">
+  1558→  1558→              <Eye className="size-4 text-slate-500 dark:text-slate-400" /> Customer Details
+  1559→  1559→            </SheetTitle>
+  1560→  1560→          </SheetHeader>
+  1561→  1561→          <div className="p-4 space-y-4">
+  1562→  1562→            {/* Guest Info */}
+  1563→  1563→            <div className="space-y-2.5">
+  1564→  1564→              <h4 className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Guest Information</h4>
+  1565→  1565→              <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-3 space-y-2 border border-slate-100 dark:border-slate-700">
+  1566→  1566→                <div className="flex items-center gap-3">
+  1567→  1567→                  <div className="w-10 h-10 rounded-full bg-slate-800 dark:bg-slate-600 flex items-center justify-center text-sm font-bold text-white">{detail.fullName.charAt(0).toUpperCase()}</div>
+  1568→  1568→                  <div>
+  1569→  1569→                    <p className="text-sm font-bold text-slate-800 dark:text-slate-200">{detail.fullName}</p>
+  1570→  1570→                    <p className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">{detail.customerId}</p>
+  1571→  1571→                  </div>
+  1572→  1572→                </div>
+  1573→  1573→              </div>
+  1574→  1574→              <div className="grid grid-cols-2 gap-2">
+  1575→  1575→                <div className="text-[11px]"><span className="text-slate-500 dark:text-slate-400">Type</span><div><span className={`font-semibold text-[10px] px-2 py-0.5 rounded-md ${TYPE_BADGE[detail.customerType] || TYPE_BADGE.Retail}`}>{detail.customerType}</span></div></div>
+  1576→  1576→                <div className="text-[11px]"><span className="text-slate-500 dark:text-slate-400">Status</span><div><span className={`font-semibold text-[10px] px-2 py-0.5 rounded-md ${STATUS_BADGE[detail.status] || STATUS_BADGE.Active}`}>{detail.status}</span></div></div>
+  1577→  1577→                {detail.mobile && <div className="text-[11px]"><span className="text-slate-500 dark:text-slate-400">Mobile</span><div className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1"><Phone className="size-3 text-slate-400" />{detail.mobile}</div></div>}
+  1578→  1578→                {detail.email && <div className="text-[11px]"><span className="text-slate-500 dark:text-slate-400">Email</span><div className="font-semibold text-slate-700 dark:text-slate-300 text-[10px] truncate">{detail.email}</div></div>}
+  1579→  1579→              </div>
+  1580→  1580→              {/* GST, PAN, Aadhaar Details */}
+  1581→  1581→              {(detail.gstNumber || detail.panNumber || detail.aadhaarNumber) && (
+  1582→  1582→                <div className="mt-2 pt-2 border-t border-slate-200 dark:border-slate-600">
+  1583→  1583→                  <div className="grid grid-cols-1 gap-1.5">
+  1584→  1584→                    {detail.gstNumber && <div className="flex items-center gap-2 text-[11px] bg-emerald-50 dark:bg-emerald-900/20 rounded-lg px-2.5 py-1.5 border border-emerald-100 dark:border-emerald-800/50"><span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">GSTIN</span><span className="font-mono font-semibold text-slate-700 dark:text-slate-300 text-[10px]">{detail.gstNumber}</span></div>}
+  1585→  1585→                    {detail.panNumber && <div className="flex items-center gap-2 text-[11px]"><span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">PAN</span><span className="font-mono font-semibold text-slate-700 dark:text-slate-300 text-[10px]">{detail.panNumber}</span></div>}
+  1586→  1586→                    {detail.aadhaarNumber && <div className="flex items-center gap-2 text-[11px]"><span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Aadhaar</span><span className="font-mono font-semibold text-slate-700 dark:text-slate-300 text-[10px]">{detail.aadhaarNumber}</span></div>}
+  1587→  1587→                  </div>
+  1588→  1588→                </div>
+  1589→  1589→              )}
+  1590→  1590→              {/* Advance / Credit Balance */}
+  1591→  1591→              {bal < 0 && (
+  1592→  1592→                <div className="mt-2 flex items-center gap-2 text-[11px] bg-green-50 dark:bg-green-900/20 rounded-lg px-2.5 py-1.5 border border-green-200 dark:border-green-800/50">
+  1593→  1593→                  <Wallet className="size-3.5 text-green-600 dark:text-green-400" />
+  1594→  1594→                  <span className="font-bold text-green-700 dark:text-green-300">Advance: {fmtCur(Math.abs(bal))}</span>
+  1595→  1595→                </div>
+  1596→  1596→              )}
+  1597→  1597→            </div>
+  1598→  1598→
+  1599→  1599→            <Separator className="bg-slate-100 dark:bg-slate-700" />
+  1600→  1600→
+  1601→  1601→            {/* Folio Info */}
+  1602→  1602→            <div className="space-y-2.5">
+  1603→  1603→              <h4 className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Folio</h4>
+  1604→  1604→              <div className="grid grid-cols-2 gap-2 text-[11px]">
+  1605→  1605→                <div><span className="text-slate-500 dark:text-slate-400">Folio No</span><div className="font-mono font-semibold text-slate-700 dark:text-slate-300">{fmtFolioNum(detail.activeFolio?.folioNumber)}</div></div>
+  1606→  1606→                <div><span className="text-slate-500 dark:text-slate-400">Status</span><div><span className={`font-semibold text-[10px] px-2 py-0.5 rounded-md ${detail.activeFolio?.status === 'Active' ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'}`}>{detail.activeFolio?.status || '—'}</span></div></div>
+  1607→  1607→                <div><span className="text-slate-500 dark:text-slate-400">Total Folios</span><div className="font-semibold text-slate-700 dark:text-slate-300">{allFolios.length}</div></div>
+  1608→  1608→              </div>
+  1609→  1609→            </div>
+  1610→  1610→
+  1611→  1611→            <Separator className="bg-slate-100 dark:bg-slate-700" />
+  1612→  1612→
+  1613→  1613→            {/* Balance Card */}
+  1614→  1614→            <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-3 space-y-2 border border-slate-100 dark:border-slate-700">
+  1615→  1615→              <h4 className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Balance Summary</h4>
+  1616→  1616→              <div className="flex justify-between items-center text-[11px]">
+  1617→  1617→                <span className="text-slate-500 dark:text-slate-400">Current Balance</span>
+  1618→  1618→                <span className={`font-bold text-base tabular-nums ${bal > 0 ? 'text-red-600' : bal < 0 ? 'text-green-600' : 'text-slate-500 dark:text-slate-400'}`}>
+  1619→  1619→                  {bal > 0 ? '+' : bal < 0 ? '-' : ''}{fmtCur(bal)}
+  1620→  1620→                </span>
+  1621→  1621→              </div>
+  1622→  1622→              <div className="grid grid-cols-2 gap-2">
+  1623→  1623→                <div className="bg-white dark:bg-slate-700 rounded-lg p-2 text-center">
+  1624→  1624→                  <div className="text-[9px] text-slate-400 dark:text-slate-500">Revenue</div>
+  1625→  1625→                  <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{fmtCur(detail.lifetimeRevenue)}</div>
+  1626→  1626→                </div>
+  1627→  1627→                <div className="bg-white dark:bg-slate-700 rounded-lg p-2 text-center">
+  1628→  1628→                  <div className="text-[9px] text-slate-400 dark:text-slate-500">Payments</div>
+  1629→  1629→                  <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{fmtCur(detail.lifetimePayments)}</div>
+  1630→  1630→                </div>
+  1631→  1631→                <div className="bg-white dark:bg-slate-700 rounded-lg p-2 text-center">
+  1632→  1632→                  <div className="text-[9px] text-slate-400 dark:text-slate-500">Refunds</div>
+  1633→  1633→                  <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{fmtCur(detail.lifetimeRefunds)}</div>
+  1634→  1634→                </div>
+  1635→  1635→                <div className="bg-white dark:bg-slate-700 rounded-lg p-2 text-center">
+  1636→  1636→                  <div className="text-[9px] text-slate-400 dark:text-slate-500">Transactions</div>
+  1637→  1637→                  <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{detail.totalTransactions}</div>
+  1638→  1638→                </div>
+  1639→  1639→              </div>
+  1640→  1640→            </div>
+  1641→  1641→
+  1642→  1642→            <Separator className="bg-slate-100 dark:bg-slate-700" />
+  1643→  1643→
+  1644→  1644→            {/* Visits */}
+  1645→  1645→            <div className="space-y-2.5">
+  1646→  1646→              <h4 className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Activity</h4>
+  1647→  1647→              <div className="text-[11px]"><span className="text-slate-500 dark:text-slate-400">Total Visits</span><div className="font-semibold text-slate-700 dark:text-slate-300">{detail.totalVisits}</div></div>
+  1648→  1648→              {detail.lastVisitDate && <div className="text-[11px]"><span className="text-slate-500 dark:text-slate-400">Last Visit</span><div className="font-semibold text-slate-700 dark:text-slate-300">{relTime(detail.lastVisitDate)}</div></div>}
+  1649→  1649→              {detail.lastTxnDate && <div className="text-[11px]"><span className="text-slate-500 dark:text-slate-400">Last Txn</span><div className="font-semibold text-slate-700 dark:text-slate-300">{relTime(detail.lastTxnDate)}</div></div>}
+  1650→  1650→            </div>
+  1651→  1651→          </div>
+  1652→  1652→        </SheetContent>
+  1653→  1653→      </Sheet>
+  1654→  1654→    )}
+  1655→  1655→    </>
+  1656→  1656→  )
+  1657→  1657→}

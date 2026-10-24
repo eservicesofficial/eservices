@@ -1,0 +1,993 @@
+   200→   200→  })
+   201→   201→
+   202→   202→  const customerIds = customers.map(c => c.id)
+   203→   203→  const ledgerMap = await getCustomerBalances(customerIds)
+   204→   204→
+   205→   205→  const rows = customers.map(c => {
+   206→   206→    const ledger = ledgerMap.get(c.id)
+   207→   207→    const balance = ledger?.balance ?? 0
+   208→   208→    return {
+   209→   209→      customerId: c.customerId,
+   210→   210→      fullName: c.fullName,
+   211→   211→      mobile: c.mobile,
+   212→   212→      email: c.email,
+   213→   213→      customerType: c.customerType,
+   214→   214→      status: c.status,
+   215→   215→      balance,
+   216→   216→      creditLimit: c.creditLimit,
+   217→   217→      gstNumber: c.gstNumber,
+   218→   218→      totalVisits: c._count.visits,
+   219→   219→      totalTransactions: c._count.ledgerEntries,
+   220→   220→      totalSettlements: c._count.settlements,
+   221→   221→      tags: c.tags.map(t => t.tagName),
+   222→   222→      createdAt: c.createdAt.toISOString(),
+   223→   223→      lastTxnDate: ledger?.date ?? null,
+   224→   224→    }
+   225→   225→  })
+   226→   226→
+   227→   227→  const totalBalance = rows.reduce((s, r) => s + r.balance, 0)
+   228→   228→  const totalCreditLimit = rows.reduce((s, r) => s + r.creditLimit, 0)
+   229→   229→  const totalOutstanding = rows.filter(r => r.balance > 0).reduce((s, r) => s + r.balance, 0)
+   230→   230→  const outstandingCount = rows.filter(r => r.balance > 0).length
+   231→   231→
+   232→   232→  return NextResponse.json({
+   233→   233→    reportType: 'summary',
+   234→   234→    summary: {
+   235→   235→      totalCustomers: rows.length,
+   236→   236→      totalBalance,
+   237→   237→      totalCreditLimit,
+   238→   238→      totalOutstanding,
+   239→   239→      outstandingCount,
+   240→   240→      activeCount: rows.filter(r => r.status === 'Active').length,
+   241→   241→      settledCount: rows.filter(r => r.status === 'Settled').length,
+   242→   242→    },
+   243→   243→    data: rows,
+   244→   244→  })
+   245→   245→}
+   246→   246→
+   247→   247→// ─── 2. Outstanding Balance Report ───
+   248→   248→async function handleOutstanding(unitCode: string, filters: ReportFilters) {
+   249→   249→  const where: Record<string, unknown> = { status: { notIn: ['Archived', 'CheckedOut'] } }
+   250→   250→  applyCustomerFilters(where, filters, unitCode)
+   251→   251→
+   252→   252→  const customers = await db.customer.findMany({
+   253→   253→    where,
+   254→   254→    select: {
+   255→   255→      id: true, customerId: true, fullName: true, mobile: true, email: true,
+   256→   256→      customerType: true, creditLimit: true, status: true,
+   257→   257→      tags: { select: { tagName: true } },
+   258→   258→      _count: { select: { ledgerEntries: true, settlements: true, visits: true } },
+   259→   259→    },
+   260→   260→    orderBy: { createdAt: 'desc' },
+   261→   261→  })
+   262→   262→
+   263→   263→  const customerIds = customers.map(c => c.id)
+   264→   264→  const ledgerMap = await getCustomerBalances(customerIds)
+   265→   265→
+   266→   266→  const rows = customers
+   267→   267→    .map(c => {
+   268→   268→      const balance = ledgerMap.get(c.id)?.balance ?? 0
+   269→   269→      return {
+   270→   270→        customerId: c.customerId,
+   271→   271→        fullName: c.fullName,
+   272→   272→        mobile: c.mobile,
+   273→   273→        email: c.email,
+   274→   274→        customerType: c.customerType,
+   275→   275→        status: c.status,
+   276→   276→        balance,
+   277→   277→        creditLimit: c.creditLimit,
+   278→   278→        overdue: balance > c.creditLimit,
+   279→   279→        tags: c.tags.map(t => t.tagName),
+   280→   280→        lastTxnDate: ledgerMap.get(c.id)?.date ?? null,
+   281→   281→      }
+   282→   282→    })
+   283→   283→    .filter(r => r.balance > 0)
+   284→   284→    .sort((a, b) => b.balance - a.balance)
+   285→   285→
+   286→   286→  const totalOutstanding = rows.reduce((s, r) => s + r.balance, 0)
+   287→   287→  const avgOutstanding = rows.length > 0 ? totalOutstanding / rows.length : 0
+   288→   288→
+   289→   289→  return NextResponse.json({
+   290→   290→    reportType: 'outstanding',
+   291→   291→    summary: {
+   292→   292→      totalCustomersWithDue: rows.length,
+   293→   293→      totalOutstanding,
+   294→   294→      avgOutstanding: Math.round(avgOutstanding * 100) / 100,
+   295→   295→      highRiskCount: rows.filter(r => r.overdue).length,
+   296→   296→    },
+   297→   297→    data: rows,
+   298→   298→  })
+   299→   299→}
+   300→   300→
+   301→   301→// ─── 3. Payment Collection Report ───
+   302→   302→async function handlePayments(unitCode: string, filters: ReportFilters) {
+   303→   303→  const where: Record<string, unknown> = { status: 'Active', type: 'Payment' }
+   304→   304→  applyLedgerFilters(where, filters, unitCode)
+   305→   305→
+   306→   306→  const entries = await db.ledgerEntry.findMany({
+   307→   307→    where,
+   308→   308→    orderBy: { createdAt: 'desc' },
+   309→   309→    select: {
+   310→   310→      id: true, date: true, description: true, credit: true, balance: true,
+   311→   311→      paymentMode: true, userName: true, customerId: true, createdAt: true,
+   312→   312→      customer: { select: { fullName: true, customerId: true, mobile: true } },
+   313→   313→    },
+   314→   314→    take: 5000,
+   315→   315→  })
+   316→   316→
+   317→   317→  const rows = entries.map(e => ({
+   318→   318→    date: e.date,
+   319→   319→    customerName: e.customer.fullName,
+   320→   320→    customerId: e.customer.customerId,
+   321→   321→    mobile: e.customer.mobile,
+   322→   322→    description: e.description,
+   323→   323→    amount: e.credit,
+   324→   324→    paymentMode: e.paymentMode,
+   325→   325→    balanceAfter: e.balance,
+   326→   326→    recordedBy: e.userName,
+   327→   327→    createdAt: e.createdAt.toISOString(),
+   328→   328→  }))
+   329→   329→
+   330→   330→  const totalPayments = rows.reduce((s, r) => s + r.amount, 0)
+   331→   331→  const modeBreakdown = rows.reduce((acc: Record<string, number>, r) => {
+   332→   332→    const mode = r.paymentMode || 'Cash'
+   333→   333→    acc[mode] = (acc[mode] || 0) + r.amount
+   334→   334→    return acc
+   335→   335→  }, {})
+   336→   336→
+   337→   337→  return NextResponse.json({
+   338→   338→    reportType: 'payments',
+   339→   339→    summary: {
+   340→   340→      totalPayments,
+   341→   341→      paymentCount: rows.length,
+   342→   342→      avgPayment: rows.length > 0 ? Math.round((totalPayments / rows.length) * 100) / 100 : 0,
+   343→   343→      modeBreakdown,
+   344→   344→    },
+   345→   345→    data: rows,
+   346→   346→  })
+   347→   347→}
+   348→   348→
+   349→   349→// ─── 4. Transaction History Report ───
+   350→   350→async function handleTransactions(unitCode: string, filters: ReportFilters) {
+   351→   351→  const where: Record<string, unknown> = { status: 'Active' }
+   352→   352→  applyLedgerFilters(where, filters, unitCode)
+   353→   353→
+   354→   354→  const entries = await db.ledgerEntry.findMany({
+   355→   355→    where,
+   356→   356→    orderBy: { createdAt: 'desc' },
+   357→   357→    select: {
+   358→   358→      id: true, date: true, type: true, description: true, docNo: true, invoiceNo: true,
+   359→   359→      debit: true, credit: true, tax: true, discount: true, balance: true,
+   360→   360→      paymentMode: true, userName: true, createdAt: true,
+   361→   361→      customer: { select: { fullName: true, customerId: true } },
+   362→   362→    },
+   363→   363→    take: 5000,
+   364→   364→  })
+   365→   365→
+   366→   366→  const rows = entries.map(e => ({
+   367→   367→    date: e.date,
+   368→   368→    customerName: e.customer.fullName,
+   369→   369→    customerId: e.customer.customerId,
+   370→   370→    type: e.type,
+   371→   371→    description: e.description,
+   372→   372→    docNo: e.docNo,
+   373→   373→    invoiceNo: e.invoiceNo,
+   374→   374→    debit: e.debit,
+   375→   375→    credit: e.credit,
+   376→   376→    tax: e.tax,
+   377→   377→    discount: e.discount,
+   378→   378→    balance: e.balance,
+   379→   379→    paymentMode: e.paymentMode,
+   380→   380→    recordedBy: e.userName,
+   381→   381→    createdAt: e.createdAt.toISOString(),
+   382→   382→  }))
+   383→   383→
+   384→   384→  const totalDebits = rows.reduce((s, r) => s + r.debit, 0)
+   385→   385→  const totalCredits = rows.reduce((s, r) => s + r.credit, 0)
+   386→   386→  const totalTax = rows.reduce((s, r) => s + r.tax, 0)
+   387→   387→  const totalDiscount = rows.reduce((s, r) => s + r.discount, 0)
+   388→   388→
+   389→   389→  const typeBreakdown = rows.reduce((acc: Record<string, { count: number; debit: number; credit: number }>, r) => {
+   390→   390→    if (!acc[r.type]) acc[r.type] = { count: 0, debit: 0, credit: 0 }
+   391→   391→    acc[r.type].count++
+   392→   392→    acc[r.type].debit += r.debit
+   393→   393→    acc[r.type].credit += r.credit
+   394→   394→    return acc
+   395→   395→  }, {})
+   396→   396→
+   397→   397→  return NextResponse.json({
+   398→   398→    reportType: 'transactions',
+   399→   399→    summary: {
+   400→   400→      totalEntries: rows.length,
+   401→   401→      totalDebits,
+   402→   402→      totalCredits,
+   403→   403→      totalTax,
+   404→   404→      totalDiscount,
+   405→   405→      netFlow: totalCredits - totalDebits,
+   406→   406→      typeBreakdown,
+   407→   407→    },
+   408→   408→    data: rows,
+   409→   409→  })
+   410→   410→}
+   411→   411→
+   412→   412→// ─── 5. VIP Customer Report ───
+   413→   413→async function handleVip(unitCode: string, filters: ReportFilters) {
+   414→   414→  const where: Record<string, unknown> = {
+   415→   415→    OR: [
+   416→   416→      { customerType: 'VIP' },
+   417→   417→      { tags: { some: { tagName: 'VIP' } } },
+   418→   418→      { tags: { some: { tagName: 'Premium' } } },
+   419→   419→    ],
+   420→   420→  }
+   421→   421→  applyCustomerFilters(where, filters, unitCode)
+   422→   422→
+   423→   423→  const customers = await db.customer.findMany({
+   424→   424→    where,
+   425→   425→    select: {
+   426→   426→      id: true, customerId: true, fullName: true, mobile: true, email: true,
+   427→   427→      customerType: true, creditLimit: true, status: true, gstNumber: true,
+   428→   428→      panNumber: true, openingBalance: true, createdAt: true,
+   429→   429→      tags: { select: { tagName: true } },
+   430→   430→      _count: { select: { folios: true, ledgerEntries: true, settlements: true, visits: true } },
+   431→   431→    },
+   432→   432→    orderBy: { createdAt: 'desc' },
+   433→   433→  })
+   434→   434→
+   435→   435→  const customerIds = customers.map(c => c.id)
+   436→   436→  const ledgerMap = await getCustomerBalances(customerIds)
+   437→   437→
+   438→   438→  const lifetimeSpend = customerIds.length > 0
+   439→   439→    ? await db.ledgerEntry.groupBy({
+   440→   440→        by: ['customerId'],
+   441→   441→        where: { customerId: { in: customerIds }, status: 'Active', type: 'Charge' },
+   442→   442→        _sum: { debit: true },
+   443→   443→      })
+   444→   444→    : []
+   445→   445→  const spendMap = new Map(lifetimeSpend.map(l => [l.customerId, l._sum.debit ?? 0]))
+   446→   446→
+   447→   447→  const rows = customers.map(c => {
+   448→   448→    const balance = ledgerMap.get(c.id)?.balance ?? 0
+   449→   449→    const lifetimeSpendAmt = spendMap.get(c.id) ?? 0
+   450→   450→    return {
+   451→   451→      customerId: c.customerId,
+   452→   452→      fullName: c.fullName,
+   453→   453→      mobile: c.mobile,
+   454→   454→      email: c.email,
+   455→   455→      customerType: c.customerType,
+   456→   456→      status: c.status,
+   457→   457→      balance,
+   458→   458→      creditLimit: c.creditLimit,
+   459→   459→      gstNumber: c.gstNumber,
+   460→   460→      panNumber: c.panNumber,
+   461→   461→      lifetimeSpend: lifetimeSpendAmt,
+   462→   462→      totalVisits: c._count.visits,
+   463→   463→      totalTransactions: c._count.ledgerEntries,
+   464→   464→      totalSettlements: c._count.settlements,
+   465→   465→      tags: c.tags.map(t => t.tagName),
+   466→   466→      createdAt: c.createdAt.toISOString(),
+   467→   467→      lastTxnDate: ledgerMap.get(c.id)?.date ?? null,
+   468→   468→    }
+   469→   469→  })
+   470→   470→
+   471→   471→  const totalLifetimeSpend = rows.reduce((s, r) => s + r.lifetimeSpend, 0)
+   472→   472→  const totalOutstanding = rows.reduce((s, r) => s + r.balance, 0)
+   473→   473→
+   474→   474→  return NextResponse.json({
+   475→   475→    reportType: 'vip',
+   476→   476→    summary: {
+   477→   477→      totalVipCustomers: rows.length,
+   478→   478→      totalLifetimeSpend,
+   479→   479→      totalOutstanding,
+   480→   480→      avgLifetimeSpend: rows.length > 0 ? Math.round((totalLifetimeSpend / rows.length) * 100) / 100 : 0,
+   481→   481→      activeVipCount: rows.filter(r => r.status === 'Active').length,
+   482→   482→    },
+   483→   483→    data: rows,
+   484→   484→  })
+   485→   485→}
+   486→   486→
+   487→   487→// ─── 6. Settlement Report ───
+   488→   488→async function handleSettlements(unitCode: string, filters: ReportFilters) {
+   489→   489→  const where: Record<string, unknown> = { unitCode }
+   490→   490→  if (filters.dateFilter) where.createdAt = filters.dateFilter
+   491→   491→  if (filters.customer) {
+   492→   492→    where.OR = [
+   493→   493→      { customer: { fullName: { contains: filters.customer } } },
+   494→   494→      { customer: { customerId: { contains: filters.customer } } },
+   495→   495→    ] as any[]
+   496→   496→  }
+   497→   497→  if (filters.paymentMode && filters.paymentMode !== 'All') where.mode = filters.paymentMode
+   498→   498→  if (filters.user) where.userName = { contains: filters.user }
+   499→   499→
+   500→   500→  const settlements = await db.settlement.findMany({
+   501→   501→    where,
+   502→   502→    orderBy: { createdAt: 'desc' },
+   503→   503→    select: {
+   504→   504→      id: true, amount: true, mode: true, reference: true, description: true,
+   505→   505→      userName: true, createdAt: true, folioId: true,
+   506→   506→      customer: { select: { fullName: true, customerId: true, mobile: true } },
+   507→   507→    },
+   508→   508→    take: 5000,
+   509→   509→  })
+   510→   510→
+   511→   511→  const rows = settlements.map(s => ({
+   512→   512→    date: s.createdAt.toISOString(),
+   513→   513→    customerName: s.customer.fullName,
+   514→   514→    customerId: s.customer.customerId,
+   515→   515→    mobile: s.customer.mobile,
+   516→   516→    amount: s.amount,
+   517→   517→    mode: s.mode,
+   518→   518→    reference: s.reference,
+   519→   519→    description: s.description,
+   520→   520→    recordedBy: s.userName,
+   521→   521→    folioId: s.folioId,
+   522→   522→  }))
+   523→   523→
+   524→   524→  const totalSettled = rows.reduce((s, r) => s + r.amount, 0)
+   525→   525→  const modeBreakdown = rows.reduce((acc: Record<string, number>, r) => {
+   526→   526→    const mode = r.mode || 'Cash'
+   527→   527→    acc[mode] = (acc[mode] || 0) + r.amount
+   528→   528→    return acc
+   529→   529→  }, {})
+   530→   530→
+   531→   531→  return NextResponse.json({
+   532→   532→    reportType: 'settlements',
+   533→   533→    summary: {
+   534→   534→      totalSettlements: rows.length,
+   535→   535→      totalSettled,
+   536→   536→      avgSettlement: rows.length > 0 ? Math.round((totalSettled / rows.length) * 100) / 100 : 0,
+   537→   537→      modeBreakdown,
+   538→   538→    },
+   539→   539→    data: rows,
+   540→   540→  })
+   541→   541→}
+   542→   542→
+   543→   543→// ─── 7. Refund Report ───
+   544→   544→async function handleRefunds(unitCode: string, filters: ReportFilters) {
+   545→   545→  const where: Record<string, unknown> = { status: 'Active', type: 'Refund' }
+   546→   546→  applyLedgerFilters(where, filters, unitCode)
+   547→   547→
+   548→   548→  const entries = await db.ledgerEntry.findMany({
+   549→   549→    where,
+   550→   550→    orderBy: { createdAt: 'desc' },
+   551→   551→    select: {
+   552→   552→      id: true, date: true, description: true, debit: true, balance: true,
+   553→   553→      invoiceNo: true, userName: true, createdAt: true,
+   554→   554→      customer: { select: { fullName: true, customerId: true, mobile: true } },
+   555→   555→    },
+   556→   556→    take: 5000,
+   557→   557→  })
+   558→   558→
+   559→   559→  const rows = entries.map(e => ({
+   560→   560→    date: e.date,
+   561→   561→    customerName: e.customer.fullName,
+   562→   562→    customerId: e.customer.customerId,
+   563→   563→    mobile: e.customer.mobile,
+   564→   564→    description: e.description,
+   565→   565→    refundAmount: e.debit,
+   566→   566→    balanceAfter: e.balance,
+   567→   567→    invoiceNo: e.invoiceNo,
+   568→   568→    processedBy: e.userName,
+   569→   569→    createdAt: e.createdAt.toISOString(),
+   570→   570→  }))
+   571→   571→
+   572→   572→  const totalRefunds = rows.reduce((s, r) => s + r.refundAmount, 0)
+   573→   573→
+   574→   574→  return NextResponse.json({
+   575→   575→    reportType: 'refunds',
+   576→   576→    summary: {
+   577→   577→      totalRefunds: rows.length,
+   578→   578→      totalRefundAmount: totalRefunds,
+   579→   579→      avgRefund: rows.length > 0 ? Math.round((totalRefunds / rows.length) * 100) / 100 : 0,
+   580→   580→    },
+   581→   581→    data: rows,
+   582→   582→  })
+   583→   583→}
+   584→   584→
+   585→   585→// ─── 8. GST / Tax Report ───
+   586→   586→async function handleGst(unitCode: string, filters: ReportFilters) {
+   587→   587→  const where: Record<string, unknown> = { status: 'Active', tax: { gt: 0 } }
+   588→   588→  applyLedgerFilters(where, filters, unitCode)
+   589→   589→
+   590→   590→  const entries = await db.ledgerEntry.findMany({
+   591→   591→    where,
+   592→   592→    orderBy: { createdAt: 'desc' },
+   593→   593→    select: {
+   594→   594→      id: true, date: true, type: true, description: true, debit: true, credit: true,
+   595→   595→      tax: true, discount: true, balance: true, invoiceNo: true, paymentMode: true,
+   596→   596→      userName: true, createdAt: true,
+   597→   597→      customer: { select: { fullName: true, customerId: true, gstNumber: true, mobile: true } },
+   598→   598→    },
+   599→   599→    take: 5000,
+   600→   600→  })
+   601→   601→
+   602→   602→  const rows = entries.map(e => ({
+   603→   603→    date: e.date,
+   604→   604→    customerName: e.customer.fullName,
+   605→   605→    customerId: e.customer.customerId,
+   606→   606→    customerGst: e.customer.gstNumber,
+   607→   607→    type: e.type,
+   608→   608→    description: e.description,
+   609→   609→    invoiceNo: e.invoiceNo,
+   610→   610→    baseAmount: (e.type === 'Payment' || e.type === 'Settlement') ? e.credit : e.debit,
+   611→   611→    tax: e.tax,
+   612→   612→    discount: e.discount,
+   613→   613→    totalAmount: (e.type === 'Payment' || e.type === 'Settlement')
+   614→   614→      ? e.credit
+   615→   615→      : e.debit + e.tax - e.discount,
+   616→   616→    balance: e.balance,
+   617→   617→    recordedBy: e.userName,
+   618→   618→    createdAt: e.createdAt.toISOString(),
+   619→   619→  }))
+   620→   620→
+   621→   621→  const totalBaseAmount = rows.filter(r => r.type !== 'Payment' && r.type !== 'Settlement').reduce((s, r) => s + r.baseAmount, 0)
+   622→   622→  const totalTax = rows.reduce((s, r) => s + r.tax, 0)
+   623→   623→  const totalDiscount = rows.reduce((s, r) => s + r.discount, 0)
+   624→   624→  const taxableEntries = rows.filter(r => r.type !== 'Payment' && r.type !== 'Settlement' && r.type !== 'Refund' && r.type !== 'Opening' && r.type !== 'Transfer')
+   625→   625→
+   626→   626→  return NextResponse.json({
+   627→   627→    reportType: 'gst',
+   628→   628→    summary: {
+   629→   629→      totalEntries: rows.length,
+   630→   630→      totalTaxableEntries: taxableEntries.length,
+   631→   631→      totalBaseAmount,
+   632→   632→      totalTax,
+   633→   633→      totalDiscount,
+   634→   634→      totalGstAmount: totalBaseAmount + totalTax,
+   635→   635→      avgTaxPerEntry: taxableEntries.length > 0 ? Math.round((totalTax / taxableEntries.length) * 100) / 100 : 0,
+   636→   636→    },
+   637→   637→    data: rows,
+   638→   638→  })
+   639→   639→}
+   640→   640→
+   641→   641→// ═══════════════════════════════════════════════════════════════════
+   642→   642→// NEW REPORTS (9 new types)
+   643→   643→// ═══════════════════════════════════════════════════════════════════
+   644→   644→
+   645→   645→// ─── 9. Active Folio Report ───
+   646→   646→async function handleActiveFolio(unitCode: string, filters: ReportFilters) {
+   647→   647→  const customerWhere: Record<string, unknown> = { status: 'Active' }
+   648→   648→  applyCustomerFilters(customerWhere, filters, unitCode)
+   649→   649→
+   650→   650→  const customers = await db.customer.findMany({
+   651→   651→    where: customerWhere,
+   652→   652→    select: {
+   653→   653→      id: true, customerId: true, fullName: true, mobile: true, email: true,
+   654→   654→      customerType: true, creditLimit: true, status: true,
+   655→   655→      _count: { select: { ledgerEntries: true, folios: true, visits: true } },
+   656→   656→    },
+   657→   657→    orderBy: { createdAt: 'desc' },
+   658→   658→  })
+   659→   659→
+   660→   660→  const customerIds = customers.map(c => c.id)
+   661→   661→
+   662→   662→  // Get active folios with their details
+   663→   663→  const foliosWhere: Record<string, unknown> = { customerId: { in: customerIds }, status: 'Active' }
+   664→   664→  if (filters.folioNumber) foliosWhere.folioNumber = parseInt(filters.folioNumber, 10) || undefined
+   665→   665→  const folios = await db.folio.findMany({
+   666→   666→    where: foliosWhere,
+   667→   667→    select: {
+   668→   668→      id: true, folioId: true, folioNumber: true, customerId: true, visitNumber: true,
+   669→   669→      status: true, createdAt: true,
+   670→   670→      _count: { select: { ledgerEntries: true } },
+   671→   671→    },
+   672→   672→    orderBy: { createdAt: 'desc' },
+   673→   673→  })
+   674→   674→
+   675→   675→  const folioIds = folios.map(f => f.id)
+   676→   676→  // Use groupBy to reliably get the latest entry per folio (avoids distinct+orderBy issues in SQLite)
+   677→   677→  const folioBalanceMap = new Map<string, { balance: number; date: string | null }>()
+   678→   678→  if (folioIds.length > 0) {
+   679→   679→    const maxDates = await db.ledgerEntry.groupBy({
+   680→   680→      by: ['folioId'],
+   681→   681→      where: { folioId: { in: folioIds }, status: 'Active' },
+   682→   682→      _max: { createdAt: true },
+   683→   683→    })
+   684→   684→    const folioMaxDate = new Map(maxDates.map(m => [m.folioId, m._max.createdAt]))
+   685→   685→    const latestEntries = await db.ledgerEntry.findMany({
+   686→   686→      where: { folioId: { in: folioIds }, status: 'Active' },
+   687→   687→      select: { folioId: true, balance: true, createdAt: true },
+   688→   688→    })
+   689→   689→    for (const entry of latestEntries) {
+   690→   690→      const maxDate = folioMaxDate.get(entry.folioId)
+   691→   691→      if (maxDate && entry.createdAt && entry.createdAt.getTime() === maxDate.getTime()) {
+   692→   692→        if (!folioBalanceMap.has(entry.folioId)) {
+   693→   693→          folioBalanceMap.set(entry.folioId, { balance: entry.balance, date: entry.createdAt?.toISOString() ?? null })
+   694→   694→        }
+   695→   695→      }
+   696→   696→    }
+   697→   697→  }
+   698→   698→
+   699→   699→  const customerMap = new Map(customers.map(c => [c.id, c]))
+   700→   700→
+   701→   701→  const rows = folios.map(f => {
+   702→   702→    const cust = customerMap.get(f.customerId)
+   703→   703→    const bal = folioBalanceMap.get(f.id)
+   704→   704→    return {
+   705→   705→      customerId: cust?.customerId ?? '',
+   706→   706→      fullName: cust?.fullName ?? '',
+   707→   707→      mobile: cust?.mobile ?? '',
+   708→   708→      customerType: cust?.customerType ?? '',
+   709→   709→      folioId: f.folioId,
+   710→   710→      folioNumber: f.folioNumber,
+   711→   711→      visitNumber: f.visitNumber,
+   712→   712→      status: f.status,
+   713→   713→      balance: bal?.balance ?? 0,
+   714→   714→      entryCount: f._count.ledgerEntries,
+   715→   715→      lastTxnDate: bal?.date ?? null,
+   716→   716→      folioCreatedAt: f.createdAt.toISOString(),
+   717→   717→    }
+   718→   718→  })
+   719→   719→
+   720→   720→  const totalBalance = rows.reduce((s, r) => s + r.balance, 0)
+   721→   721→  const activeFolioCount = rows.length
+   722→   722→
+   723→   723→  return NextResponse.json({
+   724→   724→    reportType: 'activeFolio',
+   725→   725→    summary: {
+   726→   726→      activeFolioCount,
+   727→   727→      totalBalance,
+   728→   728→      avgBalance: activeFolioCount > 0 ? Math.round((totalBalance / activeFolioCount) * 100) / 100 : 0,
+   729→   729→      uniqueCustomers: new Set(rows.map(r => r.customerId)).size,
+   730→   730→    },
+   731→   731→    data: rows,
+   732→   732→  })
+   733→   733→}
+   734→   734→
+   735→   735→// ─── 10. Checkout History Report ───
+   736→   736→async function handleCheckoutHistory(unitCode: string, filters: ReportFilters) {
+   737→   737→  const customerWhere: Record<string, unknown> = {}
+   738→   738→  applyCustomerFilters(customerWhere, filters, unitCode)
+   739→   739→  // Only show checked-out customers (or all if no status filter)
+   740→   740→  if (!filters.status) customerWhere.status = 'CheckedOut'
+   741→   741→  else if (filters.status === 'All') delete customerWhere.status
+   742→   742→
+   743→   743→  const customers = await db.customer.findMany({
+   744→   744→    where: customerWhere,
+   745→   745→    select: {
+   746→   746→      id: true, customerId: true, fullName: true, mobile: true, email: true,
+   747→   747→      customerType: true, status: true, createdAt: true,
+   748→   748→      tags: { select: { tagName: true } },
+   749→   749→      _count: { select: { ledgerEntries: true, folios: true, settlements: true, visits: true } },
+   750→   750→      visits: {
+   751→   751→        where: { checkOutAt: { not: null } },
+   752→   752→        select: { checkInAt: true, checkOutAt: true },
+   753→   753→        orderBy: { checkOutAt: 'desc' },
+   754→   754→        take: 1,
+   755→   755→      },
+   756→   756→    },
+   757→   757→    orderBy: { updatedAt: 'desc' },
+   758→   758→    take: 2000,
+   759→   759→  })
+   760→   760→
+   761→   761→  const customerIds = customers.map(c => c.id)
+   762→   762→  const ledgerMap = await getCustomerBalances(customerIds, 'Settled')
+   763→   763→
+   764→   764→  const rows = customers.map(c => {
+   765→   765→    const lastVisit = c.visits[0]
+   766→   766→    const bal = ledgerMap.get(c.id)
+   767→   767→    return {
+   768→   768→      customerId: c.customerId,
+   769→   769→      fullName: c.fullName,
+   770→   770→      mobile: c.mobile,
+   771→   771→      email: c.email,
+   772→   772→      customerType: c.customerType,
+   773→   773→      status: c.status,
+   774→   774→      finalBalance: bal?.balance ?? 0,
+   775→   775→      totalVisits: c._count.visits,
+   776→   776→      totalTransactions: c._count.ledgerEntries,
+   777→   777→      totalSettlements: c._count.settlements,
+   778→   778→      tags: c.tags.map(t => t.tagName),
+   779→   779→      checkInDate: lastVisit?.checkInAt?.toISOString() ?? null,
+   780→   780→      checkOutDate: lastVisit?.checkOutAt?.toISOString() ?? null,
+   781→   781→      customerSince: c.createdAt.toISOString(),
+   782→   782→    }
+   783→   783→  })
+   784→   784→
+   785→   785→  return NextResponse.json({
+   786→   786→    reportType: 'checkoutHistory',
+   787→   787→    summary: {
+   788→   788→      totalCheckedOut: rows.length,
+   789→   789→      totalWithBalance: rows.filter(r => r.finalBalance > 0).length,
+   790→   790→      totalWithCredit: rows.filter(r => r.finalBalance < 0).length,
+   791→   791→      avgVisits: rows.length > 0 ? Math.round((rows.reduce((s, r) => s + r.totalVisits, 0) / rows.length) * 100) / 100 : 0,
+   792→   792→    },
+   793→   793→    data: rows,
+   794→   794→  })
+   795→   795→}
+   796→   796→
+   797→   797→// ─── 11. Credit Balance Report ───
+   798→   798→async function handleCreditBalance(unitCode: string, filters: ReportFilters) {
+   799→   799→  const where: Record<string, unknown> = {}
+   800→   800→  applyCustomerFilters(where, filters, unitCode)
+   801→   801→
+   802→   802→  const customers = await db.customer.findMany({
+   803→   803→    where,
+   804→   804→    select: {
+   805→   805→      id: true, customerId: true, fullName: true, mobile: true, email: true,
+   806→   806→      customerType: true, creditLimit: true, status: true,
+   807→   807→      _count: { select: { ledgerEntries: true } },
+   808→   808→    },
+   809→   809→    orderBy: { createdAt: 'desc' },
+   810→   810→  })
+   811→   811→
+   812→   812→  const customerIds = customers.map(c => c.id)
+   813→   813→  const ledgerMap = await getCustomerBalances(customerIds)
+   814→   814→
+   815→   815→  const rows = customers
+   816→   816→    .map(c => {
+   817→   817→      const bal = ledgerMap.get(c.id)
+   818→   818→      const balance = bal?.balance ?? 0
+   819→   819→      return {
+   820→   820→        customerId: c.customerId,
+   821→   821→        fullName: c.fullName,
+   822→   822→        mobile: c.mobile,
+   823→   823→        email: c.email,
+   824→   824→        customerType: c.customerType,
+   825→   825→        status: c.status,
+   826→   826→        creditBalance: Math.abs(balance),
+   827→   827→        balance,
+   828→   828→        totalTransactions: c._count.ledgerEntries,
+   829→   829→        lastTxnDate: bal?.date ?? null,
+   830→   830→      }
+   831→   831→    })
+   832→   832→    .filter(r => r.balance < 0)
+   833→   833→    .sort((a, b) => a.balance - b.balance)
+   834→   834→
+   835→   835→  const totalCredit = rows.reduce((s, r) => s + r.creditBalance, 0)
+   836→   836→
+   837→   837→  return NextResponse.json({
+   838→   838→    reportType: 'creditBalance',
+   839→   839→    summary: {
+   840→   840→      customersWithCredit: rows.length,
+   841→   841→      totalCreditBalance: totalCredit,
+   842→   842→      avgCredit: rows.length > 0 ? Math.round((totalCredit / rows.length) * 100) / 100 : 0,
+   843→   843→    },
+   844→   844→    data: rows,
+   845→   845→  })
+   846→   846→}
+   847→   847→
+   848→   848→// ─── 12. Charge Summary Report ───
+   849→   849→async function handleChargeSummary(unitCode: string, filters: ReportFilters) {
+   850→   850→  const where: Record<string, unknown> = { status: 'Active', type: 'Charge' }
+   851→   851→  applyLedgerFilters(where, filters, unitCode)
+   852→   852→
+   853→   853→  const entries = await db.ledgerEntry.findMany({
+   854→   854→    where,
+   855→   855→    orderBy: { createdAt: 'desc' },
+   856→   856→    select: {
+   857→   857→      id: true, date: true, description: true, debit: true, tax: true, discount: true,
+   858→   858→      balance: true, invoiceNo: true, userName: true, createdAt: true,
+   859→   859→      customer: { select: { fullName: true, customerId: true } },
+   860→   860→    },
+   861→   861→    take: 5000,
+   862→   862→  })
+   863→   863→
+   864→   864→  const rows = entries.map(e => ({
+   865→   865→    date: e.date,
+   866→   866→    customerName: e.customer.fullName,
+   867→   867→    customerId: e.customer.customerId,
+   868→   868→    description: e.description,
+   869→   869→    chargeAmount: e.debit,
+   870→   870→    tax: e.tax,
+   871→   871→    discount: e.discount,
+   872→   872→    total: e.debit + e.tax - e.discount,
+   873→   873→    balance: e.balance,
+   874→   874→    invoiceNo: e.invoiceNo,
+   875→   875→    recordedBy: e.userName,
+   876→   876→    createdAt: e.createdAt.toISOString(),
+   877→   877→  }))
+   878→   878→
+   879→   879→  const totalCharges = rows.reduce((s, r) => s + r.chargeAmount, 0)
+   880→   880→  const totalTax = rows.reduce((s, r) => s + r.tax, 0)
+   881→   881→  const totalDiscount = rows.reduce((s, r) => s + r.discount, 0)
+   882→   882→
+   883→   883→  // Group by description for summary
+   884→   884→  const descBreakdown = rows.reduce((acc: Record<string, { count: number; amount: number }>, r) => {
+   885→   885→    const key = r.description || 'Miscellaneous'
+   886→   886→    if (!acc[key]) acc[key] = { count: 0, amount: 0 }
+   887→   887→    acc[key].count++
+   888→   888→    acc[key].amount += r.chargeAmount
+   889→   889→    return acc
+   890→   890→  }, {})
+   891→   891→
+   892→   892→  return NextResponse.json({
+   893→   893→    reportType: 'chargeSummary',
+   894→   894→    summary: {
+   895→   895→      totalCharges,
+   896→   896→      totalTax,
+   897→   897→      totalDiscount,
+   898→   898→      grandTotal: totalCharges + totalTax - totalDiscount,
+   899→   899→      chargeCount: rows.length,
+   900→   900→      uniqueDescriptions: Object.keys(descBreakdown).length,
+   901→   901→      topCharges: Object.entries(descBreakdown)
+   902→   902→        .sort((a, b) => b[1].amount - a[1].amount)
+   903→   903→        .slice(0, 5)
+   904→   904→        .reduce((acc, [k, v]) => { acc[k] = v; return acc }, {} as Record<string, { count: number; amount: number }>),
+   905→   905→    },
+   906→   906→    data: rows,
+   907→   907→  })
+   908→   908→}
+   909→   909→
+   910→   910→// ─── 13. Discount Report ───
+   911→   911→async function handleDiscounts(unitCode: string, filters: ReportFilters) {
+   912→   912→  const where: Record<string, unknown> = { status: 'Active', type: 'Discount' }
+   913→   913→  applyLedgerFilters(where, filters, unitCode)
+   914→   914→
+   915→   915→  const entries = await db.ledgerEntry.findMany({
+   916→   916→    where,
+   917→   917→    orderBy: { createdAt: 'desc' },
+   918→   918→    select: {
+   919→   919→      id: true, date: true, description: true, credit: true, balance: true,
+   920→   920→      userName: true, createdAt: true,
+   921→   921→      customer: { select: { fullName: true, customerId: true, mobile: true } },
+   922→   922→    },
+   923→   923→    take: 5000,
+   924→   924→  })
+   925→   925→
+   926→   926→  const rows = entries.map(e => ({
+   927→   927→    date: e.date,
+   928→   928→    customerName: e.customer.fullName,
+   929→   929→    customerId: e.customer.customerId,
+   930→   930→    mobile: e.customer.mobile,
+   931→   931→    description: e.description,
+   932→   932→    discountAmount: e.credit,
+   933→   933→    balanceAfter: e.balance,
+   934→   934→    recordedBy: e.userName,
+   935→   935→    createdAt: e.createdAt.toISOString(),
+   936→   936→  }))
+   937→   937→
+   938→   938→  const totalDiscount = rows.reduce((s, r) => s + r.discountAmount, 0)
+   939→   939→
+   940→   940→  // Group by user
+   941→   941→  const userBreakdown = rows.reduce((acc: Record<string, { count: number; total: number }>, r) => {
+   942→   942→    const user = r.recordedBy || 'Unknown'
+   943→   943→    if (!acc[user]) acc[user] = { count: 0, total: 0 }
+   944→   944→    acc[user].count++
+   945→   945→    acc[user].total += r.discountAmount
+   946→   946→    return acc
+   947→   947→  }, {})
+   948→   948→
+   949→   949→  return NextResponse.json({
+   950→   950→    reportType: 'discounts',
+   951→   951→    summary: {
+   952→   952→      totalDiscounts: rows.length,
+   953→   953→      totalDiscountAmount: totalDiscount,
+   954→   954→      avgDiscount: rows.length > 0 ? Math.round((totalDiscount / rows.length) * 100) / 100 : 0,
+   955→   955→      userBreakdown,
+   956→   956→    },
+   957→   957→    data: rows,
+   958→   958→  })
+   959→   959→}
+   960→   960→
+   961→   961→// ─── 14. User-wise Collection Report ───
+   962→   962→async function handleUserCollections(unitCode: string, filters: ReportFilters) {
+   963→   963→  const where: Record<string, unknown> = { status: 'Active', type: 'Payment' }
+   964→   964→  applyLedgerFilters(where, filters, unitCode)
+   965→   965→  // user filter applied via applyLedgerFilters already
+   966→   966→
+   967→   967→  const entries = await db.ledgerEntry.findMany({
+   968→   968→    where,
+   969→   969→    orderBy: { createdAt: 'desc' },
+   970→   970→    select: {
+   971→   971→      id: true, date: true, credit: true, paymentMode: true, userName: true, createdAt: true,
+   972→   972→      customer: { select: { fullName: true, customerId: true } },
+   973→   973→    },
+   974→   974→    take: 5000,
+   975→   975→  })
+   976→   976→
+   977→   977→  // Group by user
+   978→   978→  const userGroups = new Map<string, {
+   979→   979→    userName: string
+   980→   980→    payments: typeof entries
+   981→   981→    totalAmount: number
+   982→   982→    count: number
+   983→   983→    modeBreakdown: Record<string, number>
+   984→   984→  }>()
+   985→   985→
+   986→   986→  for (const e of entries) {
+   987→   987→    const user = e.userName || 'Unknown'
+   988→   988→    if (!userGroups.has(user)) {
+   989→   989→      userGroups.set(user, { userName: user, payments: [], totalAmount: 0, count: 0, modeBreakdown: {} })
+   990→   990→    }
+   991→   991→    const group = userGroups.get(user)!
+   992→   992→    group.payments.push(e)
+   993→   993→    group.totalAmount += e.credit
+   994→   994→    group.count++
+   995→   995→    const mode = e.paymentMode || 'Cash'
+   996→   996→    group.modeBreakdown[mode] = (group.modeBreakdown[mode] || 0) + e.credit
+   997→   997→  }
+   998→   998→
+   999→   999→  const rows = Array.from(userGroups.values()).map(g => ({
+  1000→  1000→    userName: g.userName,
+  1001→  1001→    totalCollected: g.totalAmount,
+  1002→  1002→    paymentCount: g.count,
+  1003→  1003→    avgCollection: g.count > 0 ? Math.round((g.totalAmount / g.count) * 100) / 100 : 0,
+  1004→  1004→    modeBreakdown: g.modeBreakdown,
+  1005→  1005→  })).sort((a, b) => b.totalCollected - a.totalCollected)
+  1006→  1006→
+  1007→  1007→  const grandTotal = rows.reduce((s, r) => s + r.totalCollected, 0)
+  1008→  1008→
+  1009→  1009→  return NextResponse.json({
+  1010→  1010→    reportType: 'userCollections',
+  1011→  1011→    summary: {
+  1012→  1012→      totalUsers: rows.length,
+  1013→  1013→      grandTotal,
+  1014→  1014→      totalPayments: rows.reduce((s, r) => s + r.paymentCount, 0),
+  1015→  1015→      avgPerUser: rows.length > 0 ? Math.round((grandTotal / rows.length) * 100) / 100 : 0,
+  1016→  1016→    },
+  1017→  1017→    data: rows,
+  1018→  1018→  })
+  1019→  1019→}
+  1020→  1020→
+  1021→  1021→// ─── 15. Daily Collection Report ───
+  1022→  1022→async function handleDailyCollections(unitCode: string, filters: ReportFilters) {
+  1023→  1023→  const where: Record<string, unknown> = { status: 'Active', type: 'Payment' }
+  1024→  1024→  applyLedgerFilters(where, filters, unitCode)
+  1025→  1025→
+  1026→  1026→  const entries = await db.ledgerEntry.findMany({
+  1027→  1027→    where,
+  1028→  1028→    orderBy: { createdAt: 'desc' },
+  1029→  1029→    select: {
+  1030→  1030→      id: true, date: true, credit: true, paymentMode: true, userName: true, createdAt: true,
+  1031→  1031→    },
+  1032→  1032→    take: 10000,
+  1033→  1033→  })
+  1034→  1034→
+  1035→  1035→  // Group by date
+  1036→  1036→  const dateGroups = new Map<string, {
+  1037→  1037→    date: string
+  1038→  1038→    totalAmount: number
+  1039→  1039→    count: number
+  1040→  1040→    modeBreakdown: Record<string, number>
+  1041→  1041→  }>()
+  1042→  1042→
+  1043→  1043→  for (const e of entries) {
+  1044→  1044→    const dateKey = e.date || e.createdAt.toISOString().split('T')[0]
+  1045→  1045→    if (!dateGroups.has(dateKey)) {
+  1046→  1046→      dateGroups.set(dateKey, { date: dateKey, totalAmount: 0, count: 0, modeBreakdown: {} })
+  1047→  1047→    }
+  1048→  1048→    const group = dateGroups.get(dateKey)!
+  1049→  1049→    group.totalAmount += e.credit
+  1050→  1050→    group.count++
+  1051→  1051→    const mode = e.paymentMode || 'Cash'
+  1052→  1052→    group.modeBreakdown[mode] = (group.modeBreakdown[mode] || 0) + e.credit
+  1053→  1053→  }
+  1054→  1054→
+  1055→  1055→  const rows = Array.from(dateGroups.values()).sort((a, b) => b.date.localeCompare(a.date))
+  1056→  1056→
+  1057→  1057→  const grandTotal = rows.reduce((s, r) => s + r.totalAmount, 0)
+  1058→  1058→  const bestDay = rows.length > 0 ? rows.reduce((best, r) => r.totalAmount > best.totalAmount ? r : best, rows[0]) : null
+  1059→  1059→
+  1060→  1060→  return NextResponse.json({
+  1061→  1061→    reportType: 'dailyCollections',
+  1062→  1062→    summary: {
+  1063→  1063→      totalDays: rows.length,
+  1064→  1064→      grandTotal,
+  1065→  1065→      avgDaily: rows.length > 0 ? Math.round((grandTotal / rows.length) * 100) / 100 : 0,
+  1066→  1066→      bestDay: bestDay ? { date: bestDay.date, amount: bestDay.totalAmount } : null,
+  1067→  1067→      totalPayments: rows.reduce((s, r) => s + r.count, 0),
+  1068→  1068→    },
+  1069→  1069→    data: rows,
+  1070→  1070→  })
+  1071→  1071→}
+  1072→  1072→
+  1073→  1073→// ─── 16. Monthly Collection Report ───
+  1074→  1074→async function handleMonthlyCollections(unitCode: string, filters: ReportFilters) {
+  1075→  1075→  const where: Record<string, unknown> = { status: 'Active', type: 'Payment' }
+  1076→  1076→  applyLedgerFilters(where, filters, unitCode)
+  1077→  1077→
+  1078→  1078→  const entries = await db.ledgerEntry.findMany({
+  1079→  1079→    where,
+  1080→  1080→    orderBy: { createdAt: 'desc' },
+  1081→  1081→    select: {
+  1082→  1082→      id: true, date: true, credit: true, paymentMode: true, createdAt: true,
+  1083→  1083→    },
+  1084→  1084→    take: 10000,
+  1085→  1085→  })
+  1086→  1086→
+  1087→  1087→  // Group by month (YYYY-MM)
+  1088→  1088→  const monthGroups = new Map<string, {
+  1089→  1089→    month: string
+  1090→  1090→    totalAmount: number
+  1091→  1091→    count: number
+  1092→  1092→    modeBreakdown: Record<string, number>
+  1093→  1093→  }>()
+  1094→  1094→
+  1095→  1095→  for (const e of entries) {
+  1096→  1096→    const d = new Date(e.date || e.createdAt.toISOString())
+  1097→  1097→    const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  1098→  1098→    if (!monthGroups.has(monthKey)) {
+  1099→  1099→      monthGroups.set(monthKey, { month: monthKey, totalAmount: 0, count: 0, modeBreakdown: {} })
+  1100→  1100→    }
+  1101→  1101→    const group = monthGroups.get(monthKey)!
+  1102→  1102→    group.totalAmount += e.credit
+  1103→  1103→    group.count++
+  1104→  1104→    const mode = e.paymentMode || 'Cash'
+  1105→  1105→    group.modeBreakdown[mode] = (group.modeBreakdown[mode] || 0) + e.credit
+  1106→  1106→  }
+  1107→  1107→
+  1108→  1108→  const rows = Array.from(monthGroups.values()).sort((a, b) => b.month.localeCompare(a.month))
+  1109→  1109→
+  1110→  1110→  const grandTotal = rows.reduce((s, r) => s + r.totalAmount, 0)
+  1111→  1111→  const bestMonth = rows.length > 0 ? rows.reduce((best, r) => r.totalAmount > best.totalAmount ? r : best, rows[0]) : null
+  1112→  1112→
+  1113→  1113→  return NextResponse.json({
+  1114→  1114→    reportType: 'monthlyCollections',
+  1115→  1115→    summary: {
+  1116→  1116→      totalMonths: rows.length,
+  1117→  1117→      grandTotal,
+  1118→  1118→      avgMonthly: rows.length > 0 ? Math.round((grandTotal / rows.length) * 100) / 100 : 0,
+  1119→  1119→      bestMonth: bestMonth ? { month: bestMonth.month, amount: bestMonth.totalAmount } : null,
+  1120→  1120→      totalPayments: rows.reduce((s, r) => s + r.count, 0),
+  1121→  1121→    },
+  1122→  1122→    data: rows,
+  1123→  1123→  })
+  1124→  1124→}
+  1125→  1125→
+  1126→  1126→// ─── 17. Audit Report ───
+  1127→  1127→async function handleAudit(unitCode: string, filters: ReportFilters) {
+  1128→  1128→  const where: Record<string, unknown> = { unitCode }
+  1129→  1129→  if (filters.dateFilter) where.createdAt = filters.dateFilter
+  1130→  1130→  if (filters.user) where.userName = { contains: filters.user }
+  1131→  1131→  if (filters.customer) {
+  1132→  1132→    // For audit, search in target or details or customerId
+  1133→  1133→    where.OR = [
+  1134→  1134→      { target: { contains: filters.customer } },
+  1135→  1135→      { details: { contains: filters.customer } },
+  1136→  1136→      { customerId: { contains: filters.customer } },
+  1137→  1137→    ] as any[]
+  1138→  1138→  }
+  1139→  1139→  // Filter by action type (map paymentType to action where applicable)
+  1140→  1140→  if (filters.paymentType && filters.paymentType !== 'All') {
+  1141→  1141→    const actionMap: Record<string, string> = {
+  1142→  1142→      Charge: 'Create', Payment: 'Create', Refund: 'Refund',
+  1143→  1143→      Discount: 'Discount', Settlement: 'Settlement',
+  1144→  1144→    }
+  1145→  1145→    const action = actionMap[filters.paymentType]
+  1146→  1146→    if (action) where.action = action
+  1147→  1147→  }
+  1148→  1148→
+  1149→  1149→  const logs = await db.folioAuditLog.findMany({
+  1150→  1150→    where,
+  1151→  1151→    orderBy: { createdAt: 'desc' },
+  1152→  1152→    select: {
+  1153→  1153→      id: true, action: true, target: true, details: true,
+  1154→  1154→      userName: true, ipAddress: true, device: true,
+  1155→  1155→      customerId: true, folioId: true, createdAt: true,
+  1156→  1156→    },
+  1157→  1157→    take: 5000,
+  1158→  1158→  })
+  1159→  1159→
+  1160→  1160→  const rows = logs.map(l => {
+  1161→  1161→    let detailsParsed: Record<string, any> = {}
+  1162→  1162→    try { detailsParsed = l.details ? JSON.parse(l.details) : {} } catch { /* ignore */ }
+  1163→  1163→    return {
+  1164→  1164→      date: l.createdAt.toISOString(),
+  1165→  1165→      action: l.action,
+  1166→  1166→      target: l.target,
+  1167→  1167→      userName: l.userName,
+  1168→  1168→      customerId: l.customerId,
+  1169→  1169→      folioId: l.folioId,
+  1170→  1170→      details: detailsParsed,
+  1171→  1171→      ipAddress: l.ipAddress,
+  1172→  1172→      device: l.device,
+  1173→  1173→    }
+  1174→  1174→  })
+  1175→  1175→
+  1176→  1176→  // Action breakdown
+  1177→  1177→  const actionBreakdown = rows.reduce((acc: Record<string, number>, r) => {
+  1178→  1178→    acc[r.action] = (acc[r.action] || 0) + 1
+  1179→  1179→    return acc
+  1180→  1180→  }, {})
+  1181→  1181→
+  1182→  1182→  return NextResponse.json({
+  1183→  1183→    reportType: 'audit',
+  1184→  1184→    summary: {
+  1185→  1185→      totalLogs: rows.length,
+  1186→  1186→      actionBreakdown,
+  1187→  1187→      uniqueUsers: new Set(rows.map(r => r.userName).filter(Boolean)).size,
+  1188→  1188→    },
+  1189→  1189→    data: rows,
+  1190→  1190→  })
+  1191→  1191→}
+  1192→  1192→

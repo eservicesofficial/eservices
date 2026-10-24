@@ -1,0 +1,1350 @@
+     1→'use client';
+     2→
+     3→import React, { useState, useEffect, useCallback } from 'react';
+     4→import {
+     5→  Users, Plus, Search, Edit, Trash2, Ban, CheckCircle2,
+     6→  Eye, EyeOff, Loader2, Shield, UserCog, ChevronDown,
+     7→  ChevronRight, X, UserPlus, Key, Lock, Unlock,
+     8→  AlertTriangle, RefreshCw, ChevronUp,
+     9→} from 'lucide-react';
+    10→import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+    11→import { Button } from '@/components/ui/button';
+    12→import { Input } from '@/components/ui/input';
+    13→import { Label } from '@/components/ui/label';
+    14→import { Badge } from '@/components/ui/badge';
+    15→import { Switch } from '@/components/ui/switch';
+    16→import { Separator } from '@/components/ui/separator';
+    17→import { Skeleton } from '@/components/ui/skeleton';
+    18→import {
+    19→  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+    20→} from '@/components/ui/table';
+    21→import {
+    22→  Dialog, DialogContent, DialogDescription, DialogFooter,
+    23→  DialogHeader, DialogTitle, DialogTrigger,
+    24→} from '@/components/ui/dialog';
+    25→import {
+    26→  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+    27→  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+    28→} from '@/components/ui/alert-dialog';
+    29→import {
+    30→  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+    31→} from '@/components/ui/select';
+    32→import {
+    33→  Collapsible, CollapsibleContent, CollapsibleTrigger,
+    34→} from '@/components/ui/collapsible';
+    35→import { notify } from '@/lib/notification-store';
+    36→import { useAuth } from '@/components/auth-provider';
+    37→
+    38→// ── Types & Interfaces ────────────────────────────────────────────────────
+    39→
+    40→interface UserPermissions {
+    41→  billing: { access: boolean; create: boolean; edit: boolean; delete: boolean };
+    42→  reports: { access: boolean; export: boolean };
+    43→  inventory: { access: boolean; create: boolean; edit: boolean; delete: boolean };
+    44→  cashManager: { access: boolean; create: boolean; edit: boolean; delete: boolean };
+    45→  khata: { access: boolean; create: boolean; edit: boolean; delete: boolean; forceEdit: boolean; reopenFolio: boolean; removeTransaction: boolean; transferOperation: boolean };
+    46→  customerFolio: { access: boolean; create: boolean; edit: boolean; delete: boolean; forceEdit: boolean; reopenFolio: boolean; removeTransaction: boolean; transferOperation: boolean; checkout: boolean; settlement: boolean; discount: boolean; refund: boolean; viewHistory: boolean; reports: boolean; manageDocuments: boolean; deleteDocuments: boolean };
+    47→  staff: { access: boolean; create: boolean; edit: boolean; delete: boolean };
+    48→  calculator: { access: boolean };
+    49→  settings: { access: boolean; edit: boolean; userManagement: boolean };
+    50→  auditLogs: { access: boolean };
+    51→}
+    52→
+    53→interface User {
+    54→  id: string;
+    55→  loginId: string;
+    56→  name: string;
+    57→  role: 'Admin' | 'Manager' | 'Cashier' | 'Staff';
+    58→  status: 'Active' | 'Suspended';
+    59→  lastLogin: string | null;
+    60→  createdAt: string;
+    61→  permissions: UserPermissions;
+    62→}
+    63→
+    64→type ModalMode = 'create' | 'edit' | null;
+    65→
+    66→// ── Permission Presets ────────────────────────────────────────────────────
+    67→
+    68→const emptyPermissions = (): UserPermissions => ({
+    69→  billing: { access: false, create: false, edit: false, delete: false },
+    70→  reports: { access: false, export: false },
+    71→  inventory: { access: false, create: false, edit: false, delete: false },
+    72→  cashManager: { access: false, create: false, edit: false, delete: false },
+    73→  khata: { access: false, create: false, edit: false, delete: false, forceEdit: false, reopenFolio: false, removeTransaction: false, transferOperation: false },
+    74→  customerFolio: { access: false, create: false, edit: false, delete: false, forceEdit: false, reopenFolio: false, removeTransaction: false, transferOperation: false, checkout: false, settlement: false, discount: false, refund: false, viewHistory: false, reports: false, manageDocuments: false, deleteDocuments: false },
+    75→  staff: { access: false, create: false, edit: false, delete: false },
+    76→  calculator: { access: false },
+    77→  settings: { access: false, edit: false, userManagement: false },
+    78→  auditLogs: { access: false },
+    79→});
+    80→
+    81→const permissionPresets: Record<string, UserPermissions> = {
+    82→  Admin: {
+    83→    billing: { access: true, create: true, edit: true, delete: true },
+    84→    reports: { access: true, export: true },
+    85→    inventory: { access: true, create: true, edit: true, delete: true },
+    86→    cashManager: { access: true, create: true, edit: true, delete: true },
+    87→    khata: { access: true, create: true, edit: true, delete: true, forceEdit: true, reopenFolio: true, removeTransaction: true, transferOperation: true },
+    88→    customerFolio: { access: true, create: true, edit: true, delete: true, forceEdit: true, reopenFolio: true, removeTransaction: true, transferOperation: true, checkout: true, settlement: true, discount: true, refund: true, viewHistory: true, reports: true, manageDocuments: true, deleteDocuments: true },
+    89→    staff: { access: true, create: true, edit: true, delete: true },
+    90→    calculator: { access: true },
+    91→    settings: { access: true, edit: true, userManagement: true },
+    92→    auditLogs: { access: true },
+    93→  },
+    94→  Manager: {
+    95→    billing: { access: true, create: true, edit: true, delete: false },
+    96→    reports: { access: true, export: true },
+    97→    inventory: { access: true, create: true, edit: true, delete: false },
+    98→    cashManager: { access: true, create: true, edit: true, delete: false },
+    99→    khata: { access: true, create: true, edit: true, delete: false, forceEdit: false, reopenFolio: true, removeTransaction: false, transferOperation: true },
+   100→    customerFolio: { access: true, create: true, edit: true, delete: false, forceEdit: false, reopenFolio: true, removeTransaction: false, transferOperation: true, checkout: true, settlement: true, discount: true, refund: true, viewHistory: true, reports: true, manageDocuments: true, deleteDocuments: false },
+   101→    staff: { access: true, create: true, edit: true, delete: false },
+   102→    calculator: { access: true },
+   103→    settings: { access: false, edit: false, userManagement: false },
+   104→    auditLogs: { access: true },
+   105→  },
+   106→  Cashier: {
+   107→    billing: { access: true, create: true, edit: true, delete: false },
+   108→    reports: { access: true, export: false },
+   109→    inventory: { access: true, create: false, edit: false, delete: false },
+   110→    cashManager: { access: false, create: false, edit: false, delete: false },
+   111→    khata: { access: true, create: true, edit: true, delete: false, forceEdit: false, reopenFolio: false, removeTransaction: false, transferOperation: false },
+   112→    customerFolio: { access: true, create: true, edit: true, delete: false, forceEdit: false, reopenFolio: false, removeTransaction: false, transferOperation: false, checkout: false, settlement: true, discount: false, refund: false, viewHistory: true, reports: false, manageDocuments: true, deleteDocuments: false },
+   113→    staff: { access: false, create: false, edit: false, delete: false },
+   114→    calculator: { access: true },
+   115→    settings: { access: false, edit: false, userManagement: false },
+   116→    auditLogs: { access: false },
+   117→  },
+   118→  Staff: {
+   119→    billing: { access: true, create: true, edit: false, delete: false },
+   120→    reports: { access: false, export: false },
+   121→    inventory: { access: true, create: false, edit: false, delete: false },
+   122→    cashManager: { access: false, create: false, edit: false, delete: false },
+   123→    khata: { access: true, create: true, edit: false, delete: false, forceEdit: false, reopenFolio: false, removeTransaction: false, transferOperation: false },
+   124→    customerFolio: { access: true, create: true, edit: false, delete: false, forceEdit: false, reopenFolio: false, removeTransaction: false, transferOperation: false, checkout: false, settlement: true, discount: false, refund: false, viewHistory: false, reports: false, manageDocuments: false, deleteDocuments: false },
+   125→    staff: { access: false, create: false, edit: false, delete: false },
+   126→    calculator: { access: true },
+   127→    settings: { access: false, edit: false, userManagement: false },
+   128→    auditLogs: { access: false },
+   129→  },
+   130→};
+   131→
+   132→// ── Role & Status Badge Config ────────────────────────────────────────────
+   133→
+   134→const roleBadgeClasses: Record<string, string> = {
+   135→  Admin: 'bg-red-100 text-red-700 border-red-200 dark:bg-red-950/50 dark:text-red-400 dark:border-red-800',
+   136→  Manager: 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-950/50 dark:text-blue-400 dark:border-blue-800',
+   137→  Cashier: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-400 dark:border-amber-800',
+   138→  Staff: 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800/50 dark:text-gray-400 dark:border-gray-700',
+   139→};
+   140→
+   141→const statusBadgeClasses: Record<string, string> = {
+   142→  Active: 'bg-green-100 text-green-700 border-green-200 dark:bg-green-950/50 dark:text-green-400 dark:border-green-800',
+   143→  Suspended: 'bg-red-100 text-red-700 border-red-200 dark:bg-red-950/50 dark:text-red-400 dark:border-red-800',
+   144→};
+   145→
+   146→// ── Permission Group Config ───────────────────────────────────────────────
+   147→
+   148→interface PermGroupConfig {
+   149→  key: keyof UserPermissions;
+   150→  label: string;
+   151→  icon: React.ReactNode;
+   152→  actions: { key: string; label: string }[];
+   153→}
+   154→
+   155→const permissionGroups: PermGroupConfig[] = [
+   156→  {
+   157→    key: 'billing',
+   158→    label: 'Billing',
+   159→    icon: <span className="text-lg">🧾</span>,
+   160→    actions: [
+   161→      { key: 'access', label: 'Access' },
+   162→      { key: 'create', label: 'Create' },
+   163→      { key: 'edit', label: 'Edit' },
+   164→      { key: 'delete', label: 'Delete' },
+   165→    ],
+   166→  },
+   167→  {
+   168→    key: 'reports',
+   169→    label: 'Reports',
+   170→    icon: <span className="text-lg">📊</span>,
+   171→    actions: [
+   172→      { key: 'access', label: 'Access' },
+   173→      { key: 'export', label: 'Export' },
+   174→    ],
+   175→  },
+   176→  {
+   177→    key: 'inventory',
+   178→    label: 'Inventory',
+   179→    icon: <span className="text-lg">📦</span>,
+   180→    actions: [
+   181→      { key: 'access', label: 'Access' },
+   182→      { key: 'create', label: 'Create' },
+   183→      { key: 'edit', label: 'Edit' },
+   184→      { key: 'delete', label: 'Delete' },
+   185→    ],
+   186→  },
+   187→  {
+   188→    key: 'cashManager',
+   189→    label: 'Cash Manager',
+   190→    icon: <span className="text-lg">💰</span>,
+   191→    actions: [
+   192→      { key: 'access', label: 'Access' },
+   193→      { key: 'create', label: 'Create' },
+   194→      { key: 'edit', label: 'Edit' },
+   195→      { key: 'delete', label: 'Delete' },
+   196→    ],
+   197→  },
+   198→  {
+   199→    key: 'khata',
+   200→    label: 'Khata',
+   201→    icon: <span className="text-lg">📒</span>,
+   202→    actions: [
+   203→      { key: 'access', label: 'Access' },
+   204→      { key: 'create', label: 'Create' },
+   205→      { key: 'edit', label: 'Edit' },
+   206→      { key: 'delete', label: 'Delete' },
+   207→      { key: 'forceEdit', label: 'Force Edit' },
+   208→      { key: 'reopenFolio', label: 'Reopen Folio' },
+   209→      { key: 'removeTransaction', label: 'Remove Transaction' },
+   210→      { key: 'transferOperation', label: 'Transfer Operation' },
+   211→    ],
+   212→  },
+   213→  {
+   214→    key: 'customerFolio',
+   215→    label: 'Customer Folio',
+   216→    icon: <span className="text-lg">📋</span>,
+   217→    actions: [
+   218→      { key: 'access', label: 'Access' },
+   219→      { key: 'create', label: 'Create' },
+   220→      { key: 'edit', label: 'Edit' },
+   221→      { key: 'delete', label: 'Delete' },
+   222→      { key: 'forceEdit', label: 'Force Edit' },
+   223→      { key: 'reopenFolio', label: 'Reopen Folio' },
+   224→      { key: 'removeTransaction', label: 'Remove Transaction' },
+   225→      { key: 'transferOperation', label: 'Transfer' },
+   226→      { key: 'checkout', label: 'Checkout' },
+   227→      { key: 'settlement', label: 'Settlement' },
+   228→      { key: 'discount', label: 'Discount' },
+   229→      { key: 'refund', label: 'Refund' },
+   230→      { key: 'viewHistory', label: 'View History' },
+   231→      { key: 'reports', label: 'Reports' },
+   232→      { key: 'manageDocuments', label: 'Manage Docs' },
+   233→      { key: 'deleteDocuments', label: 'Delete Docs' },
+   234→    ],
+   235→  },
+   236→  {
+   237→    key: 'staff',
+   238→    label: 'Staff Management',
+   239→    icon: <span className="text-lg">👥</span>,
+   240→    actions: [
+   241→      { key: 'access', label: 'Access' },
+   242→      { key: 'create', label: 'Create' },
+   243→      { key: 'edit', label: 'Edit' },
+   244→      { key: 'delete', label: 'Delete' },
+   245→    ],
+   246→  },
+   247→  {
+   248→    key: 'calculator',
+   249→    label: 'Calculator',
+   250→    icon: <span className="text-lg">🔢</span>,
+   251→    actions: [
+   252→      { key: 'access', label: 'Access' },
+   253→    ],
+   254→  },
+   255→  {
+   256→    key: 'settings',
+   257→    label: 'Settings',
+   258→    icon: <span className="text-lg">⚙️</span>,
+   259→    actions: [
+   260→      { key: 'access', label: 'Access' },
+   261→      { key: 'edit', label: 'Edit' },
+   262→      { key: 'userManagement', label: 'User Mgmt' },
+   263→    ],
+   264→  },
+   265→  {
+   266→    key: 'auditLogs',
+   267→    label: 'Audit Logs',
+   268→    icon: <span className="text-lg">📋</span>,
+   269→    actions: [
+   270→      { key: 'access', label: 'Access' },
+   271→    ],
+   272→  },
+   273→];
+   274→
+   275→// ── Helpers ───────────────────────────────────────────────────────────────
+   276→
+   277→function formatDate(dateStr: string | null): string {
+   278→  if (!dateStr) return '—';
+   279→  try {
+   280→    return new Date(dateStr).toLocaleDateString('en-IN', {
+   281→      day: '2-digit', month: 'short', year: 'numeric',
+   282→    });
+   283→  } catch {
+   284→    return '—';
+   285→  }
+   286→}
+   287→
+   288→function formatDateTime(dateStr: string | null): string {
+   289→  if (!dateStr) return 'Never';
+   290→  try {
+   291→    return new Date(dateStr).toLocaleDateString('en-IN', {
+   292→      day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+   293→    });
+   294→  } catch {
+   295→    return '—';
+   296→  }
+   297→}
+   298→
+   299→function isPermGroup(obj: unknown): obj is Record<string, boolean> {
+   300→  return typeof obj === 'object' && obj !== null && !Array.isArray(obj);
+   301→}
+   302→
+   303→// ── Main Component ────────────────────────────────────────────────────────
+   304→
+   305→export default function UserManagementSection() {
+   306→  const { currentUser, isAdmin, refreshSession, token } = useAuth();
+   307→  const authHeaders: Record<string, string> = token ? { 'Authorization': `Bearer ${token}` } : {};
+   308→
+   309→  // Determine which roles the current user can create
+   310→  // Admin: can create all roles (Admin, Manager, Cashier, Staff)
+   311→  // Non-admin users with userManagement permission: can create Cashier, Staff only
+   312→  const canCreateAdmin = isAdmin;
+   313→  const canCreateManager = isAdmin;
+   314→  const availableRoles = isAdmin
+   315→    ? ['Admin', 'Manager', 'Cashier', 'Staff']
+   316→    : ['Cashier', 'Staff'];
+   317→
+   318→  // ── State ──
+   319→  const [users, setUsers] = useState<User[]>([]);
+   320→  const [loading, setLoading] = useState(true);
+   321→  const [searchQuery, setSearchQuery] = useState('');
+   322→  const [roleFilter, setRoleFilter] = useState<string>('all');
+   323→  const [statusFilter, setStatusFilter] = useState<string>('all');
+   324→
+   325→  // Reset Password dialog
+   326→  const [resetPwdOpen, setResetPwdOpen] = useState(false);
+   327→  const [resetPwdTarget, setResetPwdTarget] = useState<User | null>(null);
+   328→  const [resetPwdNew, setResetPwdNew] = useState('');
+   329→  const [resetPwdConfirm, setResetPwdConfirm] = useState('');
+   330→  const [resetPwdShow, setResetPwdShow] = useState(false);
+   331→  const [resetPwdSubmitting, setResetPwdSubmitting] = useState(false);
+   332→
+   333→  // Modal state
+   334→  const [modalMode, setModalMode] = useState<ModalMode>(null);
+   335→  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+   336→
+   337→  // Form state
+   338→  const [formLoginId, setFormLoginId] = useState('');
+   339→  const [formName, setFormName] = useState('');
+   340→  const [formPassword, setFormPassword] = useState('');
+   341→  const [formShowPassword, setFormShowPassword] = useState(false);
+   342→  const [formRole, setFormRole] = useState<'Admin' | 'Manager' | 'Cashier' | 'Staff'>('Staff');
+   343→  const [formPermissions, setFormPermissions] = useState<UserPermissions>(emptyPermissions());
+   344→  const [permsExpanded, setPermsExpanded] = useState(false);
+   345→  const [submitting, setSubmitting] = useState(false);
+   346→
+   347→  // Confirmation dialogs
+   348→  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+   349→  const [suspendDialogOpen, setSuspendDialogOpen] = useState(false);
+   350→  const [actionTarget, setActionTarget] = useState<User | null>(null);
+   351→
+   352→  // ── Data Fetching (with auto-retry on network failure) ──
+   353→  const fetchUsers = useCallback(async (attempt = 0) => {
+   354→    setLoading(true);
+   355→    try {
+   356→      const res = await fetch('/api/users', { headers: authHeaders });
+   357→      if (res.ok) {
+   358→        const data = await res.json();
+   359→        setUsers(Array.isArray(data) ? data : []);
+   360→      } else {
+   361→        const errData = await res.json().catch(() => ({}));
+   362→        notify({ type: 'error', title: 'Error', message: errData?.error || 'Failed to fetch users' });
+   363→      }
+   364→    } catch {
+   365→      // Network error — retry up to 3 times with delay
+   366→      if (attempt < 3) {
+   367→        const delay = Math.min(1000 * Math.pow(2, attempt), 5000);
+   368→        setTimeout(() => fetchUsers(attempt + 1), delay);
+   369→        return; // Don't set loading=false yet, retry will handle it
+   370→      }
+   371→      notify({ type: 'error', title: 'Network Error', message: 'Network error — server may be starting. Please try again.' });
+   372→    } finally {
+   373→      setLoading(false);
+   374→    }
+   375→  }, []);
+   376→
+   377→  useEffect(() => {
+   378→    fetchUsers();
+   379→  }, [fetchUsers]);
+   380→
+   381→  // ── Filtered Users ──
+   382→  const filteredUsers = users.filter((user) => {
+   383→    const matchesSearch =
+   384→      searchQuery === '' ||
+   385→      user.loginId.toLowerCase().includes(searchQuery.toLowerCase()) ||
+   386→      user.name.toLowerCase().includes(searchQuery.toLowerCase());
+   387→    const matchesRole = roleFilter === 'all' || user.role === roleFilter;
+   388→    const matchesStatus = statusFilter === 'all' || user.status === statusFilter;
+   389→    return matchesSearch && matchesRole && matchesStatus;
+   390→  });
+   391→
+   392→  // ── Form Handlers ──
+   393→  const resetForm = () => {
+   394→    setFormLoginId('');
+   395→    setFormName('');
+   396→    setFormPassword('');
+   397→    setFormShowPassword(false);
+   398→    setFormRole('Staff');
+   399→    setFormPermissions(emptyPermissions());
+   400→    setPermsExpanded(false);
+   401→    setSelectedUser(null);
+   402→  };
+   403→
+   404→  const openCreateModal = () => {
+   405→    resetForm();
+   406→    setModalMode('create');
+   407→  };
+   408→
+   409→  const openEditModal = (user: User) => {
+   410→    setSelectedUser(user);
+   411→    setFormLoginId(user.loginId);
+   412→    setFormName(user.name);
+   413→    setFormPassword('');
+   414→    setFormShowPassword(false);
+   415→    setFormRole(user.role);
+   416→    setFormPermissions({
+   417→      ...emptyPermissions(),
+   418→      ...user.permissions,
+   419→    });
+   420→    setPermsExpanded(false);
+   421→    setModalMode('edit');
+   422→  };
+   423→
+   424→  const closeModal = () => {
+   425→    setModalMode(null);
+   426→    resetForm();
+   427→  };
+   428→
+   429→  const applyRolePreset = (role: string) => {
+   430→    const preset = permissionPresets[role];
+   431→    if (preset) {
+   432→      setFormPermissions(JSON.parse(JSON.stringify(preset)));
+   433→    }
+   434→  };
+   435→
+   436→  const handleRoleChange = (role: string) => {
+   437→    setFormRole(role as 'Admin' | 'Manager' | 'Cashier' | 'Staff');
+   438→    applyRolePreset(role);
+   439→  };
+   440→
+   441→  const togglePermission = (
+   442→    groupKey: keyof UserPermissions,
+   443→    actionKey: string,
+   444→  ) => {
+   445→    setFormPermissions((prev) => {
+   446→      const group = prev[groupKey];
+   447→      if (!isPermGroup(group)) return prev;
+   448→      return {
+   449→        ...prev,
+   450→        [groupKey]: {
+   451→          ...group,
+   452→          [actionKey]: !group[actionKey],
+   453→        },
+   454→      };
+   455→    });
+   456→  };
+   457→
+   458→  const handleSubmit = async () => {
+   459→    // Validation
+   460→    if (!formLoginId.trim()) {
+   461→      notify({ type: 'error', title: 'Validation Error', message: 'Login ID is required' });
+   462→      return;
+   463→    }
+   464→    if (!formName.trim()) {
+   465→      notify({ type: 'error', title: 'Validation Error', message: 'Name is required' });
+   466→      return;
+   467→    }
+   468→    if (modalMode === 'create' && !formPassword) {
+   469→      notify({ type: 'error', title: 'Validation Error', message: 'Password is required for new users' });
+   470→      return;
+   471→    }
+   472→    if (modalMode === 'create' && formPassword.length < 4) {
+   473→      notify({ type: 'error', title: 'Validation Error', message: 'Password must be at least 4 characters' });
+   474→      return;
+   475→    }
+   476→
+   477→    setSubmitting(true);
+   478→    try {
+   479→      const payload: Record<string, unknown> = {
+   480→        loginId: formLoginId.trim().toLowerCase(),
+   481→        name: formName.trim(),
+   482→        role: formRole,
+   483→        permissions: formPermissions,
+   484→      };
+   485→      if (formPassword) {
+   486→        payload.password = formPassword;
+   487→      }
+   488→
+   489→      let res: Response;
+   490→      if (modalMode === 'create') {
+   491→        res = await fetch('/api/users', {
+   492→          method: 'POST',
+   493→          headers: { ...authHeaders, 'Content-Type': 'application/json' },
+   494→          body: JSON.stringify(payload),
+   495→        });
+   496→      } else {
+   497→        res = await fetch(`/api/users/${selectedUser?.id}`, {
+   498→          method: 'PUT',
+   499→          headers: { ...authHeaders, 'Content-Type': 'application/json' },
+   500→          body: JSON.stringify(payload),
+   501→        });
+   502→      }
+   503→
+   504→      if (res.ok) {
+   505→        notify({
+   506→          type: 'success',
+   507→          title: modalMode === 'create' ? 'User Created' : 'User Updated',
+   508→          message: modalMode === 'create'
+   509→            ? `User "${formLoginId}" created successfully`
+   510→            : `User "${formLoginId}" updated successfully`,
+   511→        });
+   512→        closeModal();
+   513→        fetchUsers();
+   514→        // Refresh session to pick up any permission changes (especially if Admin edited own permissions)
+   515→        refreshSession();
+   516→      } else {
+   517→        const errData = await res.json().catch(() => null);
+   518→        notify({ type: 'error', title: 'Error', message: errData?.error || `Failed to ${modalMode} user` });
+   519→      }
+   520→    } catch {
+   521→      notify({ type: 'error', title: 'Network Error', message: 'Network error — server may be starting. Please try again.' });
+   522→    } finally {
+   523→      setSubmitting(false);
+   524→    }
+   525→  };
+   526→
+   527→  // ── Action Handlers ──
+   528→  const handleDeleteClick = (user: User) => {
+   529→    setActionTarget(user);
+   530→    setDeleteDialogOpen(true);
+   531→  };
+   532→
+   533→  const handleDeleteConfirm = async () => {
+   534→    if (!actionTarget) return;
+   535→    try {
+   536→      const res = await fetch(`/api/users/${actionTarget.id}`, {
+   537→        method: 'DELETE',
+   538→        headers: authHeaders,
+   539→      });
+   540→      if (res.ok) {
+   541→        notify({ type: 'success', title: 'User Deleted', message: `User "${actionTarget.loginId}" deleted successfully` });
+   542→        fetchUsers();
+   543→      } else {
+   544→        const errData = await res.json().catch(() => null);
+   545→        notify({ type: 'error', title: 'Error', message: errData?.error || 'Failed to delete user' });
+   546→      }
+   547→    } catch {
+   548→      notify({ type: 'error', title: 'Network Error', message: 'Network error while deleting user' });
+   549→    } finally {
+   550→      setDeleteDialogOpen(false);
+   551→      setActionTarget(null);
+   552→    }
+   553→  };
+   554→
+   555→  // Reset Password handlers
+   556→  const handleResetPwdClick = (user: User) => {
+   557→    setResetPwdTarget(user);
+   558→    setResetPwdNew('');
+   559→    setResetPwdConfirm('');
+   560→    setResetPwdShow(false);
+   561→    setResetPwdOpen(true);
+   562→  };
+   563→
+   564→  const handleResetPwdConfirm = async () => {
+   565→    if (!resetPwdTarget) return;
+   566→    if (!resetPwdNew || resetPwdNew.length < 4) {
+   567→      notify({ type: 'error', title: 'Validation Error', message: 'Password must be at least 4 characters' });
+   568→      return;
+   569→    }
+   570→    if (resetPwdNew !== resetPwdConfirm) {
+   571→      notify({ type: 'error', title: 'Validation Error', message: 'Passwords do not match' });
+   572→      return;
+   573→    }
+   574→    setResetPwdSubmitting(true);
+   575→    try {
+   576→      const res = await fetch(`/api/users/${resetPwdTarget.id}`, {
+   577→        method: 'PUT',
+   578→        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+   579→        body: JSON.stringify({ password: resetPwdNew, _passwordOnly: true }),
+   580→      });
+   581→      if (res.ok) {
+   582→        notify({ type: 'success', title: 'Password Reset', message: `Password reset for "${resetPwdTarget.name}"` });
+   583→        setResetPwdOpen(false);
+   584→        setResetPwdTarget(null);
+   585→      } else {
+   586→        const err = await res.json().catch(() => null);
+   587→        notify({ type: 'error', title: 'Error', message: err?.error || 'Failed to reset password' });
+   588→      }
+   589→    } catch {
+   590→      notify({ type: 'error', title: 'Network Error', message: 'Network error' });
+   591→    } finally {
+   592→      setResetPwdSubmitting(false);
+   593→    }
+   594→  };
+   595→
+   596→  const handleSuspendClick = (user: User) => {
+   597→    setActionTarget(user);
+   598→    setSuspendDialogOpen(true);
+   599→  };
+   600→
+   601→  const handleSuspendConfirm = async () => {
+   602→    if (!actionTarget) return;
+   603→    const newStatus = actionTarget.status === 'Active' ? 'Suspended' : 'Active';
+   604→    try {
+   605→      const res = await fetch(`/api/users/${actionTarget.id}`, {
+   606→        method: 'PUT',
+   607→        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+   608→        body: JSON.stringify({ status: newStatus }),
+   609→      });
+   610→      if (res.ok) {
+   611→        notify({
+   612→          type: 'success',
+   613→          title: newStatus === 'Active' ? 'User Activated' : 'User Suspended',
+   614→          message: `User "${actionTarget.loginId}" ${newStatus === 'Active' ? 'activated' : 'suspended'} successfully`,
+   615→        });
+   616→        fetchUsers();
+   617→      } else {
+   618→        const errData = await res.json().catch(() => null);
+   619→        notify({ type: 'error', title: 'Error', message: errData?.error || `Failed to ${newStatus === 'Active' ? 'activate' : 'suspend'} user` });
+   620→      }
+   621→    } catch {
+   622→      notify({ type: 'error', title: 'Network Error', message: 'Network error. Please try again.' });
+   623→    } finally {
+   624→      setSuspendDialogOpen(false);
+   625→      setActionTarget(null);
+   626→    }
+   627→  };
+   628→
+   629→  // ── Loading State ──
+   630→  if (loading) {
+   631→    return (
+   632→      <Card className="overflow-hidden border-0 shadow-sm">
+   633→        <CardHeader className="pb-4">
+   634→          <Skeleton className="h-7 w-52" />
+   635→          <Skeleton className="h-4 w-72" />
+   636→        </CardHeader>
+   637→        <div className="px-6 pb-6 space-y-4">
+   638→          <Skeleton className="h-10 w-full" />
+   639→          <Skeleton className="h-64 w-full rounded-lg" />
+   640→        </div>
+   641→      </Card>
+   642→    );
+   643→  }
+   644→
+   645→  // ── Render ──
+   646→  return (
+   647→    <div className="space-y-4">
+   648→      {/* Header */}
+   649→      <Card className="overflow-hidden border-0 shadow-sm">
+   650→        <CardHeader className="pb-2">
+   651→          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+   652→            <div className="flex items-center gap-3 min-w-0">
+   653→              <div className="flex size-10 items-center justify-center rounded-xl bg-green-100 dark:bg-green-950/50 text-green-600 dark:text-green-400 shrink-0">
+   654→                <Users className="size-5" />
+   655→              </div>
+   656→              <div className="min-w-0">
+   657→                <CardTitle className="text-lg flex items-center gap-2">
+   658→                  User Management
+   659→                  <Badge variant="outline" className="font-mono text-xs">
+   660→                    {users.length}
+   661→                  </Badge>
+   662→                </CardTitle>
+   663→                <CardDescription className="mt-0.5">
+   664→                  Manage staff accounts, roles, and permissions
+   665→                </CardDescription>
+   666→              </div>
+   667→            </div>
+   668→            <Button
+   669→              onClick={openCreateModal}
+   670→              className="gap-2 bg-green-600 hover:bg-green-700 text-white shrink-0 self-start sm:self-auto"
+   671→            >
+   672→              <UserPlus className="size-4" />
+   673→              Add User
+   674→            </Button>
+   675→          </div>
+   676→        </CardHeader>
+   677→      </Card>
+   678→
+   679→      {/* Search & Filters */}
+   680→      <Card className="overflow-hidden border-0 shadow-sm">
+   681→        <div className="p-4 space-y-3">
+   682→          {/* Search Row */}
+   683→          <div className="relative">
+   684→            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+   685→            <Input
+   686→              placeholder="Search by login ID or name..."
+   687→              value={searchQuery}
+   688→              onChange={(e) => setSearchQuery(e.target.value)}
+   689→              className="pl-9"
+   690→            />
+   691→            {searchQuery && (
+   692→              <button
+   693→                onClick={() => setSearchQuery('')}
+   694→                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+   695→              >
+   696→                <X className="size-4" />
+   697→              </button>
+   698→            )}
+   699→          </div>
+   700→
+   701→          {/* Filter Row */}
+   702→          <div className="flex flex-wrap items-center gap-2">
+   703→            <span className="text-xs font-medium text-muted-foreground">Filter:</span>
+   704→            {['all', ...availableRoles].map((role) => (
+   705→              <button
+   706→                key={role}
+   707→                onClick={() => setRoleFilter(role)}
+   708→                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all border ${
+   709→                  roleFilter === role
+   710→                    ? 'bg-green-600 text-white border-green-600'
+   711→                    : 'border-muted text-muted-foreground hover:border-green-300 hover:text-foreground'
+   712→                }`}
+   713→              >
+   714→                {role === 'all' ? 'All Roles' : role}
+   715→              </button>
+   716→            ))}
+   717→            <Separator orientation="vertical" className="h-5 mx-1" />
+   718→            {['all', 'Active', 'Suspended'].map((status) => (
+   719→              <button
+   720→                key={status}
+   721→                onClick={() => setStatusFilter(status)}
+   722→                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all border ${
+   723→                  statusFilter === status
+   724→                    ? status === 'Active'
+   725→                      ? 'bg-green-600 text-white border-green-600'
+   726→                      : status === 'Suspended'
+   727→                        ? 'bg-red-600 text-white border-red-600'
+   728→                        : 'bg-green-600 text-white border-green-600'
+   729→                    : 'border-muted text-muted-foreground hover:border-green-300 hover:text-foreground'
+   730→                }`}
+   731→              >
+   732→                {status === 'all' ? 'All Status' : status}
+   733→              </button>
+   734→            ))}
+   735→            {(searchQuery || roleFilter !== 'all' || statusFilter !== 'all') && (
+   736→              <button
+   737→                onClick={() => {
+   738→                  setSearchQuery('');
+   739→                  setRoleFilter('all');
+   740→                  setStatusFilter('all');
+   741→                }}
+   742→                className="ml-auto text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+   743→              >
+   744→                <RefreshCw className="size-3" />
+   745→                Clear filters
+   746→              </button>
+   747→            )}
+   748→          </div>
+   749→        </div>
+   750→      </Card>
+   751→
+   752→      {/* User Table */}
+   753→      <Card className="overflow-hidden border-0 shadow-sm">
+   754→        <div className="overflow-x-auto">
+   755→          {filteredUsers.length === 0 ? (
+   756→            /* Empty State / Error State */
+   757→            <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+   758→              <div className="size-16 rounded-2xl bg-muted flex items-center justify-center mb-4">
+   759→                {loading ? (
+   760→                  <Loader2 className="size-8 text-muted-foreground animate-spin" />
+   761→                ) : (
+   762→                  <Users className="size-8 text-muted-foreground" />
+   763→                )}
+   764→              </div>
+   765→              {loading ? (
+   766→                <>
+   767→                  <h3 className="text-base font-semibold text-foreground mb-1">
+   768→                    Loading users...
+   769→                  </h3>
+   770→                  <p className="text-sm text-muted-foreground">
+   771→                    Please wait while we fetch the user list.
+   772→                  </p>
+   773→                </>
+   774→              ) : users.length === 0 ? (
+   775→                <>
+   776→                  <h3 className="text-base font-semibold text-foreground mb-1">
+   777→                    No users yet
+   778→                  </h3>
+   779→                  <p className="text-sm text-muted-foreground mb-4 max-w-sm">
+   780→                    Get started by adding your first staff member. You can assign roles and permissions later.
+   781→                  </p>
+   782→                  <Button
+   783→                    onClick={openCreateModal}
+   784→                    className="gap-2 bg-green-600 hover:bg-green-700 text-white"
+   785→                  >
+   786→                    <UserPlus className="size-4" />
+   787→                    Add Your First User
+   788→                  </Button>
+   789→                </>
+   790→              ) : (
+   791→                <>
+   792→                  <h3 className="text-base font-semibold text-foreground mb-1">
+   793→                    No matching users
+   794→                  </h3>
+   795→                  <p className="text-sm text-muted-foreground mb-4">
+   796→                    Try adjusting your search or filter criteria
+   797→                  </p>
+   798→                </>
+   799→              )}
+   800→              {!loading && (
+   801→                <Button
+   802→                  variant="outline"
+   803→                  size="sm"
+   804→                  onClick={() => fetchUsers()}
+   805→                  className="mt-4 gap-2"
+   806→                >
+   807→                  <RefreshCw className="size-3.5" />
+   808→                  Retry
+   809→                </Button>
+   810→              )}
+   811→            </div>
+   812→          ) : (
+   813→            <Table>
+   814→              <TableHeader>
+   815→                <TableRow className="bg-muted/40 hover:bg-muted/40">
+   816→                  <TableHead className="font-semibold">Login ID</TableHead>
+   817→                  <TableHead className="font-semibold">Name</TableHead>
+   818→                  <TableHead className="font-semibold">Role</TableHead>
+   819→                  <TableHead className="font-semibold">Status</TableHead>
+   820→                  <TableHead className="font-semibold hidden md:table-cell">Last Login</TableHead>
+   821→                  <TableHead className="font-semibold hidden lg:table-cell">Created</TableHead>
+   822→                  <TableHead className="font-semibold text-right">Actions</TableHead>
+   823→                </TableRow>
+   824→              </TableHeader>
+   825→              <TableBody>
+   826→                {filteredUsers.map((user) => (
+   827→                  <TableRow key={user.id} className="group">
+   828→                    <TableCell className="font-mono text-sm font-medium">
+   829→                      {user.loginId}
+   830→                    </TableCell>
+   831→                    <TableCell className="font-medium">{user.name}</TableCell>
+   832→                    <TableCell>
+   833→                      <Badge
+   834→                        variant="outline"
+   835→                        className={roleBadgeClasses[user.role] || ''}
+   836→                      >
+   837→                        {user.role}
+   838→                      </Badge>
+   839→                    </TableCell>
+   840→                    <TableCell>
+   841→                      <Badge
+   842→                        variant="outline"
+   843→                        className={statusBadgeClasses[user.status] || ''}
+   844→                      >
+   845→                        <span className="size-1.5 rounded-full bg-current mr-1.5" />
+   846→                        {user.status}
+   847→                      </Badge>
+   848→                    </TableCell>
+   849→                    <TableCell className="hidden md:table-cell text-muted-foreground text-sm">
+   850→                      {formatDateTime(user.lastLogin)}
+   851→                    </TableCell>
+   852→                    <TableCell className="hidden lg:table-cell text-muted-foreground text-sm">
+   853→                      {formatDate(user.createdAt)}
+   854→                    </TableCell>
+   855→                    <TableCell className="text-right">
+   856→                      <div className="flex items-center justify-end gap-1">
+   857→                        <Button
+   858→                          variant="ghost"
+   859→                          size="sm"
+   860→                          className="size-8 p-0 text-muted-foreground hover:text-emerald-600"
+   861→                          onClick={() => handleResetPwdClick(user)}
+   862→                          title="Reset Password"
+   863→                        >
+   864→                          <Key className="size-4" />
+   865→                        </Button>
+   866→                        <Button
+   867→                          variant="ghost"
+   868→                          size="sm"
+   869→                          className="size-8 p-0 text-muted-foreground hover:text-green-600"
+   870→                          onClick={() => openEditModal(user)}
+   871→                          title="Edit user"
+   872→                        >
+   873→                          <Edit className="size-4" />
+   874→                        </Button>
+   875→                        <Button
+   876→                          variant="ghost"
+   877→                          size="sm"
+   878→                          className={`size-8 p-0 ${
+   879→                            user.status === 'Active'
+   880→                              ? 'text-muted-foreground hover:text-amber-600'
+   881→                              : 'text-muted-foreground hover:text-green-600'
+   882→                          }`}
+   883→                          onClick={() => handleSuspendClick(user)}
+   884→                          title={user.status === 'Active' ? 'Suspend user' : 'Activate user'}
+   885→                        >
+   886→                          {user.status === 'Active' ? (
+   887→                            <Ban className="size-4" />
+   888→                          ) : (
+   889→                            <CheckCircle2 className="size-4" />
+   890→                          )}
+   891→                        </Button>
+   892→                        <Button
+   893→                          variant="ghost"
+   894→                          size="sm"
+   895→                          className="size-8 p-0 text-muted-foreground hover:text-red-600"
+   896→                          onClick={() => handleDeleteClick(user)}
+   897→                          title="Delete user"
+   898→                        >
+   899→                          <Trash2 className="size-4" />
+   900→                        </Button>
+   901→                      </div>
+   902→                    </TableCell>
+   903→                  </TableRow>
+   904→                ))}
+   905→              </TableBody>
+   906→            </Table>
+   907→          )}
+   908→        </div>
+   909→
+   910→        {/* Table Footer */}
+   911→        {filteredUsers.length > 0 && (
+   912→          <div className="px-4 py-3 border-t bg-muted/20 text-xs text-muted-foreground flex items-center justify-between">
+   913→            <span>
+   914→              Showing {filteredUsers.length} of {users.length} user{users.length !== 1 ? 's' : ''}
+   915→            </span>
+   916→            <div className="flex items-center gap-3">
+   917→              <span className="flex items-center gap-1">
+   918→                <span className="size-2 rounded-full bg-green-500" />
+   919→                Active: {users.filter((u) => u.status === 'Active').length}
+   920→              </span>
+   921→              <span className="flex items-center gap-1">
+   922→                <span className="size-2 rounded-full bg-red-500" />
+   923→                Suspended: {users.filter((u) => u.status === 'Suspended').length}
+   924→              </span>
+   925→            </div>
+   926→          </div>
+   927→        )}
+   928→      </Card>
+   929→
+   930→      {/* ── Create / Edit User Dialog ── */}
+   931→      <Dialog
+   932→        open={modalMode !== null}
+   933→        onOpenChange={(open) => {
+   934→          if (!open) closeModal();
+   935→        }}
+   936→      >
+   937→        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto p-0">
+   938→          {/* Dialog Header Banner */}
+   939→          <div className="bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 p-5 text-white rounded-t-lg sticky top-0 z-10">
+   940→            <div className="pointer-events-none absolute -right-6 -top-6 size-24 rounded-full bg-white/10" />
+   941→            <DialogHeader>
+   942→              <DialogTitle className="text-white flex items-center gap-2 text-lg">
+   943→                {modalMode === 'create' ? (
+   944→                  <>
+   945→                    <UserPlus className="size-5" />
+   946→                    Create New User
+   947→                  </>
+   948→                ) : (
+   949→                  <>
+   950→                    <UserCog className="size-5" />
+   951→                    Edit User
+   952→                  </>
+   953→                )}
+   954→              </DialogTitle>
+   955→              <DialogDescription className="text-green-100 text-sm">
+   956→                {modalMode === 'create'
+   957→                  ? 'Add a new staff member to the system with role-based access'
+   958→                  : `Editing user: ${selectedUser?.loginId}`}
+   959→              </DialogDescription>
+   960→            </DialogHeader>
+   961→          </div>
+   962→
+   963→          <div className="p-5 space-y-5">
+   964→            {/* Login ID */}
+   965→            <div className="grid gap-2">
+   966→              <Label htmlFor="login-id" className="text-sm font-medium flex items-center gap-1.5">
+   967→                <Key className="size-3.5 text-green-600" />
+   968→                Login ID
+   969→              </Label>
+   970→              <Input
+   971→                id="login-id"
+   972→                placeholder="e.g. john.doe"
+   973→                value={formLoginId}
+   974→                onChange={(e) => setFormLoginId(e.target.value.toLowerCase())}
+   975→                disabled={modalMode === 'edit'}
+   976→                className="font-mono"
+   977→              />
+   978→              {modalMode === 'edit' && (
+   979→                <p className="text-[11px] text-muted-foreground">
+   980→                  Login ID cannot be changed after creation
+   981→                </p>
+   982→              )}
+   983→            </div>
+   984→
+   985→            {/* Name */}
+   986→            <div className="grid gap-2">
+   987→              <Label htmlFor="user-name" className="text-sm font-medium flex items-center gap-1.5">
+   988→                <Users className="size-3.5 text-green-600" />
+   989→                Full Name
+   990→              </Label>
+   991→              <Input
+   992→                id="user-name"
+   993→                placeholder="e.g. John Doe"
+   994→                value={formName}
+   995→                onChange={(e) => setFormName(e.target.value)}
+   996→              />
+   997→            </div>
+   998→
+   999→            {/* Password */}
+  1000→            <div className="grid gap-2">
+  1001→              <Label htmlFor="user-password" className="text-sm font-medium flex items-center gap-1.5">
+  1002→                <Lock className="size-3.5 text-green-600" />
+  1003→                Password
+  1004→                {modalMode === 'edit' && (
+  1005→                  <span className="text-muted-foreground font-normal text-xs">
+  1006→                    (leave empty to keep current)
+  1007→                  </span>
+  1008→                )}
+  1009→              </Label>
+  1010→              <div className="relative">
+  1011→                <Input
+  1012→                  id="user-password"
+  1013→                  type={formShowPassword ? 'text' : 'password'}
+  1014→                  placeholder={
+  1015→                    modalMode === 'create'
+  1016→                      ? 'Minimum 4 characters'
+  1017→                      : 'Leave empty to keep current password'
+  1018→                  }
+  1019→                  value={formPassword}
+  1020→                  onChange={(e) => setFormPassword(e.target.value)}
+  1021→                  className="pr-10"
+  1022→                />
+  1023→                <button
+  1024→                  type="button"
+  1025→                  onClick={() => setFormShowPassword(!formShowPassword)}
+  1026→                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+  1027→                  tabIndex={-1}
+  1028→                >
+  1029→                  {formShowPassword ? (
+  1030→                    <EyeOff className="size-4" />
+  1031→                  ) : (
+  1032→                    <Eye className="size-4" />
+  1033→                  )}
+  1034→                </button>
+  1035→              </div>
+  1036→            </div>
+  1037→
+  1038→            <Separator />
+  1039→
+  1040→            {/* Role Selector */}
+  1041→            <div className="grid gap-3">
+  1042→              <Label className="text-sm font-medium flex items-center gap-1.5">
+  1043→                <Shield className="size-3.5 text-green-600" />
+  1044→                Role
+  1045→              </Label>
+  1046→              <Select value={formRole} onValueChange={handleRoleChange}>
+  1047→                <SelectTrigger className="w-full">
+  1048→                  <SelectValue placeholder="Select a role" />
+  1049→                </SelectTrigger>
+  1050→                <SelectContent>
+  1051→                  {isAdmin && (
+  1052→                    <SelectItem value="Admin">
+  1053→                      <span className="flex items-center gap-2">
+  1054→                        <span className="size-2 rounded-full bg-red-500" />
+  1055→                        Admin — Full system access
+  1056→                      </span>
+  1057→                    </SelectItem>
+  1058→                  )}
+  1059→                  {isAdmin && (
+  1060→                    <SelectItem value="Manager">
+  1061→                      <span className="flex items-center gap-2">
+  1062→                        <span className="size-2 rounded-full bg-blue-500" />
+  1063→                        Manager — Operational management
+  1064→                      </span>
+  1065→                    </SelectItem>
+  1066→                  )}
+  1067→                  <SelectItem value="Cashier">
+  1068→                    <span className="flex items-center gap-2">
+  1069→                      <span className="size-2 rounded-full bg-amber-500" />
+  1070→                      Cashier — Billing & sales
+  1071→                    </span>
+  1072→                  </SelectItem>
+  1073→                  <SelectItem value="Staff">
+  1074→                    <span className="flex items-center gap-2">
+  1075→                      <span className="size-2 rounded-full bg-gray-500" />
+  1076→                      Staff — Basic access
+  1077→                    </span>
+  1078→                  </SelectItem>
+  1079→                </SelectContent>
+  1080→              </Select>
+  1081→            </div>
+  1082→
+  1083→            {/* Permission Presets Quick Buttons */}
+  1084→            <div className="grid gap-2">
+  1085→              <Label className="text-sm font-medium flex items-center gap-1.5">
+  1086→                Permission Presets
+  1087→              </Label>
+  1088→              <div className="flex flex-wrap gap-2">
+  1089→                {availableRoles.map((presetRole) => (
+  1090→                  <button
+  1091→                    key={presetRole}
+  1092→                    type="button"
+  1093→                    onClick={() => {
+  1094→                      setFormRole(presetRole as 'Admin' | 'Manager' | 'Cashier' | 'Staff');
+  1095→                      applyRolePreset(presetRole);
+  1096→                    }}
+  1097→                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border flex items-center gap-1.5 ${
+  1098→                      formRole === presetRole
+  1099→                        ? roleBadgeClasses[presetRole] + ' border-current shadow-sm'
+  1100→                        : 'border-muted text-muted-foreground hover:border-foreground/20 hover:text-foreground'
+  1101→                    }`}
+  1102→                  >
+  1103→                    {formRole === presetRole && <CheckCircle2 className="size-3" />}
+  1104→                    {presetRole}
+  1105→                  </button>
+  1106→                ))}
+  1107→              </div>
+  1108→              <p className="text-[11px] text-muted-foreground">
+  1109→                Click a preset to apply default permissions. You can customize them below.
+  1110→              </p>
+  1111→            </div>
+  1112→
+  1113→            <Separator />
+  1114→
+  1115→            {/* Permission Toggles */}
+  1116→            <div className="space-y-2">
+  1117→              <Label className="text-sm font-medium flex items-center gap-1.5">
+  1118→                <Key className="size-3.5 text-green-600" />
+  1119→                Permissions
+  1120→                <span className="text-muted-foreground font-normal text-xs">
+  1121→                  ({permissionGroups.reduce((sum, g) => sum + g.actions.length, 0)} permissions)
+  1122→                </span>
+  1123→              </Label>
+  1124→
+  1125→              <Collapsible open={permsExpanded} onOpenChange={setPermsExpanded}>
+  1126→                <CollapsibleTrigger asChild>
+  1127→                  <Button
+  1128→                    variant="outline"
+  1129→                    size="sm"
+  1130→                    className="w-full justify-between gap-2 text-sm"
+  1131→                  >
+  1132→                    <span className="flex items-center gap-2">
+  1133→                      {permsExpanded ? (
+  1134→                        <ChevronUp className="size-4" />
+  1135→                      ) : (
+  1136→                        <ChevronDown className="size-4" />
+  1137→                      )}
+  1138→                      {permsExpanded ? 'Hide' : 'Show'} permission details
+  1139→                    </span>
+  1140→                    <Badge variant="secondary" className="text-[10px] font-mono">
+  1141→                      {Object.values(formPermissions).reduce((count, group) => {
+  1142→                        if (isPermGroup(group)) {
+  1143→                          return count + Object.values(group).filter(Boolean).length;
+  1144→                        }
+  1145→                        return count;
+  1146→                      }, 0)}{' '}
+  1147→                      /{' '}
+  1148→                      {permissionGroups.reduce((sum, g) => sum + g.actions.length, 0)} active
+  1149→                    </Badge>
+  1150→                  </Button>
+  1151→                </CollapsibleTrigger>
+  1152→                <CollapsibleContent className="mt-3">
+  1153→                  <div className="rounded-xl border bg-muted/20 p-3 space-y-3 max-h-72 overflow-y-auto">
+  1154→                    {permissionGroups.map((group, groupIdx) => {
+  1155→                      const groupPerms = formPermissions[group.key];
+  1156→                      if (!isPermGroup(groupPerms)) return null;
+  1157→                      const activeCount = Object.values(groupPerms).filter(Boolean).length;
+  1158→                      const totalActions = group.actions.length;
+  1159→                      const allActive = activeCount === totalActions;
+  1160→
+  1161→                      return (
+  1162→                        <div key={group.key}>
+  1163→                          {groupIdx > 0 && <Separator className="mb-3" />}
+  1164→                          <div className="flex items-center justify-between mb-2">
+  1165→                            <div className="flex items-center gap-2">
+  1166→                              {group.icon}
+  1167→                              <span className="text-sm font-medium">{group.label}</span>
+  1168→                            </div>
+  1169→                            <div className="flex items-center gap-2">
+  1170→                              <span className="text-[10px] text-muted-foreground">
+  1171→                                {activeCount}/{totalActions}
+  1172→                              </span>
+  1173→                              <button
+  1174→                                type="button"
+  1175→                                onClick={() => {
+  1176→                                  setFormPermissions((prev) => ({
+  1177→                                    ...prev,
+  1178→                                    [group.key]: Object.fromEntries(
+  1179→                                      group.actions.map((a) => [a.key, !allActive]),
+  1180→                                    ),
+  1181→                                  }));
+  1182→                                }}
+  1183→                                className={`text-[10px] px-2 py-0.5 rounded-md transition-all border ${
+  1184→                                  allActive
+  1185→                                    ? 'border-muted text-muted-foreground hover:border-green-400 hover:text-green-600'
+  1186→                                    : 'border-green-400 text-green-600 hover:border-muted hover:text-muted-foreground'
+  1187→                                }`}
+  1188→                              >
+  1189→                                {allActive ? 'Disable All' : 'Enable All'}
+  1190→                              </button>
+  1191→                            </div>
+  1192→                          </div>
+  1193→                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-4 gap-y-2">
+  1194→                            {group.actions.map((action) => (
+  1195→                              <div
+  1196→                                key={action.key}
+  1197→                                className="flex items-center justify-between py-1"
+  1198→                              >
+  1199→                                <Label className="text-xs text-muted-foreground cursor-pointer">
+  1200→                                  {action.label}
+  1201→                                </Label>
+  1202→                                <Switch
+  1203→                                  checked={!!groupPerms[action.key]}
+  1204→                                  onCheckedChange={() =>
+  1205→                                    togglePermission(group.key, action.key)
+  1206→                                  }
+  1207→                                  className="scale-90"
+  1208→                                />
+  1209→                              </div>
+  1210→                            ))}
+  1211→                          </div>
+  1212→                        </div>
+  1213→                      );
+  1214→                    })}
+  1215→                  </div>
+  1216→                </CollapsibleContent>
+  1217→              </Collapsible>
+  1218→            </div>
+  1219→          </div>
+  1220→
+  1221→          {/* Dialog Footer */}
+  1222→          <div className="border-t p-4 flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sticky bottom-0 bg-background rounded-b-lg">
+  1223→            <Button variant="outline" onClick={closeModal} disabled={submitting}>
+  1224→              Cancel
+  1225→            </Button>
+  1226→            <Button
+  1227→              onClick={handleSubmit}
+  1228→              disabled={submitting}
+  1229→              className="gap-2 bg-green-600 hover:bg-green-700 text-white min-w-[140px]"
+  1230→            >
+  1231→              {submitting ? (
+  1232→                <>
+  1233→                  <Loader2 className="size-4 animate-spin" />
+  1234→                  {modalMode === 'create' ? 'Creating...' : 'Saving...'}
+  1235→                </>
+  1236→              ) : modalMode === 'create' ? (
+  1237→                <>
+  1238→                  <UserPlus className="size-4" />
+  1239→                  Create User
+  1240→                </>
+  1241→              ) : (
+  1242→                <>
+  1243→                  <CheckCircle2 className="size-4" />
+  1244→                  Save Changes
+  1245→                </>
+  1246→              )}
+  1247→            </Button>
+  1248→          </div>
+  1249→        </DialogContent>
+  1250→      </Dialog>
+  1251→
+  1252→      {/* ── Delete Confirmation Dialog ── */}
+  1253→      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+  1254→        <AlertDialogContent>
+  1255→          <AlertDialogHeader>
+  1256→            <AlertDialogTitle className="flex items-center gap-2 text-red-600">
+  1257→              <AlertTriangle className="size-5" />
+  1258→              Delete User
+  1259→            </AlertDialogTitle>
+  1260→            <AlertDialogDescription className="text-sm">
+  1261→              Are you sure you want to permanently delete{' '}
+  1262→              <span className="font-semibold text-foreground">
+  1263→                &quot;{actionTarget?.name}&quot;
+  1264→              </span>{' '}
+  1265→              ({actionTarget?.loginId})? This action cannot be undone.
+  1266→            </AlertDialogDescription>
+  1267→          </AlertDialogHeader>
+  1268→          <AlertDialogFooter>
+  1269→            <AlertDialogCancel>Cancel</AlertDialogCancel>
+  1270→            <AlertDialogAction
+  1271→              onClick={handleDeleteConfirm}
+  1272→              className="bg-red-600 hover:bg-red-700 text-white focus:ring-red-600"
+  1273→            >
+  1274→              <span className="flex items-center gap-2">
+  1275→                <Trash2 className="size-4" />
+  1276→                Delete Permanently
+  1277→              </span>
+  1278→            </AlertDialogAction>
+  1279→          </AlertDialogFooter>
+  1280→        </AlertDialogContent>
+  1281→      </AlertDialog>
+  1282→
+  1283→      {/* ── Suspend / Activate Confirmation Dialog ── */}
+  1284→      <AlertDialog open={suspendDialogOpen} onOpenChange={setSuspendDialogOpen}>
+  1285→        <AlertDialogContent>
+  1286→          <AlertDialogHeader>
+  1287→            <AlertDialogTitle className="flex items-center gap-2">
+  1288→              {actionTarget?.status === 'Active' ? (
+  1289→                <>
+  1290→                  <Ban className="size-5 text-amber-600" />
+  1291→                  <span className="text-amber-600">Suspend User</span>
+  1292→                </>
+  1293→              ) : (
+  1294→                <>
+  1295→                  <CheckCircle2 className="size-5 text-green-600" />
+  1296→                  <span className="text-green-600">Activate User</span>
+  1297→                </>
+  1298→              )}
+  1299→            </AlertDialogTitle>
+  1300→            <AlertDialogDescription className="text-sm">
+  1301→              {actionTarget?.status === 'Active' ? (
+  1302→                <>
+  1303→                  Are you sure you want to suspend{' '}
+  1304→                  <span className="font-semibold text-foreground">
+  1305→                    &quot;{actionTarget?.name}&quot;
+  1306→                  </span>{' '}
+  1307→                  ({actionTarget?.loginId})? They will not be able to log in until reactivated.
+  1308→                </>
+  1309→              ) : (
+  1310→                <>
+  1311→                  Are you sure you want to reactivate{' '}
+  1312→                  <span className="font-semibold text-foreground">
+  1313→                    &quot;{actionTarget?.name}&quot;
+  1314→                  </span>{' '}
+  1315→                  ({actionTarget?.loginId})? They will regain access to the system.
+  1316→                </>
+  1317→              )}
+  1318→            </AlertDialogDescription>
+  1319→          </AlertDialogHeader>
+  1320→          <AlertDialogFooter>
+  1321→            <AlertDialogCancel>Cancel</AlertDialogCancel>
+  1322→            <AlertDialogAction
+  1323→              onClick={handleSuspendConfirm}
+  1324→              className={
+  1325→                actionTarget?.status === 'Active'
+  1326→                  ? 'bg-amber-600 hover:bg-amber-700 text-white focus:ring-amber-600'
+  1327→                  : 'bg-green-600 hover:bg-green-700 text-white focus:ring-green-600'
+  1328→              }
+  1329→            >
+  1330→              <span className="flex items-center gap-2">
+  1331→                {actionTarget?.status === 'Active' ? (
+  1332→                  <>
+  1333→                    <Ban className="size-4" />
+  1334→                    Suspend User
+  1335→                  </>
+  1336→                ) : (
+  1337→                  <>
+  1338→                    <CheckCircle2 className="size-4" />
+  1339→                    Activate User
+  1340→                  </>
+  1341→                )}
+  1342→              </span>
+  1343→            </AlertDialogAction>
+  1344→          </AlertDialogFooter>
+  1345→        </AlertDialogContent>
+  1346→      </AlertDialog>
+  1347→    </div>
+  1348→  );
+  1349→}
+  1350→

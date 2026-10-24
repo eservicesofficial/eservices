@@ -1,0 +1,502 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→import React from 'react'
+     4→     4→
+     5→     5→// Safe JSON parse: handles cases where server returns HTML instead of JSON
+     6→     6→const safeJson = async (res: Response): Promise<Record<string, unknown>> => {
+     7→     7→  try { return await res.json() } catch { return { error: `Server error (${res.status})` } }
+     8→     8→}
+     9→     9→
+    10→    10→import {
+    11→    11→  UserPlus, Edit3, CircleDollarSign, Landmark, ArrowDownLeft, ArrowRightLeft,
+    12→    12→  Trash2, FileCheck2, FileText, FileUp, StickyNote, Tag, Loader2, Eye, Phone,
+    13→    13→  Layers, Wallet, CreditCard, Building2, BedDouble, Bitcoin, QrCode, CheckCircle2, Printer,
+    14→    14→  Flame, Hash, Stamp, Receipt, IndianRupee, CircleCheck, PartyPopper, ArrowLeft, Plus, X,
+    15→    15→  History, ChevronDown, LogOut,
+    16→    16→} from 'lucide-react'
+    17→    17→import { Button } from '@/components/ui/button'
+    18→    18→import { Input } from '@/components/ui/input'
+    19→    19→import { Badge } from '@/components/ui/badge'
+    20→    20→import { Label } from '@/components/ui/label'
+    21→    21→import { Separator } from '@/components/ui/separator'
+    22→    22→import { Textarea } from '@/components/ui/textarea'
+    23→    23→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+    24→    24→import {
+    25→    25→  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+    26→    26→} from '@/components/ui/dialog'
+    27→    27→import {
+    28→    28→  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+    29→    29→  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+    30→    30→} from '@/components/ui/alert-dialog'
+    31→    31→import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+    32→    32→import { ScrollArea } from '@/components/ui/scroll-area'
+    33→    33→import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+    34→    34→import { Checkbox } from '@/components/ui/checkbox'
+    35→    35→import { fmtCur, fmtDate, fmtINR, fmtDateTime, relTime, TYPE_BADGE, STATUS_BADGE, ALL_TAGS, TAG_COLORS, fmtFolioNum, ALL_PAYMENT_MODES, stripInternalDescriptions, TYPE_ICON } from './customer-folio-helpers'
+    36→    36→import { notify } from '@/lib/notification-store'
+    37→    37→import type {
+    38→    38→  CustomerDetail, Folio, Customer, CustomerForm, ChargeForm, PaymentForm,
+    39→    39→  RefundForm, TransferForm, DiscountForm, DocForm, NoteForm, SplitAmountForm,
+    40→    40→  CheckoutSettlementData, SplitPaymentItem, SettlementPayload,
+    41→    41→  HistoricalFolio, CustomerHistory,
+    42→    42→} from './customer-folio-types'
+    43→    43→
+    44→    44→// ─── Props interface for all dialogs ───
+    45→    45→interface DialogsProps {
+    46→    46→  detail: CustomerDetail | null
+    47→    47→  allFolios: Folio[]
+    48→    48→  selectedEntries: Set<string>
+    49→    49→  submitting: boolean
+    50→    50→  settlingMode: boolean
+    51→    51→  selectedFolioId: string | null
+    52→    52→  bal: number
+    53→    53→  selectedEntryObj: any
+    54→    54→  isActive: boolean
+    55→    55→  isCheckedOut: boolean
+    56→    56→  invoiceData: any
+    57→    57→  invoiceLoading: boolean
+    58→    58→  folioStatementData: any
+    59→    59→  customerTags: string[]
+    60→    60→  transferResults: Customer[]
+    61→    61→  paymentEntries: any[]
+    62→    62→
+    63→    63→  // Dialog open states
+    64→    64→  addOpen: boolean; editOpen: boolean; chargeOpen: boolean; paymentOpen: boolean
+    65→    65→  refundOpen: boolean; transferOpen: boolean; discountOpen: boolean; docOpen: boolean
+    66→    66→  noteOpen: boolean; tagsOpen: boolean; checkoutOpen: boolean; deleteOpen: boolean
+    67→    67→  splitAmountOpen: boolean; shiftOpen: boolean; removeOpen: boolean; voucherOpen: boolean
+    68→    68→  invoiceOpen: boolean; detailsSheetOpen: boolean
+    69→    69→
+    70→    70→  // Form values
+    71→    71→  form: CustomerForm; chargeForm: ChargeForm; paymentForm: PaymentForm
+    72→    72→  refundForm: RefundForm; transferForm: TransferForm; discountForm: DiscountForm
+    73→    73→  docForm: DocForm; noteForm: NoteForm; splitAmountForm: SplitAmountForm
+    74→    74→  invoiceFrom: string; invoiceTo: string
+    75→    75→  shiftTargetFolioId: string; duplicate: Customer | null
+    76→    76→
+    77→    77→  // Checkout Settlement
+    78→    78→  checkoutSettlementData: CheckoutSettlementData | null
+    79→    79→  checkoutSettlementOpen: boolean
+    80→    80→  settlementDialogPurpose: 'settle' | 'checkout'
+    81→    81→  splitPayments: SplitPaymentItem[]
+    82→    82→  setCheckoutSettlementOpen: (v: boolean) => void
+    83→    83→  setSplitPayments: (v: SplitPaymentItem[]) => void
+    84→    84→  handleMultiFolioSettlement: (payload: SettlementPayload) => void
+    85→    85→  handleAutoSettleAll: () => void
+    86→    86→
+    87→    87→  deleteFolioOpen: boolean; folioToDelete: string | null
+    88→    88→  setDeleteFolioOpen: (v: boolean) => void; handleDeleteFolio: () => void
+    89→    89→
+    90→    90→  // Setters
+    91→    91→  setAddOpen: (v: boolean) => void; setEditOpen: (v: boolean) => void
+    92→    92→  setChargeOpen: (v: boolean) => void; setPaymentOpen: (v: boolean) => void
+    93→    93→  setRefundOpen: (v: boolean) => void; setTransferOpen: (v: boolean) => void
+    94→    94→  setDiscountOpen: (v: boolean) => void; setDocOpen: (v: boolean) => void
+    95→    95→  setNoteOpen: (v: boolean) => void; setTagsOpen: (v: boolean) => void
+    96→    96→  setCheckoutOpen: (v: boolean) => void; setDeleteOpen: (v: boolean) => void
+    97→    97→  setSplitAmountOpen: (v: boolean) => void; setShiftOpen: (v: boolean) => void
+    98→    98→  setRemoveOpen: (v: boolean) => void; setVoucherOpen: (v: boolean) => void
+    99→    99→  setInvoiceOpen: (v: boolean) => void; setDetailsSheetOpen: (v: boolean) => void
+   100→   100→  setForm: (f: CustomerForm) => void; setChargeForm: (f: ChargeForm) => void
+   101→   101→  setPaymentForm: (f: PaymentForm) => void; setRefundForm: (f: RefundForm) => void
+   102→   102→  setTransferForm: (f: TransferForm) => void; setDiscountForm: (f: DiscountForm) => void
+   103→   103→  setDocForm: (f: DocForm) => void; setNoteForm: (f: NoteForm) => void
+   104→   104→  setSplitAmountForm: (f: SplitAmountForm) => void
+   105→   105→  setInvoiceFrom: (v: string) => void; setInvoiceTo: (v: string) => void
+   106→   106→  setShiftTargetFolioId: (v: string) => void
+   107→   107→  setDuplicate: (v: Customer | null) => void
+   108→   108→
+   109→   109→  // Handlers
+   110→   110→  handleCreate: () => void; handleUpdate: () => void; handleCharge: () => void
+   111→   111→  handlePayment: () => void; handleSettle: () => void; handleRefund: () => void
+   112→   112→  handleDiscount: () => void; handleTransfer: () => void; handleShift: () => void
+   113→   113→  handleSplitAmount: () => void; handleRemove: () => void; handleCheckout: () => void
+   114→   114→  handleDelete: () => void; handleAddDoc: () => void; handleAddNote: () => void
+   115→   115→  handleToggleTag: (tagName: string) => void; handleDeleteDoc: (docId: string) => void
+   116→   116→  handleDeleteNote: (noteId: string) => void
+   117→   117→  fetchInvoiceData: () => void; fetchFolioStatement: (folioId: string) => void
+   118→   118→  printInvoice: () => void; printCompleteInvoice: () => void; printSingleFolio: () => void; printVoucherHistory: (entries?: any[]) => void
+   119→   119→  closeDialogs: () => void
+   120→   120→  searchTransferTargets: (q: string) => void
+   121→   121→
+   122→   122→  // Enhanced props (optional — for TXN numbers, invoice generation, post-checkout)
+   123→   123→  apiHeaders?: Record<string, string>
+   124→   124→  onRefresh?: () => void
+   125→   125→  onPrintReceipt?: () => void
+   126→   126→  onThermalPrintReceipt?: () => void
+   127→   127→  onThermalPrintInvoice?: () => void
+   128→   128→  onThermalPrintVoucher?: () => void
+   129→   129→  lastCreatedDocNo?: string | null
+   130→   130→  lastCreatedType?: string | null
+   131→   131→
+   132→   132→  // History
+   133→   133→  historyOpen: boolean
+   134→   134→  setHistoryOpen: (v: boolean) => void
+   135→   135→  onPrintHistoryFolio?: (folioData: { entries: any[]; openingBalance: number; closingBalance: number }) => void
+   136→   136→}
+   137→   137→
+   138→   138→export function CustomerFolioDialogs({
+   139→   139→  detail, allFolios, selectedEntries, submitting, settlingMode,
+   140→   140→  selectedFolioId, bal, selectedEntryObj, isActive, isCheckedOut,
+   141→   141→  invoiceData, invoiceLoading, folioStatementData, customerTags,
+   142→   142→  transferResults, paymentEntries,
+   143→   143→  addOpen, editOpen, chargeOpen, paymentOpen, refundOpen, transferOpen,
+   144→   144→  discountOpen, docOpen, noteOpen, tagsOpen, checkoutOpen, deleteOpen,
+   145→   145→  splitAmountOpen, shiftOpen, removeOpen, voucherOpen, invoiceOpen,
+   146→   146→  detailsSheetOpen,
+   147→   147→  form, chargeForm, paymentForm, refundForm, transferForm, discountForm,
+   148→   148→  docForm, noteForm, splitAmountForm, invoiceFrom, invoiceTo,
+   149→   149→  shiftTargetFolioId, duplicate,
+   150→   150→  checkoutSettlementData, checkoutSettlementOpen, settlementDialogPurpose, splitPayments,
+   151→   151→  setCheckoutSettlementOpen, setSplitPayments,
+   152→   152→  handleMultiFolioSettlement, handleAutoSettleAll,
+   153→   153→  setAddOpen, setEditOpen, setChargeOpen, setPaymentOpen, setRefundOpen,
+   154→   154→  setTransferOpen, setDiscountOpen, setDocOpen, setNoteOpen, setTagsOpen,
+   155→   155→  setCheckoutOpen, setDeleteOpen, setSplitAmountOpen, setShiftOpen,
+   156→   156→  setRemoveOpen, setVoucherOpen, setInvoiceOpen, setDetailsSheetOpen,
+   157→   157→  setForm, setChargeForm, setPaymentForm, setRefundForm, setTransferForm,
+   158→   158→  setDiscountForm, setDocForm, setNoteForm, setSplitAmountForm,
+   159→   159→  setInvoiceFrom, setInvoiceTo, setShiftTargetFolioId, setDuplicate,
+   160→   160→  handleCreate, handleUpdate, handleCharge, handlePayment, handleSettle,
+   161→   161→  handleRefund, handleDiscount, handleTransfer, handleShift, handleSplitAmount,
+   162→   162→  handleRemove, handleCheckout, handleDelete, handleAddDoc, handleAddNote,
+   163→   163→  handleToggleTag, handleDeleteDoc, handleDeleteNote,
+   164→   164→  fetchInvoiceData, fetchFolioStatement, printInvoice, printCompleteInvoice, printSingleFolio, printVoucherHistory,
+   165→   165→  closeDialogs, searchTransferTargets,
+   166→   166→  deleteFolioOpen, folioToDelete,
+   167→   167→  setDeleteFolioOpen, handleDeleteFolio,
+   168→   168→  // Enhanced props
+   169→   169→  apiHeaders, onRefresh, onPrintReceipt, onThermalPrintReceipt,
+   170→   170→  onThermalPrintInvoice, onThermalPrintVoucher,
+   171→   171→  lastCreatedDocNo, lastCreatedType,
+   172→   172→  // History
+   173→   173→  historyOpen, setHistoryOpen, onPrintHistoryFolio,
+   174→   174→}: DialogsProps) {
+   175→   175→
+   176→   176→  // ─── Internal State ───
+   177→   177→  const [invoiceNumber, setInvoiceNumber] = React.useState('')
+   178→   178→  const [invNumLoading, setInvNumLoading] = React.useState(false)
+   179→   179→  const [localSubmitting, setLocalSubmitting] = React.useState(false)
+   180→   180→  const [entrySuccess, setEntrySuccess] = React.useState<{ show: boolean; docNo: string; type: string } | null>(null)
+   181→   181→  const [postCheckoutOpen, setPostCheckoutOpen] = React.useState(false)
+   182→   182→  const [splitMode, setSplitMode] = React.useState(false)
+   183→   183→  const [localSplitItems, setLocalSplitItems] = React.useState<{ method: string; amount: string; reference: string }[]>([
+   184→   184→    { method: 'Cash', amount: '', reference: '' },
+   185→   185→  ])
+   186→   186→
+   187→   187→  // ─── History state ───
+   188→   188→  const [historyLoading, setHistoryLoading] = React.useState(false)
+   189→   189→  const [customerHistory, setCustomerHistory] = React.useState<CustomerHistory | null>(null)
+   190→   190→  const [expandedFolioId, setExpandedFolioId] = React.useState<string | null>(null)
+   191→   191→  const [expandedFolioEntries, setExpandedFolioEntries] = React.useState<Record<string, any[]>>({})
+   192→   192→  const [selectedVoucherIds, setSelectedVoucherIds] = React.useState<Set<string>>(new Set())
+   193→   193→
+   194→   194→  // Fetch history for the CURRENT customer (not all checked-out customers)
+   195→   195→  React.useEffect(() => {
+   196→   196→    if (historyOpen && detail && apiHeaders) {
+   197→   197→      fetchCustomerHistory()
+   198→   198→    } else if (!historyOpen) {
+   199→   199→      setCustomerHistory(null)
+   200→   200→      setExpandedFolioId(null)
+   201→   201→      setExpandedFolioEntries({})
+   202→   202→    }
+   203→   203→  }, [historyOpen, detail?.id])
+   204→   204→
+   205→   205→  const fetchCustomerHistory = React.useCallback(async () => {
+   206→   206→    if (!detail || !apiHeaders) return
+   207→   207→    try {
+   208→   208→      setHistoryLoading(true)
+   209→   209→      const res = await fetch(`/api/folio/customers/${detail.id}/history`, { headers: apiHeaders })
+   210→   210→      if (res.ok) {
+   211→   211→        const data = await res.json() as CustomerHistory
+   212→   212→        setCustomerHistory(data)
+   213→   213→      }
+   214→   214→    } catch { /* ignore */ } finally { setHistoryLoading(false) }
+   215→   215→  }, [detail?.id, apiHeaders])
+   216→   216→
+   217→   217→  const toggleFolioEntries = (folioId: string) => {
+   218→   218→    if (expandedFolioId === folioId) {
+   219→   219→      setExpandedFolioId(null)
+   220→   220→    } else {
+   221→   221→      const folio = customerHistory?.historicalFolios.find(f => f.folioId === folioId)
+   222→   222→      if (folio) {
+   223→   223→        setExpandedFolioId(folioId)
+   224→   224→        setExpandedFolioEntries(prev => ({
+   225→   225→          ...prev,
+   226→   226→          [folioId]: (folio.entries || []),
+   227→   227→        }))
+   228→   228→      }
+   229→   229→    }
+   230→   230→  }
+   231→   231→
+   232→   232→  // ─── Track checkout transition ───
+   233→   233→  const wasCheckedOut = React.useRef(isCheckedOut)
+   234→   234→  React.useEffect(() => {
+   235→   235→    if (isCheckedOut && !wasCheckedOut.current) {
+   236→   236→      setPostCheckoutOpen(true)
+   237→   237→    }
+   238→   238→    wasCheckedOut.current = isCheckedOut
+   239→   239→  }, [isCheckedOut])
+   240→   240→
+   241→   241→  // ─── Show TXN number when lastCreatedDocNo changes ───
+   242→   242→  React.useEffect(() => {
+   243→   243→    if (lastCreatedDocNo && lastCreatedType) {
+   244→   244→      setEntrySuccess({ show: true, docNo: lastCreatedDocNo, type: lastCreatedType })
+   245→   245→      const timer = setTimeout(() => setEntrySuccess(null), 4000)
+   246→   246→      return () => clearTimeout(timer)
+   247→   247→    }
+   248→   248→  }, [lastCreatedDocNo, lastCreatedType])
+   249→   249→
+   250→   250→  // ─── Items for charge selector (Req 5) ───
+   251→   251→  const [items, setItems] = React.useState<{ id: string; name: string; price: number }[]>([])
+   252→   252→  const [itemsLoading, setItemsLoading] = React.useState(false)
+   253→   253→  React.useEffect(() => {
+   254→   254→    if (chargeOpen && apiHeaders) {
+   255→   255→      setItemsLoading(true)
+   256→   256→      fetch('/api/items', { headers: apiHeaders }).then(r => r.ok ? r.json() : []).then((list: any[]) => {
+   257→   257→        setItems((list || []).map((it: any) => ({ id: it.id, name: it.name, price: it.price || 0 })))
+   258→   258→      }).catch(() => {}).finally(() => setItemsLoading(false))
+   259→   259→    }
+   260→   260→  }, [chargeOpen, apiHeaders])
+   261→   261→
+   262→   262→  // Handle item selection
+   263→   263→  const handleItemSelect = React.useCallback((itemId: string) => {
+   264→   264→    const item = items.find(it => it.id === itemId)
+   265→   265→    if (item) {
+   266→   266→      setChargeForm({
+   267→   267→        ...chargeForm,
+   268→   268→        selectedItem: itemId,
+   269→   269→        selectedItemPrice: String(item.price),
+   270→   270→        description: item.name,
+   271→   271→        amount: item.price > 0 ? String(item.price) : chargeForm.amount,
+   272→   272→      })
+   273→   273→    }
+   274→   274→  }, [items, chargeForm])
+   275→   275→
+   276→   276→  // ─── Fetch invoice number ───
+   277→   277→  const fetchInvoiceNumber = React.useCallback(async () => {
+   278→   278→    if (!detail || !apiHeaders) return
+   279→   279→    try {
+   280→   280→      setInvNumLoading(true)
+   281→   281→      const res = await fetch(`/api/folio/customers/${detail.id}/invoice-number`, {
+   282→   282→        method: 'POST',
+   283→   283→        headers: apiHeaders,
+   284→   284→      })
+   285→   285→      if (res.ok) {
+   286→   286→        const data = await res.json()
+   287→   287→        setInvoiceNumber(data.invoiceNumber)
+   288→   288→      }
+   289→   289→    } catch { /* ignore */ } finally { setInvNumLoading(false) }
+   290→   290→  }, [detail?.id, apiHeaders])
+   291→   291→
+   292→   292→  // ─── Fetch invoice number when invoice dialog opens ───
+   293→   293→  React.useEffect(() => {
+   294→   294→    if (invoiceOpen && detail && apiHeaders && !invoiceNumber) {
+   295→   295→      fetchInvoiceNumber()
+   296→   296→    }
+   297→   297→  }, [invoiceOpen, detail?.id, apiHeaders])
+   298→   298→
+   299→   299→  React.useEffect(() => {
+   300→   300→    if (invoiceOpen && !invoiceData && detail && selectedFolioId) {
+   301→   301→      fetchInvoiceData()
+   302→   302→    }
+   303→   303→  }, [invoiceOpen])
+   304→   304→
+   305→   305→  // ─── Entry creation with TXN tracking ───
+   306→   306→  const createEntryWithTxn = React.useCallback(async (type: string, data: any) => {
+   307→   307→    if (!detail || !selectedFolioId || !apiHeaders) {
+   308→   308→      return null
+   309→   309→    }
+   310→   310→    try {
+   311→   311→      setLocalSubmitting(true)
+   312→   312→      const res = await fetch(`/api/folio/customers/${detail.id}/ledger`, {
+   313→   313→        method: 'POST',
+   314→   314→        headers: { ...apiHeaders, 'Content-Type': 'application/json' },
+   315→   315→        body: JSON.stringify({ type, folioId: selectedFolioId, ...data }),
+   316→   316→      })
+   317→   317→      if (res.ok) {
+   318→   318→        const entry = await res.json()
+   319→   319→        const docNo = entry?.docNo || ''
+   320→   320→        setEntrySuccess({ show: true, docNo, type })
+   321→   321→        notify({ type: 'success', title: `${type} ${docNo}`, message: `${type} entry ${docNo} created successfully` })
+   322→   322→        closeDialogs()
+   323→   323→        onRefresh?.()
+   324→   324→        setTimeout(() => setEntrySuccess(null), 4000)
+   325→   325→        return entry
+   326→   326→      } else {
+   327→   327→        const e = await safeJson(res)
+   328→   328→        notify({ type: 'error', title: 'Error', message: (e.error as string) || 'Failed' })
+   329→   329→        return null
+   330→   330→      }
+   331→   331→    } catch {
+   332→   332→      notify({ type: 'error', title: 'Error', message: 'Network error' })
+   333→   333→      return null
+   334→   334→    } finally {
+   335→   335→      setLocalSubmitting(false)
+   336→   336→    }
+   337→   337→  }, [detail?.id, selectedFolioId, apiHeaders, closeDialogs, onRefresh])
+   338→   338→
+   339→   339→  // ─── Settlement with TXN tracking ───
+   340→   340→  const settleWithTxn = React.useCallback(async () => {
+   341→   341→    if (!detail || !paymentForm.amount || !apiHeaders) {
+   342→   342→      handleSettle()
+   343→   343→      return
+   344→   344→    }
+   345→   345→    try {
+   346→   346→      setLocalSubmitting(true)
+   347→   347→      // When master folio is selected, use autoAllocate to distribute across all folios
+   348→   348→      const isMaster = selectedFolioId === 'master'
+   349→   349→      const payload = isMaster
+   350→   350→        ? { amount: parseFloat(paymentForm.amount), mode: paymentForm.mode, reference: paymentForm.reference, description: paymentForm.description || `Settlement via ${paymentForm.mode}`, autoAllocate: true }
+   351→   351→        : { amount: parseFloat(paymentForm.amount), mode: paymentForm.mode, reference: paymentForm.reference, description: paymentForm.description || `Settlement via ${paymentForm.mode}`, folioId: selectedFolioId }
+   352→   352→      const res = await fetch(`/api/folio/customers/${detail.id}/settle`, {
+   353→   353→        method: 'POST',
+   354→   354→        headers: { ...apiHeaders, 'Content-Type': 'application/json' },
+   355→   355→        body: JSON.stringify(payload),
+   356→   356→      })
+   357→   357→      if (res.ok) {
+   358→   358→        const data = await res.json()
+   359→   359→        // Auto-allocate may return settledFolios array instead of single ledgerEntry
+   360→   360→        const docNo = data?.ledgerEntry?.docNo || (data?.settledFolios?.[0] ? 'Multi-Folio' : '')
+   361→   361→        setEntrySuccess({ show: true, docNo, type: 'Settlement' })
+   362→   362→        notify({ type: 'success', title: `Settlement ${docNo}`, message: data.message || `Settlement ${docNo} processed successfully` })
+   363→   363→        closeDialogs()
+   364→   364→        onRefresh?.()
+   365→   365→        setTimeout(() => setEntrySuccess(null), 4000)
+   366→   366→      } else {
+   367→   367→        const e = await safeJson(res)
+   368→   368→        notify({ type: 'error', title: 'Settlement Failed', message: (e.error as string) || 'Failed to process settlement' })
+   369→   369→      }
+   370→   370→    } catch {
+   371→   371→      notify({ type: 'error', title: 'Error', message: 'Network error' })
+   372→   372→    } finally {
+   373→   373→      setLocalSubmitting(false)
+   374→   374→    }
+   375→   375→  }, [detail?.id, selectedFolioId, apiHeaders, paymentForm, handleSettle, closeDialogs, onRefresh])
+   376→   376→
+   377→   377→  // ─── Transfer with TXN tracking ───
+   378→   378→  const transferWithTxn = React.useCallback(async () => {
+   379→   379→    if (!detail || !transferForm.targetCustomerId || !apiHeaders) {
+   380→   380→      handleTransfer()
+   381→   381→      return
+   382→   382→    }
+   383→   383→    try {
+   384→   384→      setLocalSubmitting(true)
+   385→   385→      // If entries are selected, transfer only those; otherwise pure balance transfer
+   386→   386→      const selectedEntryIds = selectedEntries.size > 0 ? Array.from(selectedEntries) : undefined
+   387→   387→      const res = await fetch(`/api/folio/customers/${detail.id}/transfer`, {
+   388→   388→        method: 'POST',
+   389→   389→        headers: { ...apiHeaders, 'Content-Type': 'application/json' },
+   390→   390→        body: JSON.stringify({
+   391→   391→          targetCustomerId: transferForm.targetCustomerId,
+   392→   392→          amount: parseFloat(transferForm.amount) || 0,
+   393→   393→          description: transferForm.description,
+   394→   394→          entryIds: selectedEntryIds,
+   395→   395→        }),
+   396→   396→      })
+   397→   397→      if (res.ok) {
+   398→   398→        const data = await res.json()
+   399→   399→        const docNo = data?.source?.entry?.docNo || ''
+   400→   400→        setEntrySuccess({ show: true, docNo, type: 'Transfer' })
+   401→   401→        notify({ type: 'success', title: `Transfer ${docNo}`, message: data.message || `Transfer ${docNo} processed successfully` })
+   402→   402→        closeDialogs()
+   403→   403→        onRefresh?.()
+   404→   404→        setTimeout(() => setEntrySuccess(null), 4000)
+   405→   405→      } else {
+   406→   406→        const e = await safeJson(res)
+   407→   407→        notify({ type: 'error', title: 'Error', message: (e.error as string) || 'Failed' })
+   408→   408→      }
+   409→   409→    } catch {
+   410→   410→      notify({ type: 'error', title: 'Error', message: 'Network error' })
+   411→   411→    } finally {
+   412→   412→      setLocalSubmitting(false)
+   413→   413→    }
+   414→   414→  }, [detail?.id, apiHeaders, transferForm, handleTransfer, closeDialogs, onRefresh])
+   415→   415→
+   416→   416→  // ─── Split payment helpers for checkout ───
+   417→   417→  const addSplitItem = () => {
+   418→   418→    setLocalSplitItems(prev => [...prev, { method: 'Cash', amount: '', reference: '' }])
+   419→   419→  }
+   420→   420→  const removeSplitItem = (idx: number) => {
+   421→   421→    setLocalSplitItems(prev => prev.filter((_, i) => i !== idx))
+   422→   422→  }
+   423→   423→  const updateSplitItem = (idx: number, field: string, value: string) => {
+   424→   424→    setLocalSplitItems(prev => prev.map((item, i) => i === idx ? { ...item, [field]: value } : item))
+   425→   425→  }
+   426→   426→  const totalSplitAmount = localSplitItems.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0)
+   427→   427→  const effectiveOutstanding = checkoutSettlementData ? Math.max(0, checkoutSettlementData.totalOutstanding) : 0
+   428→   428→  const splitRemaining = checkoutSettlementData ? Math.max(0, effectiveOutstanding - totalSplitAmount) : 0
+   429→   429→
+   430→   430→  // ─── Computed GST data from invoiceData ───
+   431→   431→  const gstData = React.useMemo(() => {
+   432→   432→    if (!invoiceData?.entries) return null
+   433→   433→    const entries = invoiceData.entries as any[]
+   434→   434→    const taxableEntries = entries.filter((e: any) => e.debit > 0)
+   435→   435→    const taxableAmount = taxableEntries.reduce((sum: number, e: any) => sum + (e.debit || 0) - (e.tax || 0) - (e.discount || 0), 0)
+   436→   436→    const totalTax = entries.reduce((sum: number, e: any) => sum + (e.tax || 0), 0)
+   437→   437→    const totalDiscount = entries.reduce((sum: number, e: any) => sum + (e.discount || 0), 0)
+   438→   438→    const totalCharges = entries.reduce((sum: number, e: any) => sum + (e.debit || 0), 0)
+   439→   439→    const cgst = totalTax / 2
+   440→   440→    const sgst = totalTax / 2
+   441→   441→    const totalPayments = entries.reduce((sum: number, e: any) => sum + (e.credit || 0), 0)
+   442→   442→    const advancePayment = bal < 0 ? Math.abs(bal) : 0
+   443→   443→    return { taxableAmount, totalTax, totalDiscount, totalCharges, cgst, sgst, totalPayments, advancePayment, entryCount: taxableEntries.length }
+   444→   444→  }, [invoiceData, bal])
+   445→   445→
+   446→   446→  // ─── Active submitting state (local or prop) ───
+   447→   447→  const isSubmitting = localSubmitting || submitting
+   448→   448→
+   449→   449→  // ─── Entry success banner component ───
+   450→   450→  const EntrySuccessBanner = () => {
+   451→   451→    if (!entrySuccess?.show) return null
+   452→   452→    return (
+   453→   453→      <div className="fixed bottom-4 right-4 z-[100] animate-in slide-in-from-bottom-2 fade-in duration-300">
+   454→   454→        <div className="bg-emerald-600 text-white rounded-xl shadow-lg px-4 py-3 flex items-center gap-3 min-w-[260px]">
+   455→   455→          <div className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center shrink-0">
+   456→   456→            <CircleCheck className="size-4 text-white" />
+   457→   457→          </div>
+   458→   458→          <div className="min-w-0">
+   459→   459→            <div className="text-xs font-bold">{entrySuccess.type} Created</div>
+   460→   460→            <div className="text-[11px] text-emerald-100 flex items-center gap-1 mt-0.5">
+   461→   461→              <Hash className="size-3" />
+   462→   462→              <span className="font-mono font-bold">{entrySuccess.docNo}</span>
+   463→   463→            </div>
+   464→   464→          </div>
+   465→   465→        </div>
+   466→   466→      </div>
+   467→   467→    )
+   468→   468→  }
+   469→   469→
+   470→   470→  // ─── Tax calculation preview ───
+   471→   471→  const TaxPreview = ({ chargeForm }: { chargeForm: ChargeForm }) => {
+   472→   472→    if (!chargeForm.taxEnabled || !chargeForm.amount || parseFloat(chargeForm.amount) <= 0) return null
+   473→   473→    const taxPct = parseFloat(chargeForm.tax) || 0
+   474→   474→    const amt = parseFloat(chargeForm.amount) || 0
+   475→   475→    if (taxPct <= 0) return null
+   476→   476→    if (chargeForm.taxType === 'exclude') {
+   477→   477→      const taxAmt = amt * (taxPct / 100)
+   478→   478→      const total = amt + taxAmt
+   479→   479→      return <div className="pl-6 bg-emerald-50 dark:bg-emerald-900/20 rounded-md p-2 text-[11px] space-y-0.5"><div className="text-muted-foreground">Base: <span className="font-semibold text-foreground">₹{amt.toLocaleString('en-IN')}</span></div><div className="text-muted-foreground">Tax ({taxPct}%): <span className="font-semibold text-emerald-600">+₹{taxAmt.toFixed(2)}</span></div><div className="font-bold">Total Charge: ₹{total.toFixed(2)}</div></div>
+   480→   480→    }
+   481→   481→    const taxAmt = amt - (amt / (1 + taxPct / 100))
+   482→   482→    const base = amt - taxAmt
+   483→   483→    return <div className="pl-6 bg-emerald-50 dark:bg-emerald-900/20 rounded-md p-2 text-[11px] space-y-0.5"><div className="text-muted-foreground">Total (incl. tax): <span className="font-semibold text-foreground">₹{amt.toLocaleString('en-IN')}</span></div><div className="text-muted-foreground">Base Amount: <span className="font-semibold">₹{base.toFixed(2)}</span></div><div className="text-muted-foreground">Tax ({taxPct}%): <span className="font-semibold text-emerald-600">₹{taxAmt.toFixed(2)}</span></div></div>
+   484→   484→  }
+   485→   485→
+   486→   486→  // ─── Per-entry-type success wrapper ───
+   487→   487→  const SuccessOverlay = ({ docNo, type, label }: { docNo: string; type: string; label: string }) => (
+   488→   488→    <div className="flex flex-col items-center justify-center py-6 gap-3">
+   489→   489→      <div className="w-14 h-14 rounded-2xl bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center">
+   490→   490→        <PartyPopper className="size-7 text-emerald-600 dark:text-emerald-400" />
+   491→   491→      </div>
+   492→   492→      <div className="text-center">
+   493→   493→        <div className="text-sm font-bold text-slate-800 dark:text-slate-100">{label}</div>
+   494→   494→        <div className="mt-2 inline-flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-lg px-4 py-2.5">
+   495→   495→          <Hash className="size-4 text-emerald-600 dark:text-emerald-400" />
+   496→   496→          <span className="font-mono text-base font-bold text-emerald-700 dark:text-emerald-300">{docNo}</span>
+   497→   497→        </div>
+   498→   498→        <div className="text-[11px] text-slate-400 mt-2">Transaction recorded successfully</div>
+   499→   499→      </div>
+   500→   500→    </div>
+
+[showing lines 1-500 of 1979; use offset=501 with limit to continue reading]

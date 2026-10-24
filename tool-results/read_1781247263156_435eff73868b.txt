@@ -1,0 +1,681 @@
+     1→    50→  align?: 'left' | 'right' | 'center'
+     2→    51→  format?: 'currency' | 'date' | 'datetime' | 'badge' | 'amount' | 'tags'
+     3→    52→  badgeMap?: Record<string, string>
+     4→    53→  width?: string
+     5→    54→}
+     6→    55→
+     7→    56→const REPORT_COLUMNS: Record<ReportType, ColDef[]> = {
+     8→    57→  summary: [
+     9→    58→    { key: 'customerId', label: 'ID', width: '90px' },
+    10→    59→    { key: 'fullName', label: 'Customer' },
+    11→    60→    { key: 'mobile', label: 'Mobile', width: '120px' },
+    12→    61→    { key: 'customerType', label: 'Type', format: 'badge', width: '90px' },
+    13→    62→    { key: 'status', label: 'Status', format: 'badge', width: '90px' },
+    14→    63→    { key: 'balance', label: 'Balance', format: 'currency', align: 'right', width: '110px' },
+    15→    64→    { key: 'creditLimit', label: 'Credit Limit', format: 'currency', align: 'right', width: '110px' },
+    16→    65→    { key: 'totalVisits', label: 'Visits', align: 'center', width: '70px' },
+    17→    66→    { key: 'totalTransactions', label: 'Txns', align: 'center', width: '70px' },
+    18→    67→  ],
+    19→    68→  outstanding: [
+    20→    69→    { key: 'customerId', label: 'ID', width: '90px' },
+    21→    70→    { key: 'fullName', label: 'Customer' },
+    22→    71→    { key: 'mobile', label: 'Mobile', width: '120px' },
+    23→    72→    { key: 'customerType', label: 'Type', format: 'badge', width: '90px' },
+    24→    73→    { key: 'balance', label: 'Outstanding', format: 'currency', align: 'right', width: '120px' },
+    25→    74→    { key: 'creditLimit', label: 'Credit Limit', format: 'currency', align: 'right', width: '110px' },
+    26→    75→    { key: 'overdue', label: 'Overdue', format: 'badge', width: '90px' },
+    27→    76→    { key: 'lastTxnDate', label: 'Last Txn', format: 'date', width: '100px' },
+    28→    77→  ],
+    29→    78→  payments: [
+    30→    79→    { key: 'date', label: 'Date', format: 'date', width: '100px' },
+    31→    80→    { key: 'customerName', label: 'Customer' },
+    32→    81→    { key: 'customerId', label: 'ID', width: '90px' },
+    33→    82→    { key: 'description', label: 'Description' },
+    34→    83→    { key: 'amount', label: 'Amount', format: 'currency', align: 'right', width: '120px' },
+    35→    84→    { key: 'paymentMode', label: 'Mode', format: 'badge', width: '120px' },
+    36→    85→    { key: 'recordedBy', label: 'By', width: '100px' },
+    37→    86→  ],
+    38→    87→  transactions: [
+    39→    88→    { key: 'date', label: 'Date', format: 'date', width: '100px' },
+    40→    89→    { key: 'customerName', label: 'Customer' },
+    41→    90→    { key: 'type', label: 'Type', format: 'badge', width: '90px' },
+    42→    91→    { key: 'description', label: 'Description' },
+    43→    92→    { key: 'invoiceNo', label: 'Inv #', width: '90px' },
+    44→    93→    { key: 'debit', label: 'Debit', format: 'currency', align: 'right', width: '110px' },
+    45→    94→    { key: 'credit', label: 'Credit', format: 'currency', align: 'right', width: '110px' },
+    46→    95→    { key: 'balance', label: 'Balance', format: 'currency', align: 'right', width: '110px' },
+    47→    96→  ],
+    48→    97→  vip: [
+    49→    98→    { key: 'customerId', label: 'ID', width: '90px' },
+    50→    99→    { key: 'fullName', label: 'Customer' },
+    51→   100→    { key: 'mobile', label: 'Mobile', width: '120px' },
+    52→   101→    { key: 'tags', label: 'Tags', format: 'tags', width: '120px' },
+    53→   102→    { key: 'lifetimeSpend', label: 'Lifetime Spend', format: 'currency', align: 'right', width: '130px' },
+    54→   103→    { key: 'balance', label: 'Balance', format: 'currency', align: 'right', width: '110px' },
+    55→   104→    { key: 'totalVisits', label: 'Visits', align: 'center', width: '70px' },
+    56→   105→    { key: 'status', label: 'Status', format: 'badge', width: '90px' },
+    57→   106→  ],
+    58→   107→  settlements: [
+    59→   108→    { key: 'date', label: 'Date', format: 'datetime', width: '140px' },
+    60→   109→    { key: 'customerName', label: 'Customer' },
+    61→   110→    { key: 'customerId', label: 'ID', width: '90px' },
+    62→   111→    { key: 'amount', label: 'Amount', format: 'currency', align: 'right', width: '120px' },
+    63→   112→    { key: 'mode', label: 'Mode', format: 'badge', width: '120px' },
+    64→   113→    { key: 'reference', label: 'Reference', width: '100px' },
+    65→   114→    { key: 'description', label: 'Description' },
+    66→   115→    { key: 'recordedBy', label: 'By', width: '100px' },
+    67→   116→  ],
+    68→   117→  refunds: [
+    69→   118→    { key: 'date', label: 'Date', format: 'date', width: '100px' },
+    70→   119→    { key: 'customerName', label: 'Customer' },
+    71→   120→    { key: 'customerId', label: 'ID', width: '90px' },
+    72→   121→    { key: 'description', label: 'Reason' },
+    73→   122→    { key: 'refundAmount', label: 'Refund Amt', format: 'currency', align: 'right', width: '120px' },
+    74→   123→    { key: 'balanceAfter', label: 'Balance', format: 'currency', align: 'right', width: '110px' },
+    75→   124→    { key: 'invoiceNo', label: 'Inv #', width: '90px' },
+    76→   125→    { key: 'processedBy', label: 'By', width: '100px' },
+    77→   126→  ],
+    78→   127→  gst: [
+    79→   128→    { key: 'date', label: 'Date', format: 'date', width: '100px' },
+    80→   129→    { key: 'customerName', label: 'Customer' },
+    81→   130→    { key: 'customerGst', label: 'Customer GST', width: '140px' },
+    82→   131→    { key: 'type', label: 'Type', format: 'badge', width: '90px' },
+    83→   132→    { key: 'description', label: 'Description' },
+    84→   133→    { key: 'baseAmount', label: 'Base Amt', format: 'currency', align: 'right', width: '110px' },
+    85→   134→    { key: 'tax', label: 'Tax/GST', format: 'currency', align: 'right', width: '110px' },
+    86→   135→    { key: 'discount', label: 'Discount', format: 'currency', align: 'right', width: '100px' },
+    87→   136→    { key: 'totalAmount', label: 'Total', format: 'currency', align: 'right', width: '110px' },
+    88→   137→  ],
+    89→   138→}
+    90→   139→
+    91→   140→// ─── Badge color maps ───
+    92→   141→const TYPE_BADGE_MAP: Record<string, string> = {
+    93→   142→  Retail: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+    94→   143→  Wholesale: 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300',
+    95→   144→  Supplier: 'bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300',
+    96→   145→  Corporate: 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300',
+    97→   146→  VIP: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-300',
+    98→   147→  Charge: 'bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-400',
+    99→   148→  Payment: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400',
+   100→   149→  Refund: 'bg-orange-50 text-orange-700 dark:bg-orange-900/40 dark:text-orange-400',
+   101→   150→  Discount: 'bg-teal-50 text-teal-700 dark:bg-teal-900/40 dark:text-teal-400',
+   102→   151→  Settlement: 'bg-sky-50 text-sky-700 dark:bg-sky-900/40 dark:text-sky-400',
+   103→   152→  Transfer: 'bg-violet-50 text-violet-700 dark:bg-violet-900/40 dark:text-violet-400',
+   104→   153→  Opening: 'bg-gray-50 text-gray-700 dark:bg-gray-800 dark:text-gray-400',
+   105→   154→  Cash: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400',
+   106→   155→  UPI: 'bg-violet-50 text-violet-700 dark:bg-violet-900/40 dark:text-violet-400',
+   107→   156→  'Credit Card': 'bg-sky-50 text-sky-700 dark:bg-sky-900/40 dark:text-sky-400',
+   108→   157→  'Debit Card': 'bg-cyan-50 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-400',
+   109→   158→  'Bank Transfer': 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-400',
+   110→   159→  Wallet: 'bg-pink-50 text-pink-700 dark:bg-pink-900/40 dark:text-pink-400',
+   111→   160→  Mixed: 'bg-fuchsia-50 text-fuchsia-700 dark:bg-fuchsia-900/40 dark:text-fuchsia-400',
+   112→   161→  Active: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300',
+   113→   162→  Settled: 'bg-teal-100 text-teal-700 dark:bg-teal-900/50 dark:text-teal-300',
+   114→   163→  CheckedOut: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+   115→   164→  Archived: 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300',
+   116→   165→  'true': 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300',
+   117→   166→  'false': 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
+   118→   167→  Cheque: 'bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400',
+   119→   168→  'Bill to Staff': 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+   120→   169→  'Bill to Company': 'bg-stone-100 text-stone-700 dark:bg-stone-800 dark:text-stone-300',
+   121→   170→  'Room Charge': 'bg-rose-50 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400',
+   122→   171→  Other: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
+   123→   172→  'BTC (Bitcoin)': 'bg-orange-100 text-orange-600 dark:bg-orange-900/50 dark:text-orange-300',
+   124→   173→  'Other Cryptocurrency': 'bg-yellow-100 text-yellow-600 dark:bg-yellow-900/50 dark:text-yellow-300',
+   125→   174→}
+   126→   175→
+   127→   176→const TAG_BADGE_MAP: Record<string, string> = {
+   128→   177→  VIP: 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/50 dark:text-yellow-300 dark:border-yellow-700',
+   129→   178→  Premium: 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/50 dark:text-purple-300 dark:border-purple-700',
+   130→   179→  Regular: 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700',
+   131→   180→  Wholesale: 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/50 dark:text-amber-300 dark:border-amber-700',
+   132→   181→  Supplier: 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/50 dark:text-orange-300 dark:border-orange-700',
+   133→   182→}
+   134→   183→
+   135→   184→// ─── CSV Export ───
+   136→   185→function downloadCSV(data: Record<string, any>[], filename: string) {
+   137→   186→  if (!data.length) return
+   138→   187→  const headers = Object.keys(data[0])
+   139→   188→  const csv = [
+   140→   189→    headers.join(','),
+   141→   190→    ...data.map(row => headers.map(h => `"${String(row[h] ?? '').replace(/"/g, '""')}"`).join(','))
+   142→   191→  ].join('\n')
+   143→   192→  const blob = new Blob([csv], { type: 'text/csv' })
+   144→   193→  const url = URL.createObjectURL(blob)
+   145→   194→  const a = document.createElement('a')
+   146→   195→  a.href = url; a.download = `${filename}.csv`; a.click()
+   147→   196→  URL.revokeObjectURL(url)
+   148→   197→}
+   149→   198→
+   150→   199→// ─── Format cell value ───
+   151→   200→function formatCellValue(value: unknown, col: ColDef): React.ReactNode {
+   152→   201→  if (value === null || value === undefined || value === '') return <span className="text-muted-foreground">—</span>
+   153→   202→  const strVal = String(value)
+   154→   203→
+   155→   204→  switch (col.format) {
+   156→   205→    case 'currency':
+   157→   206→      return <span className="font-medium tabular-nums">{fmtINR(Number(value))}</span>
+   158→   207→    case 'date':
+   159→   208→      return <span className="tabular-nums">{fmtDate(strVal)}</span>
+   160→   209→    case 'datetime':
+   161→   210→      return <span className="tabular-nums text-xs">{fmtDate(strVal)}</span>
+   162→   211→    case 'amount':
+   163→   212→      return <span className="font-medium tabular-nums">{fmtCur(Number(value))}</span>
+   164→   213→    case 'tags': {
+   165→   214→      const tags = Array.isArray(value) ? value : [value]
+   166→   215→      return (
+   167→   216→        <div className="flex flex-wrap gap-1">
+   168→   217→          {tags.map((tag: string, i: number) => (
+   169→   218→            <Badge key={i} variant="outline" className={`text-[10px] px-1.5 py-0 ${TAG_BADGE_MAP[tag] || ''}`}>
+   170→   219→              {tag}
+   171→   220→            </Badge>
+   172→   221→          ))}
+   173→   222→        </div>
+   174→   223→      )
+   175→   224→    }
+   176→   225→    case 'badge':
+   177→   226→      return (
+   178→   227→        <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${TYPE_BADGE_MAP[strVal] || 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'}`}>
+   179→   228→          {strVal}
+   180→   229→        </Badge>
+   181→   230→      )
+   182→   231→    default:
+   183→   232→      return <span className="text-xs">{strVal}</span>
+   184→   233→  }
+   185→   234→}
+   186→   235→
+   187→   236→// ─── Loading Skeleton ───
+   188→   237→function TableSkeleton({ cols }: { cols: number }) {
+   189→   238→  return (
+   190→   239→    <div className="space-y-2 p-4">
+   191→   240→      {Array.from({ length: 8 }).map((_, i) => (
+   192→   241→        <div key={i} className="flex gap-3">
+   193→   242→          {Array.from({ length: cols }).map((_, j) => (
+   194→   243→            <Skeleton key={j} className="h-5 flex-1" />
+   195→   244→          ))}
+   196→   245→        </div>
+   197→   246→      ))}
+   198→   247→    </div>
+   199→   248→  )
+   200→   249→}
+   201→   250→
+   202→   251→// ─── Summary Card ───
+   203→   252→function SummaryCard({ label, value, icon: Icon, color }: {
+   204→   253→  label: string; value: string | number; icon: React.ElementType; color: string
+   205→   254→}) {
+   206→   255→  return (
+   207→   256→    <div className={`rounded-lg border p-3 flex flex-col gap-1 ${color}`}>
+   208→   257→      <div className="flex items-center gap-1.5">
+   209→   258→        <Icon className="size-3.5 opacity-60" />
+   210→   259→        <span className="text-[10px] font-medium uppercase tracking-wide opacity-70">{label}</span>
+   211→   260→      </div>
+   212→   261→      <span className="text-base font-bold leading-tight">{value}</span>
+   213→   262→    </div>
+   214→   263→  )
+   215→   264→}
+   216→   265→
+   217→   266→// ─── Props ───
+   218→   267→interface CustomerFolioReportsProps {
+   219→   268→  onClose: () => void
+   220→   269→  hdrRef: RefObject<Record<string, string>>
+   221→   270→  canAccess: boolean
+   222→   271→}
+   223→   272→
+   224→   273→export function CustomerFolioReports({ onClose, hdrRef, canAccess }: CustomerFolioReportsProps) {
+   225→   274→  const [reportType, setReportType] = useState<ReportType>('summary')
+   226→   275→  const [fromDate, setFromDate] = useState('')
+   227→   276→  const [toDate, setToDate] = useState('')
+   228→   277→  const [loading, setLoading] = useState(false)
+   229→   278→  const [reportData, setReportData] = useState<any>(null)
+   230→   279→  const [error, setError] = useState<string | null>(null)
+   231→   280→
+   232→   281→  const columns = useMemo(() => REPORT_COLUMNS[reportType], [reportType])
+   233→   282→  const selectedOption = useMemo(() => REPORT_OPTIONS.find(o => o.value === reportType)!, [reportType])
+   234→   283→
+   235→   284→  // Generate report
+   236→   285→  const generateReport = useCallback(async () => {
+   237→   286→    if (!canAccess) {
+   238→   287→      notify({ type: 'error', title: 'Access Denied', message: 'You do not have permission to view reports' })
+   239→   288→      return
+   240→   289→    }
+   241→   290→
+   242→   291→    setLoading(true)
+   243→   292→    setError(null)
+   244→   293→    setReportData(null)
+   245→   294→
+   246→   295→    try {
+   247→   296→      const params = new URLSearchParams({ type: reportType })
+   248→   297→      if (fromDate) params.set('from', fromDate)
+   249→   298→      if (toDate) params.set('to', toDate)
+   250→   299→
+   251→   300→      const res = await fetch(`/api/folio/reports?${params}`, { headers: hdrRef.current })
+   252→   301→      if (!res.ok) {
+   253→   302→        const errData = await res.json().catch(() => ({}))
+   254→   303→        throw new Error(errData.error || `Request failed (${res.status})`)
+   255→   304→      }
+   256→   305→
+   257→   306→      const data = await res.json()
+   258→   307→      setReportData(data)
+   259→   308→
+   260→   309→      if (!data.data || data.data.length === 0) {
+   261→   310→        notify({ type: 'info', title: 'No Data', message: 'No records found for the selected criteria' })
+   262→   311→      }
+   263→   312→    } catch (err: any) {
+   264→   313→      const msg = err.message || 'Failed to generate report'
+   265→   314→      setError(msg)
+   266→   315→      notify({ type: 'error', title: 'Report Error', message: msg })
+   267→   316→    } finally {
+   268→   317→      setLoading(false)
+   269→   318→    }
+   270→   319→  }, [reportType, fromDate, toDate, canAccess, hdrRef])
+   271→   320→
+   272→   321→  // Download CSV
+   273→   322→  const handleDownloadCSV = useCallback(() => {
+   274→   323→    if (!reportData?.data?.length) {
+   275→   324→      notify({ type: 'warning', title: 'No Data', message: 'Generate a report first' })
+   276→   325→      return
+   277→   326→    }
+   278→   327→    // Flatten data for CSV
+   279→   328→    const flatData = reportData.data.map((row: any) => {
+   280→   329→      const flat: Record<string, any> = {}
+   281→   330→      for (const col of columns) {
+   282→   331→        const val = row[col.key]
+   283→   332→        if (Array.isArray(val)) {
+   284→   333→          flat[col.label] = val.join(', ')
+   285→   334→        } else if (col.format === 'currency' || col.format === 'amount') {
+   286→   335→          flat[col.label] = Number(val) || 0
+   287→   336→        } else {
+   288→   337→          flat[col.label] = val ?? ''
+   289→   338→        }
+   290→   339→      }
+   291→   340→      return flat
+   292→   341→    })
+   293→   342→    downloadCSV(flatData, `${reportType}-report-${new Date().toISOString().split('T')[0]}`)
+   294→   343→    notify({ type: 'success', title: 'Downloaded', message: 'CSV file downloaded successfully' })
+   295→   344→  }, [reportData, columns, reportType])
+   296→   345→
+   297→   346→  // Print
+   298→   347→  const handlePrint = useCallback(() => {
+   299→   348→    if (!reportData?.data?.length) {
+   300→   349→      notify({ type: 'warning', title: 'No Data', message: 'Generate a report first' })
+   301→   350→      return
+   302→   351→    }
+   303→   352→    const opt = REPORT_OPTIONS.find(o => o.value === reportType)!
+   304→   353→    const summary = reportData.summary || {}
+   305→   354→
+   306→   355→    const summaryHTML = Object.entries(summary)
+   307→   356→      .filter(([, v]) => typeof v === 'number' || typeof v === 'string')
+   308→   357→      .map(([k, v]) => {
+   309→   358→        const label = k.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase())
+   310→   359→        return `<div style="flex:1;text-align:center;padding:8px;border:1px solid #e5e7eb;border-radius:6px">
+   311→   360→          <div style="font-size:9px;color:#888;text-transform:uppercase;letter-spacing:0.5px">${label}</div>
+   312→   361→          <div style="font-size:16px;font-weight:700;margin-top:2px">${typeof v === 'number' ? '₹' + v.toLocaleString('en-IN', { maximumFractionDigits: 2 }) : v}</div>
+   313→   362→        </div>`
+   314→   363→      })
+   315→   364→      .join('')
+   316→   365→
+   317→   366→    const headerCols = columns.map(c => `<th style="padding:8px 10px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;text-align:${c.align === 'right' ? 'right' : c.align === 'center' ? 'center' : 'left'};border-bottom:2px solid #16a34a;color:#16a34a;background:#f0fdf4">${c.label}</th>`).join('')
+   318→   367→
+   319→   368→    const rows = reportData.data.map((row: any, idx: number) => {
+   320→   369→      const cells = columns.map(col => {
+   321→   370→        let val = row[col.key]
+   322→   371→        if (Array.isArray(val)) val = val.join(', ')
+   323→   372→        if (col.format === 'currency' || col.format === 'amount') val = '₹' + (Number(val) || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })
+   324→   373→        const align = col.align === 'right' ? 'right' : col.align === 'center' ? 'center' : 'left'
+   325→   374→        return `<td style="padding:6px 10px;font-size:11px;border-bottom:1px solid #f0f0f0;text-align:${align}">${val ?? '—'}</td>`
+   326→   375→      }).join('')
+   327→   376→      return `<tr style="${idx % 2 === 0 ? '' : 'background:#f8faf8'}">${cells}</tr>`
+   328→   377→    }).join('')
+   329→   378→
+   330→   379→    const w = window.open('', '_blank')
+   331→   380→    if (!w) {
+   332→   381→      notify({ type: 'error', title: 'Error', message: 'Please allow popups to print' })
+   333→   382→      return
+   334→   383→    }
+   335→   384→
+   336→   385→    w.document.write(`<!DOCTYPE html><html><head><title>${opt.label}</title>
+   337→   386→      <style>
+   338→   387→        body{font-family:system-ui,-apple-system,sans-serif;padding:20px;max-width:210mm;margin:0 auto;color:#1a1a1a}
+   339→   388→        h1{font-size:20px;font-weight:800;color:#16a34a;margin:0 0 2px 0}
+   340→   389→        .sub{font-size:11px;color:#888;margin-bottom:16px}
+   341→   390→        table{width:100%;border-collapse:collapse;margin-top:12px}
+   342→   391→        th,td{font-size:11px}
+   343→   392→      </style></head><body>
+   344→   393→      <h1>${opt.label}</h1>
+   345→   394→      <div class="sub">Generated: ${new Date().toLocaleString('en-IN')}</div>
+   346→   395→      ${fromDate || toDate ? `<div class="sub">Period: ${fromDate || 'All time'} to ${toDate || 'Today'}</div>` : ''}
+   347→   396→      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">${summaryHTML}</div>
+   348→   397→      <table><thead><tr>${headerCols}</tr></thead><tbody>${rows}</tbody></table>
+   349→   398→      <div style="text-align:center;margin-top:20px;padding-top:12px;border-top:1px solid #e5e7eb;color:#999;font-size:10px">
+   350→   399→        Generated by Eservices POS System &middot; ${reportData.data.length} records
+   351→   400→      </div>
+   352→   401→      </body></html>`)
+   353→   402→    w.document.close()
+   354→   403→    w.print()
+   355→   404→  }, [reportData, columns, reportType, fromDate, toDate])
+   356→   405→
+   357→   406→  // Summary cards config per report type
+   358→   407→  const summaryCards = useMemo(() => {
+   359→   408→    if (!reportData?.summary) return []
+   360→   409→    const s = reportData.summary
+   361→   410→    switch (reportType) {
+   362→   411→      case 'summary':
+   363→   412→        return [
+   364→   413→          { label: 'Total Customers', value: s.totalCustomers ?? 0, icon: Users, color: 'bg-slate-50 border-slate-200 dark:bg-slate-900/50 dark:border-slate-700' },
+   365→   414→          { label: 'Total Balance', value: fmtINR(s.totalBalance ?? 0), icon: IndianRupee, color: 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800' },
+   366→   415→          { label: 'Outstanding', value: fmtINR(s.totalOutstanding ?? 0), icon: CreditCard, color: 'bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-800' },
+   367→   416→          { label: 'With Dues', value: s.outstandingCount ?? 0, icon: AlertCircle, color: 'bg-amber-50 border-amber-200 dark:bg-amber-900/30 dark:border-amber-800' },
+   368→   417→          { label: 'Active', value: s.activeCount ?? 0, icon: BarChart3, color: 'bg-green-50 border-green-200 dark:bg-green-900/30 dark:border-green-800' },
+   369→   418→          { label: 'Settled', value: s.settledCount ?? 0, icon: HandCoins, color: 'bg-teal-50 border-teal-200 dark:bg-teal-900/30 dark:border-teal-800' },
+   370→   419→        ]
+   371→   420→      case 'outstanding':
+   372→   421→        return [
+   373→   422→          { label: 'Customers with Due', value: s.totalCustomersWithDue ?? 0, icon: Users, color: 'bg-slate-50 border-slate-200 dark:bg-slate-900/50 dark:border-slate-700' },
+   374→   423→          { label: 'Total Outstanding', value: fmtINR(s.totalOutstanding ?? 0), icon: IndianRupee, color: 'bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-800' },
+   375→   424→          { label: 'Avg Outstanding', value: fmtINR(s.avgOutstanding ?? 0), icon: BarChart3, color: 'bg-amber-50 border-amber-200 dark:bg-amber-900/30 dark:border-amber-800' },
+   376→   425→          { label: 'High Risk', value: s.highRiskCount ?? 0, icon: AlertCircle, color: 'bg-orange-50 border-orange-200 dark:bg-orange-900/30 dark:border-orange-800' },
+   377→   426→        ]
+   378→   427→      case 'payments':
+   379→   428→        return [
+   380→   429→          { label: 'Total Payments', value: fmtINR(s.totalPayments ?? 0), icon: CreditCard, color: 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800' },
+   381→   430→          { label: 'Payment Count', value: s.paymentCount ?? 0, icon: Receipt, color: 'bg-slate-50 border-slate-200 dark:bg-slate-900/50 dark:border-slate-700' },
+   382→   431→          { label: 'Avg Payment', value: fmtINR(s.avgPayment ?? 0), icon: BarChart3, color: 'bg-sky-50 border-sky-200 dark:bg-sky-900/30 dark:border-sky-800' },
+   383→   432→          ...Object.entries(s.modeBreakdown || {}).slice(0, 3).map(([mode, amt]) => ({
+   384→   433→            label: mode, value: fmtINR(amt as number), icon: CreditCard,
+   385→   434→            color: 'bg-violet-50 border-violet-200 dark:bg-violet-900/30 dark:border-violet-800',
+   386→   435→          })),
+   387→   436→        ]
+   388→   437→      case 'transactions':
+   389→   438→        return [
+   390→   439→          { label: 'Total Entries', value: s.totalEntries ?? 0, icon: Receipt, color: 'bg-slate-50 border-slate-200 dark:bg-slate-900/50 dark:border-slate-700' },
+   391→   440→          { label: 'Total Debits', value: fmtINR(s.totalDebits ?? 0), icon: IndianRupee, color: 'bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-800' },
+   392→   441→          { label: 'Total Credits', value: fmtINR(s.totalCredits ?? 0), icon: CreditCard, color: 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800' },
+   393→   442→          { label: 'Total Tax', value: fmtINR(s.totalTax ?? 0), icon: Calculator, color: 'bg-amber-50 border-amber-200 dark:bg-amber-900/30 dark:border-amber-800' },
+   394→   443→          { label: 'Discounts', value: fmtINR(s.totalDiscount ?? 0), icon: RotateCcw, color: 'bg-teal-50 border-teal-200 dark:bg-teal-900/30 dark:border-teal-800' },
+   395→   444→          { label: 'Net Flow', value: fmtINR(s.netFlow ?? 0), icon: BarChart3, color: s.netFlow >= 0 ? 'bg-green-50 border-green-200 dark:bg-green-900/30 dark:border-green-800' : 'bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-800' },
+   396→   445→        ]
+   397→   446→      case 'vip':
+   398→   447→        return [
+   399→   448→          { label: 'VIP Customers', value: s.totalVipCustomers ?? 0, icon: Crown, color: 'bg-yellow-50 border-yellow-200 dark:bg-yellow-900/30 dark:border-yellow-800' },
+   400→   449→          { label: 'Lifetime Spend', value: fmtINR(s.totalLifetimeSpend ?? 0), icon: IndianRupee, color: 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800' },
+   401→   450→          { label: 'Outstanding', value: fmtINR(s.totalOutstanding ?? 0), icon: CreditCard, color: 'bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-800' },
+   402→   451→          { label: 'Avg Lifetime', value: fmtINR(s.avgLifetimeSpend ?? 0), icon: BarChart3, color: 'bg-sky-50 border-sky-200 dark:bg-sky-900/30 dark:border-sky-800' },
+   403→   452→          { label: 'Active VIP', value: s.activeVipCount ?? 0, icon: Users, color: 'bg-green-50 border-green-200 dark:bg-green-900/30 dark:border-green-800' },
+   404→   453→        ]
+   405→   454→      case 'settlements':
+   406→   455→        return [
+   407→   456→          { label: 'Total Settlements', value: s.totalSettlements ?? 0, icon: HandCoins, color: 'bg-slate-50 border-slate-200 dark:bg-slate-900/50 dark:border-slate-700' },
+   408→   457→          { label: 'Total Settled', value: fmtINR(s.totalSettled ?? 0), icon: IndianRupee, color: 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800' },
+   409→   458→          { label: 'Avg Settlement', value: fmtINR(s.avgSettlement ?? 0), icon: BarChart3, color: 'bg-sky-50 border-sky-200 dark:bg-sky-900/30 dark:border-sky-800' },
+   410→   459→          ...Object.entries(s.modeBreakdown || {}).slice(0, 3).map(([mode, amt]) => ({
+   411→   460→            label: mode, value: fmtINR(amt as number), icon: CreditCard,
+   412→   461→            color: 'bg-violet-50 border-violet-200 dark:bg-violet-900/30 dark:border-violet-800',
+   413→   462→          })),
+   414→   463→        ]
+   415→   464→      case 'refunds':
+   416→   465→        return [
+   417→   466→          { label: 'Total Refunds', value: s.totalRefunds ?? 0, icon: RotateCcw, color: 'bg-orange-50 border-orange-200 dark:bg-orange-900/30 dark:border-orange-800' },
+   418→   467→          { label: 'Refund Amount', value: fmtINR(s.totalRefundAmount ?? 0), icon: IndianRupee, color: 'bg-red-50 border-red-200 dark:bg-red-900/30 dark:border-red-800' },
+   419→   468→          { label: 'Avg Refund', value: fmtINR(s.avgRefund ?? 0), icon: BarChart3, color: 'bg-amber-50 border-amber-200 dark:bg-amber-900/30 dark:border-amber-800' },
+   420→   469→        ]
+   421→   470→      case 'gst':
+   422→   471→        return [
+   423→   472→          { label: 'Taxable Entries', value: s.totalTaxableEntries ?? 0, icon: Receipt, color: 'bg-slate-50 border-slate-200 dark:bg-slate-900/50 dark:border-slate-700' },
+   424→   473→          { label: 'Base Amount', value: fmtINR(s.totalBaseAmount ?? 0), icon: IndianRupee, color: 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/30 dark:border-emerald-800' },
+   425→   474→          { label: 'Total Tax/GST', value: fmtINR(s.totalTax ?? 0), icon: Calculator, color: 'bg-amber-50 border-amber-200 dark:bg-amber-900/30 dark:border-amber-800' },
+   426→   475→          { label: 'Total Discounts', value: fmtINR(s.totalDiscount ?? 0), icon: RotateCcw, color: 'bg-teal-50 border-teal-200 dark:bg-teal-900/30 dark:border-teal-800' },
+   427→   476→          { label: 'Grand Total', value: fmtINR(s.totalGstAmount ?? 0), icon: BarChart3, color: 'bg-green-50 border-green-200 dark:bg-green-900/30 dark:border-green-800' },
+   428→   477→          { label: 'Avg Tax/Entry', value: fmtINR(s.avgTaxPerEntry ?? 0), icon: FileBarChart, color: 'bg-sky-50 border-sky-200 dark:bg-sky-900/30 dark:border-sky-800' },
+   429→   478→        ]
+   430→   479→      default:
+   431→   480→        return []
+   432→   481→    }
+   433→   482→  }, [reportData, reportType])
+   434→   483→
+   435→   484→  return (
+   436→   485→    <Sheet open onOpenChange={(open) => { if (!open) onClose() }}>
+   437→   486→      <SheetContent
+   438→   487→        side="right"
+   439→   488→        className="w-full sm:w-[95vw] lg:w-[90vw] xl:w-[85vw] p-0 overflow-hidden"
+   440→   489→      >
+   441→   490→        <SheetHeader className="px-4 pt-4 pb-0 shrink-0">
+   442→   491→          <div className="flex items-center gap-2">
+   443→   492→            <div className="flex items-center justify-center size-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/40">
+   444→   493→              <FileBarChart className="size-4 text-emerald-700 dark:text-emerald-400" />
+   445→   494→            </div>
+   446→   495→            <div>
+   447→   496→              <SheetTitle className="text-base">Folio Reports</SheetTitle>
+   448→   497→              <SheetDescription className="text-[11px]">Generate and export customer folio reports</SheetDescription>
+   449→   498→            </div>
+   450→   499→          </div>
+   451→   500→        </SheetHeader>
+   452→   501→
+   453→   502→        <div className="flex flex-col h-[calc(100vh-80px)]">
+   454→   503→          {/* ─── Controls ─── */}
+   455→   504→          <div className="px-4 pt-3 pb-2 shrink-0 border-b">
+   456→   505→            <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-end">
+   457→   506→              {/* Report Type Selector */}
+   458→   507→              <div className="flex-1 w-full sm:w-auto min-w-0">
+   459→   508→                <label className="text-[11px] font-medium text-muted-foreground mb-1 block">Report Type</label>
+   460→   509→                <Select value={reportType} onValueChange={(v) => setReportType(v as ReportType)}>
+   461→   510→                  <SelectTrigger className="w-full">
+   462→   511→                    <SelectValue />
+   463→   512→                  </SelectTrigger>
+   464→   513→                  <SelectContent>
+   465→   514→                    {REPORT_OPTIONS.map(opt => (
+   466→   515→                      <SelectItem key={opt.value} value={opt.value}>
+   467→   516→                        <div className="flex items-center gap-2">
+   468→   517→                          <opt.icon className="size-3.5 text-muted-foreground" />
+   469→   518→                          <div>
+   470→   519→                            <div className="text-xs font-medium">{opt.label}</div>
+   471→   520→                            <div className="text-[10px] text-muted-foreground hidden sm:block">{opt.description}</div>
+   472→   521→                          </div>
+   473→   522→                        </div>
+   474→   523→                      </SelectItem>
+   475→   524→                    ))}
+   476→   525→                  </SelectContent>
+   477→   526→                </Select>
+   478→   527→              </div>
+   479→   528→
+   480→   529→              {/* Date Range */}
+   481→   530→              <div className="flex items-end gap-2">
+   482→   531→                <div>
+   483→   532→                  <label className="text-[11px] font-medium text-muted-foreground mb-1 block">From</label>
+   484→   533→                  <div className="relative">
+   485→   534→                    <CalendarDays className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
+   486→   535→                    <Input
+   487→   536→                      type="date"
+   488→   537→                      value={fromDate}
+   489→   538→                      onChange={(e) => setFromDate(e.target.value)}
+   490→   539→                      className="h-8 w-[140px] text-xs pl-8"
+   491→   540→                    />
+   492→   541→                  </div>
+   493→   542→                </div>
+   494→   543→                <div>
+   495→   544→                  <label className="text-[11px] font-medium text-muted-foreground mb-1 block">To</label>
+   496→   545→                  <div className="relative">
+   497→   546→                    <CalendarDays className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
+   498→   547→                    <Input
+   499→   548→                      type="date"
+   500→   549→                      value={toDate}
+   501→   550→                      onChange={(e) => setToDate(e.target.value)}
+   502→   551→                      className="h-8 w-[140px] text-xs pl-8"
+   503→   552→                    />
+   504→   553→                  </div>
+   505→   554→                </div>
+   506→   555→              </div>
+   507→   556→
+   508→   557→              {/* Generate Button */}
+   509→   558→              <Button
+   510→   559→                size="sm"
+   511→   560→                onClick={generateReport}
+   512→   561→                disabled={loading}
+   513→   562→                className="h-8 px-4 gap-1.5 shrink-0"
+   514→   563→              >
+   515→   564→                {loading ? <Loader2 className="size-3.5 animate-spin" /> : <Filter className="size-3.5" />}
+   516→   565→                <span className="text-xs font-medium">Generate</span>
+   517→   566→              </Button>
+   518→   567→
+   519→   568→              {/* Export / Print buttons - visible after report is generated */}
+   520→   569→              {reportData?.data?.length > 0 && (
+   521→   570→                <div className="flex gap-1.5 shrink-0">
+   522→   571→                  <Button
+   523→   572→                    variant="outline"
+   524→   573→                    size="sm"
+   525→   574→                    onClick={handleDownloadCSV}
+   526→   575→                    className="h-8 px-3 gap-1.5"
+   527→   576→                  >
+   528→   577→                    <Download className="size-3.5" />
+   529→   578→                    <span className="text-xs font-medium hidden sm:inline">CSV</span>
+   530→   579→                  </Button>
+   531→   580→                  <Button
+   532→   581→                    variant="outline"
+   533→   582→                    size="sm"
+   534→   583→                    onClick={handlePrint}
+   535→   584→                    className="h-8 px-3 gap-1.5"
+   536→   585→                  >
+   537→   586→                    <Printer className="size-3.5" />
+   538→   587→                    <span className="text-xs font-medium hidden sm:inline">Print</span>
+   539→   588→                  </Button>
+   540→   589→                </div>
+   541→   590→              )}
+   542→   591→            </div>
+   543→   592→          </div>
+   544→   593→
+   545→   594→          {/* ─── Content Area ─── */}
+   546→   595→          <div className="flex-1 overflow-hidden">
+   547→   596→            {loading ? (
+   548→   597→              <div className="p-4 space-y-4">
+   549→   598→                {/* Summary skeleton */}
+   550→   599→                <div className="flex gap-3 overflow-x-auto pb-2">
+   551→   600→                  {Array.from({ length: 4 }).map((_, i) => (
+   552→   601→                    <Skeleton key={i} className="h-20 w-40 shrink-0 rounded-lg" />
+   553→   602→                  ))}
+   554→   603→                </div>
+   555→   604→                <TableSkeleton cols={columns.length} />
+   556→   605→              </div>
+   557→   606→            ) : error ? (
+   558→   607→              <div className="flex flex-col items-center justify-center py-16 px-6">
+   559→   608→                <div className="flex size-12 items-center justify-center rounded-xl bg-red-100 dark:bg-red-900/30 mb-3">
+   560→   609→                  <AlertCircle className="size-6 text-red-500" />
+   561→   610→                </div>
+   562→   611→                <h3 className="text-sm font-semibold text-foreground mb-1">Failed to Generate Report</h3>
+   563→   612→                <p className="text-xs text-muted-foreground text-center max-w-sm">{error}</p>
+   564→   613→                <Button variant="outline" size="sm" onClick={generateReport} className="mt-4 gap-1.5">
+   565→   614→                  <Filter className="size-3" /> Retry
+   566→   615→                </Button>
+   567→   616→              </div>
+   568→   617→            ) : reportData?.data?.length > 0 ? (
+   569→   618→              <ScrollArea className="h-full">
+   570→   619→                <div className="p-4 space-y-4">
+   571→   620→                  {/* Summary Cards */}
+   572→   621→                  {summaryCards.length > 0 && (
+   573→   622→                    <div className="flex gap-3 overflow-x-auto pb-2">
+   574→   623→                      {summaryCards.map((card, i) => (
+   575→   624→                        <SummaryCard key={i} {...card} />
+   576→   625→                      ))}
+   577→   626→                    </div>
+   578→   627→                  )}
+   579→   628→
+   580→   629→                  <Separator />
+   581→   630→
+   582→   631→                  {/* Report header */}
+   583→   632→                  <div className="flex items-center justify-between">
+   584→   633→                    <div className="flex items-center gap-2">
+   585→   634→                      <selectedOption.icon className="size-4 text-muted-foreground" />
+   586→   635→                      <h3 className="text-sm font-semibold">{selectedOption.label}</h3>
+   587→   636→                      <Badge variant="secondary" className="text-[10px]">
+   588→   637→                        {reportData.data.length} records
+   589→   638→                      </Badge>
+   590→   639→                    </div>
+   591→   640→                    {(fromDate || toDate) && (
+   592→   641→                      <span className="text-[10px] text-muted-foreground">
+   593→   642→                        {fromDate || 'All time'} → {toDate || 'Today'}
+   594→   643→                      </span>
+   595→   644→                    )}
+   596→   645→                  </div>
+   597→   646→
+   598→   647→                  {/* Data Table */}
+   599→   648→                  <div className="border rounded-lg overflow-hidden">
+   600→   649→                    <Table>
+   601→   650→                      <TableHeader>
+   602→   651→                        <TableRow className="bg-muted/50 hover:bg-muted/50">
+   603→   652→                          {columns.map((col) => (
+   604→   653→                            <TableHead
+   605→   654→                              key={col.key}
+   606→   655→                              className={`text-[10px] font-semibold uppercase tracking-wide h-9 px-3 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}
+   607→   656→                              style={col.width ? { width: col.width, minWidth: col.width } : undefined}
+   608→   657→                            >
+   609→   658→                              {col.label}
+   610→   659→                            </TableHead>
+   611→   660→                          ))}
+   612→   661→                        </TableRow>
+   613→   662→                      </TableHeader>
+   614→   663→                      <TableBody>
+   615→   664→                        {reportData.data.map((row: any, idx: number) => (
+   616→   665→                          <TableRow key={idx} className="text-xs">
+   617→   666→                            {columns.map((col) => (
+   618→   667→                              <TableCell
+   619→   668→                                key={col.key}
+   620→   669→                                className={`py-2 px-3 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}
+   621→   670→                                style={col.width ? { width: col.width, minWidth: col.width } : undefined}
+   622→   671→                              >
+   623→   672→                                {formatCellValue(row[col.key], col)}
+   624→   673→                              </TableCell>
+   625→   674→                            ))}
+   626→   675→                          </TableRow>
+   627→   676→                        ))}
+   628→   677→                      </TableBody>
+   629→   678→                    </Table>
+   630→   679→                  </div>
+   631→   680→
+   632→   681→                  {/* Footer info */}
+   633→   682→                  <div className="text-center text-[10px] text-muted-foreground pb-4">
+   634→   683→                    Report generated at {new Date().toLocaleString('en-IN')} &middot; {reportData.data.length} records
+   635→   684→                  </div>
+   636→   685→                </div>
+   637→   686→              </ScrollArea>
+   638→   687→            ) : reportData ? (
+   639→   688→              /* Empty state */
+   640→   689→              <div className="flex flex-col items-center justify-center py-16 px-6">
+   641→   690→                <div className="flex size-12 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 mb-3">
+   642→   691→                  <FileBarChart className="size-6 text-slate-400 dark:text-slate-500" />
+   643→   692→                </div>
+   644→   693→                <h3 className="text-sm font-semibold text-foreground mb-1">No Records Found</h3>
+   645→   694→                <p className="text-xs text-muted-foreground text-center max-w-sm">
+   646→   695→                  No data found for {selectedOption.label}. Try adjusting the date range or filters.
+   647→   696→                </p>
+   648→   697→              </div>
+   649→   698→            ) : (
+   650→   699→              /* Initial state */
+   651→   700→              <div className="flex flex-col items-center justify-center py-16 px-6">
+   652→   701→                <div className="flex size-14 items-center justify-center rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 mb-4">
+   653→   702→                  <BarChart3 className="size-7 text-emerald-500" />
+   654→   703→                </div>
+   655→   704→                <h3 className="text-sm font-bold text-foreground mb-1">Select a Report</h3>
+   656→   705→                <p className="text-xs text-muted-foreground text-center max-w-sm mb-4">
+   657→   706→                  Choose a report type, optionally set a date range, and click Generate to view the results.
+   658→   707→                </p>
+   659→   708→                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 max-w-md w-full">
+   660→   709→                  {REPORT_OPTIONS.slice(0, 4).map(opt => (
+   661→   710→                    <button
+   662→   711→                      key={opt.value}
+   663→   712→                      onClick={() => setReportType(opt.value)}
+   664→   713→                      className={`flex flex-col items-center gap-1.5 p-3 rounded-lg border text-center transition-colors cursor-pointer
+   665→   714→                        ${reportType === opt.value
+   666→   715→                          ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-900/30'
+   667→   716→                          : 'border-transparent bg-muted/50 hover:bg-muted'}`}
+   668→   717→                    >
+   669→   718→                      <opt.icon className="size-4 text-muted-foreground" />
+   670→   719→                      <span className="text-[10px] font-medium">{opt.label}</span>
+   671→   720→                    </button>
+   672→   721→                  ))}
+   673→   722→                </div>
+   674→   723→              </div>
+   675→   724→            )}
+   676→   725→          </div>
+   677→   726→        </div>
+   678→   727→      </SheetContent>
+   679→   728→    </Sheet>
+   680→   729→  )
+   681→   730→}

@@ -1,0 +1,686 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→import React, { useState, useEffect, useCallback, useRef } from 'react'
+     4→     4→import { Loader2 } from 'lucide-react'
+     5→     5→import { TooltipProvider } from '@/components/ui/tooltip'
+     6→     6→import { notify } from '@/lib/notification-store'
+     7→     7→import { useAuth } from '@/components/auth-provider'
+     8→     8→import ReadOnlyBanner from '@/components/read-only-banner'
+     9→     9→
+    10→    10→// Split module imports
+    11→    11→import type {
+    12→    12→  Customer, Folio, LedgerEntry, CustomerDetail, CustomerForm,
+    13→    13→  ChargeForm, PaymentForm, RefundForm, TransferForm, DiscountForm,
+    14→    14→  DocForm, NoteForm, SplitAmountForm, FolioSectionProps,
+    15→    15→  CheckoutSettlementData, SplitPaymentItem, SettlementPayload,
+    16→    16→} from './customer-folio/customer-folio-types'
+    17→    17→import {
+    18→    18→  DEFAULT_CUSTOMER_FORM, DEFAULT_CHARGE_FORM, DEFAULT_PAYMENT_FORM,
+    19→    19→  DEFAULT_REFUND_FORM, DEFAULT_TRANSFER_FORM, DEFAULT_DISCOUNT_FORM,
+    20→    20→  DEFAULT_DOC_FORM, DEFAULT_NOTE_FORM, DEFAULT_SPLIT_AMOUNT_FORM,
+    21→    21→  FolioErrorBoundary,
+    22→    22→} from './customer-folio/customer-folio-helpers'
+    23→    23→import { printReceipt as _printReceipt, printInvoice as _printInvoice, printSingleFolio as _printSingleFolio, printVoucherHistory as _printVoucherHistory, thermalPrintReceipt as _thermalPrintReceipt, thermalPrintInvoice as _thermalPrintInvoice, thermalPrintFolioStatement as _thermalPrintFolioStatement, thermalPrintVoucherHistory as _thermalPrintVoucherHistory } from './customer-folio/customer-folio-print'
+    24→    24→import { CustomerFolioDialogs } from './customer-folio/customer-folio-dialogs'
+    25→    25→import { CustomerFolioProfileGrid } from './customer-folio/customer-folio-profile-grid'
+    26→    26→import { CustomerFolioManagement } from './customer-folio/customer-folio-management'
+    27→    27→import { CustomerFolioReports } from './customer-folio/customer-folio-reports'
+    28→    28→
+    29→    29→// ─── Main Orchestrator Component ───
+    30→    30→export default function CustomerFolioSection({ onRefreshData, dataVersion }: FolioSectionProps) {
+    31→    31→  const { token, hasPermission, currentUser } = useAuth()
+    32→    32→  const hdrRef = useRef(token ? { 'Authorization': `Bearer ${token}` } : {})
+    33→    33→  useEffect(() => { hdrRef.current = token ? { 'Authorization': `Bearer ${token}` } : {} }, [token])
+    34→    34→
+    35→    35→  const canAccess = hasPermission('khata', 'access')
+    36→    36→  const canCreate = hasPermission('khata', 'create')
+    37→    37→  const canEdit = hasPermission('khata', 'edit')
+    38→    38→  const canDelete = hasPermission('khata', 'delete')
+    39→    39→  const isAdmin = currentUser?.role === 'Admin' || currentUser?.role === 'SuperAdmin'
+    40→    40→
+    41→    41→  // ── State: Customer list ──
+    42→    42→  const [customers, setCustomers] = useState<Customer[]>([])
+    43→    43→  const [loading, setLoading] = useState(true)
+    44→    44→  const [search, setSearch] = useState('')
+    45→    45→  const [debounced, setDebounced] = useState('')
+    46→    46→  const [filter, setFilter] = useState('All')
+    47→    47→  const [sort, setSort] = useState('newest')
+    48→    48→  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    49→    49→
+    50→    50→  // ── State: Detail / folio management ──
+    51→    51→  const [selectedId, setSelectedId] = useState<string | null>(null)
+    52→    52→  const [detail, setDetail] = useState<CustomerDetail | null>(null)
+    53→    53→  const [detailLoading, setDetailLoading] = useState(false)
+    54→    54→  const [selectedFolioId, setSelectedFolioId] = useState<string | null>(null)
+    55→    55→  const [folioEntries, setFolioEntries] = useState<LedgerEntry[]>([])
+    56→    56→  const [selectedEntries, setSelectedEntries] = useState<Set<string>>(new Set())
+    57→    57→  const [folioEntriesLoading, setFolioEntriesLoading] = useState(false)
+    58→    58→  const [allFolios, setAllFolios] = useState<Folio[]>([])
+    59→    59→  const [isFullscreen, setIsFullscreen] = useState(false)
+    60→    60→  const [detailsSheetOpen, setDetailsSheetOpen] = useState(false)
+    61→    61→  const [submitting, setSubmitting] = useState(false)
+    62→    62→
+    63→    63→  // ── State: Dialogs ──
+    64→    64→  const [addOpen, setAddOpen] = useState(false)
+    65→    65→  const [editOpen, setEditOpen] = useState(false)
+    66→    66→  const [chargeOpen, setChargeOpen] = useState(false)
+    67→    67→  const [paymentOpen, setPaymentOpen] = useState(false)
+    68→    68→  const [refundOpen, setRefundOpen] = useState(false)
+    69→    69→  const [transferOpen, setTransferOpen] = useState(false)
+    70→    70→  const [discountOpen, setDiscountOpen] = useState(false)
+    71→    71→  const [docOpen, setDocOpen] = useState(false)
+    72→    72→  const [noteOpen, setNoteOpen] = useState(false)
+    73→    73→  const [tagsOpen, setTagsOpen] = useState(false)
+    74→    74→  const [checkoutOpen, setCheckoutOpen] = useState(false)
+    75→    75→  const [deleteOpen, setDeleteOpen] = useState(false)
+    76→    76→  const [settlingMode, setSettlingMode] = useState(false)
+    77→    77→  const [splitAmountOpen, setSplitAmountOpen] = useState(false)
+    78→    78→  const [shiftOpen, setShiftOpen] = useState(false)
+    79→    79→  const [removeOpen, setRemoveOpen] = useState(false)
+    80→    80→  const [voucherOpen, setVoucherOpen] = useState(false)
+    81→    81→  const [invoiceOpen, setInvoiceOpen] = useState(false)
+    82→    82→  const [reportsOpen, setReportsOpen] = useState(false)
+    83→    83→  const [historyOpen, setHistoryOpen] = useState(false)
+    84→    84→
+    85→    85→  // ── State: Forms ──
+    86→    86→  const [form, setForm] = useState<CustomerForm>({ ...DEFAULT_CUSTOMER_FORM })
+    87→    87→  const [chargeForm, setChargeForm] = useState<ChargeForm>({ ...DEFAULT_CHARGE_FORM })
+    88→    88→  const [paymentForm, setPaymentForm] = useState<PaymentForm>({ ...DEFAULT_PAYMENT_FORM })
+    89→    89→  const [refundForm, setRefundForm] = useState<RefundForm>({ ...DEFAULT_REFUND_FORM })
+    90→    90→  const [transferForm, setTransferForm] = useState<TransferForm>({ ...DEFAULT_TRANSFER_FORM })
+    91→    91→  const [transferResults, setTransferResults] = useState<Customer[]>([])
+    92→    92→  const [discountForm, setDiscountForm] = useState<DiscountForm>({ ...DEFAULT_DISCOUNT_FORM })
+    93→    93→  const [docForm, setDocForm] = useState<DocForm>({ ...DEFAULT_DOC_FORM })
+    94→    94→  const [noteForm, setNoteForm] = useState<NoteForm>({ ...DEFAULT_NOTE_FORM })
+    95→    95→  const [duplicate, setDuplicate] = useState<Customer | null>(null)
+    96→    96→  const [customerTags, setCustomerTags] = useState<string[]>([])
+    97→    97→  const [shiftTargetFolioId, setShiftTargetFolioId] = useState('')
+    98→    98→  const [splitAmountForm, setSplitAmountForm] = useState<SplitAmountForm>({ ...DEFAULT_SPLIT_AMOUNT_FORM })
+    99→    99→  const [invoiceFrom, setInvoiceFrom] = useState('')
+   100→   100→  const [invoiceTo, setInvoiceTo] = useState('')
+   101→   101→  const [invoiceData, setInvoiceData] = useState<any>(null)
+   102→   102→  const [invoiceLoading, setInvoiceLoading] = useState(false)
+   103→   103→  const [folioStatementData, setFolioStatementData] = useState<any>(null)
+   104→   104→
+   105→   105→  // ── State: Master Folio & Checkout Settlement ──
+   106→   106→  const [masterFolioEntries, setMasterFolioEntries] = useState<LedgerEntry[]>([])
+   107→   107→  const [postCheckoutPrintData, setPostCheckoutPrintData] = useState<LedgerEntry[]>([])
+   108→   108→  const [checkoutSettlementData, setCheckoutSettlementData] = useState<CheckoutSettlementData | null>(null)
+   109→   109→  const [checkoutSettlementOpen, setCheckoutSettlementOpen] = useState(false)
+   110→   110→  const [splitPayments, setSplitPayments] = useState<SplitPaymentItem[]>([])
+   111→   111→  const [deleteFolioOpen, setDeleteFolioOpen] = useState(false)
+   112→   112→  const [folioToDelete, setFolioToDelete] = useState<string | null>(null)
+   113→   113→
+   114→   114→  // ── Refs ──
+   115→   115→  const prevTokenRef = useRef(token)
+   116→   116→  const prevDataVer = useRef(dataVersion)
+   117→   117→  const selectedIdRef = useRef(selectedId)
+   118→   118→  useEffect(() => { selectedIdRef.current = selectedId }, [selectedId])
+   119→   119→
+   120→   120→  // ── Debounce search ──
+   121→   121→  useEffect(() => {
+   122→   122→    if (debounceRef.current) clearTimeout(debounceRef.current)
+   123→   123→    debounceRef.current = setTimeout(() => setDebounced(search), 300)
+   124→   124→    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
+   125→   125→  }, [search])
+   126→   126→
+   127→   127→  // ── Fetch customers ──
+   128→   128→  const fetchCustomers = useCallback(async (silent?: boolean) => {
+   129→   129→    try {
+   130→   130→      if (!silent) setLoading(true)
+   131→   131→      const params = new URLSearchParams()
+   132→   132→      // VIP and Due are tag/balance filters — don't set status for them
+   133→   133→      if (filter !== 'All' && filter !== 'VIP' && filter !== 'Due' && filter !== 'Checkout')
+   134→   134→        params.set('status', filter)
+   135→   135→      else if (filter === 'Checkout')
+   136→   136→        params.set('status', 'CheckedOut')
+   137→   137→      if (debounced) params.set('search', debounced)
+   138→   138→      if (sort) params.set('sort', sort === 'name' ? 'name-asc' : sort)
+   139→   139→      if (filter === 'VIP') params.set('tag', 'VIP')
+   140→   140→      if (filter === 'Due') params.set('hasDue', 'true')
+   141→   141→      const res = await fetch(`/api/folio/customers?${params}`, { headers: hdrRef.current })
+   142→   142→      if (res.ok) {
+   143→   143→        const data = await res.json()
+   144→   144→        const list = Array.isArray(data) ? data : (data.customers || [])
+   145→   145→        setCustomers(list.map((c: any) => ({ ...c, balance: c.balance ?? c.currentBalance ?? 0, lastTxnDate: c.lastTxnDate ?? c.lastTransactionDate ?? '', tags: Array.isArray(c.tags) ? c.tags : [] })))
+   146→   146→      }
+   147→   147→    } catch { /* ignore */ } finally { setLoading(false) }
+   148→   148→  }, [debounced, filter, sort])
+   149→   149→
+   150→   150→  useEffect(() => { fetchCustomers() }, [fetchCustomers])
+   151→   151→  useEffect(() => {
+   152→   152→    if (token && token !== prevTokenRef.current) { prevTokenRef.current = token; fetchCustomers(true) }
+   153→   153→  }, [token, fetchCustomers])
+   154→   154→
+   155→   155→  // ── Fetch folio entries ──
+   156→   156→  const fetchFolioEntries = useCallback(async (customerId: string, fId: string) => {
+   157→   157→    try { setFolioEntriesLoading(true)
+   158→   158→      const res = await fetch(`/api/folio/customers/${customerId}/folios/${fId}/entries`, { headers: hdrRef.current })
+   159→   159→      if (res.ok) { const data = await res.json(); setFolioEntries(data.entries || []) } else { setFolioEntries([]) }
+   160→   160→    } catch { setFolioEntries([]) } finally { setFolioEntriesLoading(false) }
+   161→   161→  }, [])
+   162→   162→
+   163→   163→  // ── Fetch Master Folio entries (all folios combined) ──
+   164→   164→  const fetchMasterFolioEntries = useCallback(async (customerId: string) => {
+   165→   165→    try { setFolioEntriesLoading(true)
+   166→   166→      const res = await fetch(`/api/folio/customers/${customerId}/statement`, { headers: hdrRef.current })
+   167→   167→      if (res.ok) { const data = await res.json(); setMasterFolioEntries(data.entries || []) } else { setMasterFolioEntries([]) }
+   168→   168→    } catch { setMasterFolioEntries([]) } finally { setFolioEntriesLoading(false) }
+   169→   169→  }, [])
+   170→   170→
+   171→   171→  // ── Watch for Master Folio selection ──
+   172→   172→  useEffect(() => {
+   173→   173→    if (selectedId && selectedFolioId === 'master') {
+   174→   174→      fetchMasterFolioEntries(selectedId)
+   175→   175→    }
+   176→   176→  }, [selectedId, selectedFolioId, fetchMasterFolioEntries])
+   177→   177→
+   178→   178→  // ── Fetch customer detail (with null safety for openingBalance, creditLimit, balance) ──
+   179→   179→  const fetchDetail = useCallback(async (id: string, silent?: boolean) => {
+   180→   180→    try {
+   181→   181→      if (!silent) setDetailLoading(true)
+   182→   182→      const res = await fetch(`/api/folio/customers/${id}`, { headers: hdrRef.current })
+   183→   183→      if (res.ok) {
+   184→   184→        const d = await res.json()
+   185→   185→        const customer = d.customer || d
+   186→   186→        const activeFolio = d.activeFolio
+   187→   187→        const lifetimeStats = d.lifetimeStats || {}
+   188→   188→        const tagAssignments = Array.isArray(d.tags) ? d.tags.map((tagName: string, i: number) => ({ id: `tag-${i}`, customerId: customer.id, tagName })) : []
+   189→   189→        const ledgerEntries: LedgerEntry[] = activeFolio?.ledgerEntries || []
+   190→   190→        const balance = lifetimeStats.currentBalance ?? (ledgerEntries.length > 0 ? ledgerEntries[ledgerEntries.length - 1].balance : 0)
+   191→   191→        setDetail({
+   192→   192→          ...customer,
+   193→   193→          openingBalance: customer.openingBalance ?? 0,
+   194→   194→          creditLimit: customer.creditLimit ?? 0,
+   195→   195→          balance: balance ?? 0,
+   196→   196→          totalVisits: d.visits?.length ?? lifetimeStats.totalVisits ?? 0,
+   197→   197→          lastTxnDate: lifetimeStats.lastTransactionDate || '',
+   198→   198→          tags: tagAssignments, folios: d.folios || [], ledgerEntries,
+   199→   199→          documents: d.documents || [], notes: d.notes || [], visits: d.visits || [],
+   200→   200→          settlements: d.settlements || [], auditLogs: [],
+   201→   201→          lifetimeRevenue: lifetimeStats.totalCharges ?? 0,
+   202→   202→          lifetimePayments: lifetimeStats.totalPayments ?? 0,
+   203→   203→          lifetimeRefunds: lifetimeStats.totalRefunds ?? 0,
+   204→   204→          totalBills: 0, totalTransactions: ledgerEntries.length,
+   205→   205→          lastVisitDate: d.visits?.[0]?.checkInAt || '', lastCheckoutDate: '',
+   206→   206→          activeFolio: activeFolio ? { id: activeFolio.id, folioId: activeFolio.folioId, customerId: customer.id, visitNumber: activeFolio.visitNumber, status: activeFolio.status, lockedAt: activeFolio.lockedAt || null, folioNumber: activeFolio.folioNumber } : null,
+   207→   207→        })
+   208→   208→        setCustomerTags(tagAssignments.map(t => t.tagName))
+   209→   209→        setAllFolios(d.folios || [])
+   210→   210→        if (activeFolio) { setSelectedFolioId(activeFolio.id); setFolioEntries(ledgerEntries) }
+   211→   211→        else if (d.folios?.length > 0) { setSelectedFolioId(d.folios[0].id); fetchFolioEntries(id, d.folios[0].id) }
+   212→   212→        else { setSelectedFolioId('master'); fetchMasterFolioEntries(id) }
+   213→   213→        setSelectedEntries(new Set())
+   214→   214→      }
+   215→   215→    } catch { /* ignore */ } finally { setDetailLoading(false) }
+   216→   216→  }, [fetchFolioEntries, fetchMasterFolioEntries])
+   217→   217→
+   218→   218→  useEffect(() => {
+   219→   219→    if (dataVersion !== undefined && dataVersion !== prevDataVer.current) {
+   220→   220→      prevDataVer.current = dataVersion; fetchCustomers(true)
+   221→   221→      if (selectedIdRef.current) fetchDetail(selectedIdRef.current, true)
+   222→   222→    }
+   223→   223→  }, [dataVersion, fetchCustomers, fetchDetail])
+   224→   224→
+   225→   225→  // ── Navigation ──
+   226→   226→  const openCustomer = (id: string) => { setSelectedId(id); fetchDetail(id); fetchMasterFolioEntries(id) }
+   227→   227→  const goBack = () => {
+   228→   228→    setSelectedId(null); setDetail(null); setSelectedFolioId(null); setFolioEntries([])
+   229→   229→    setSelectedEntries(new Set()); setPostCheckoutDialogOpen(false); setHistoryOpen(false)
+   230→   230→    setPostCheckoutPrintData([])
+   231→   231→  }
+   232→   232→
+   233→   233→  // ── Entry selection ──
+   234→   234→  const toggleEntrySelection = (id: string) => {
+   235→   235→    setSelectedEntries(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
+   236→   236→  }
+   237→   237→  const toggleAllEntries = () => {
+   238→   238→    const currentEntries = selectedFolioId === 'master' ? masterFolioEntries : folioEntries
+   239→   239→    if (selectedEntries.size === currentEntries.length && currentEntries.length > 0) setSelectedEntries(new Set())
+   240→   240→    else setSelectedEntries(new Set(currentEntries.map(e => e.id)))
+   241→   241→  }
+   242→   242→
+   243→   243→  // ── Form helpers ──
+   244→   244→  const resetForm = () => setForm({ ...DEFAULT_CUSTOMER_FORM })
+   245→   245→  const closeDialogs = () => {
+   246→   246→    setChargeOpen(false); setPaymentOpen(false); setRefundOpen(false); setTransferOpen(false)
+   247→   247→    setDiscountOpen(false); setSettlingMode(false)
+   248→   248→    setChargeForm({ ...DEFAULT_CHARGE_FORM }); setPaymentForm({ ...DEFAULT_PAYMENT_FORM })
+   249→   249→    setRefundForm({ ...DEFAULT_REFUND_FORM }); setTransferForm({ ...DEFAULT_TRANSFER_FORM })
+   250→   250→    setDiscountForm({ ...DEFAULT_DISCOUNT_FORM })
+   251→   251→  }
+   252→   252→  const populateEditForm = () => {
+   253→   253→    if (!detail) return
+   254→   254→    setForm({ fullName: detail.fullName, mobile: detail.mobile, whatsapp: detail.whatsapp, email: detail.email, customerType: detail.customerType, creditLimit: detail.creditLimit, internalNotes: detail.internalNotes, gstNumber: detail.gstNumber, panNumber: detail.panNumber, aadhaarNumber: detail.aadhaarNumber, openingBalance: detail.openingBalance })
+   255→   255→  }
+   256→   256→
+   257→   257→  // ── Post-checkout dialog state (managed here so goBack can close it) ──
+   258→   258→  const [postCheckoutDialogOpen, setPostCheckoutDialogOpen] = useState(false)
+   259→   259→
+   260→   260→  // ── API Handlers ──
+   261→   261→  const refreshAll = () => {
+   262→   262→    fetchCustomers(true);
+   263→   263→    if (selectedIdRef.current) {
+   264→   264→      fetchDetail(selectedIdRef.current, true);
+   265→   265→      fetchMasterFolioEntries(selectedIdRef.current);
+   266→   266→    }
+   267→   267→    onRefreshData();
+   268→   268→  }
+   269→   269→
+   270→   270→  const handleCreateFolio = async () => {
+   271→   271→    if (!detail) return
+   272→   272→    try { setSubmitting(true)
+   273→   273→      const res = await fetch(`/api/folio/customers/${detail.id}/folios`, { method: 'POST', headers: { ...hdrRef.current, 'Content-Type': 'application/json' } })
+   274→   274→      if (res.ok) { notify({ type: 'success', title: 'Folio Created' }); fetchDetail(detail.id) }
+   275→   275→      else { const e = await res.json(); notify({ type: 'error', title: 'Error', message: e.error || 'Failed' }) }
+   276→   276→    } catch { notify({ type: 'error', title: 'Error', message: 'Failed to create folio' }) } finally { setSubmitting(false) }
+   277→   277→  }
+   278→   278→
+   279→   279→  const handleCreate = async () => {
+   280→   280→    if (!form.fullName.trim() || !form.mobile.trim()) { notify({ type: 'error', title: 'Error', message: 'Name and Mobile required' }); return }
+   281→   281→    try { setSubmitting(true)
+   282→   282→      const res = await fetch('/api/folio/customers', { method: 'POST', headers: { ...hdrRef.current, 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
+   283→   283→      if (res.ok) { notify({ type: 'success', title: 'Customer Created' }); setAddOpen(false); resetForm(); fetchCustomers(); onRefreshData() }
+   284→   284→      else { const e = await res.json(); if (e.duplicate) { setDuplicate(e.duplicate); notify({ type: 'warning', title: 'Duplicate' }) } else notify({ type: 'error', title: 'Error', message: e.error || 'Failed' }) }
+   285→   285→    } catch { notify({ type: 'error', title: 'Error', message: 'Failed' }) } finally { setSubmitting(false) }
+   286→   286→  }
+   287→   287→
+   288→   288→  const handleUpdate = async () => {
+   289→   289→    if (!detail || !form.fullName.trim()) return
+   290→   290→    try { setSubmitting(true)
+   291→   291→      const res = await fetch(`/api/folio/customers/${detail.id}`, { method: 'PUT', headers: { ...hdrRef.current, 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
+   292→   292→      if (res.ok) { notify({ type: 'success', title: 'Updated' }); setEditOpen(false); fetchDetail(detail.id); fetchCustomers(true) }
+   293→   293→      else { const e = await res.json(); notify({ type: 'error', title: 'Error', message: e.error || 'Failed' }) }
+   294→   294→    } catch { /* ignore */ } finally { setSubmitting(false) }
+   295→   295→  }
+   296→   296→
+   297→   297→  const addLedgerEntry = async (type: string, data: any) => {
+   298→   298→    if (!detail || !selectedFolioId) return
+   299→   299→    try { setSubmitting(true)
+   300→   300→      const res = await fetch(`/api/folio/customers/${detail.id}/ledger`, { method: 'POST', headers: { ...hdrRef.current, 'Content-Type': 'application/json' }, body: JSON.stringify({ type, folioId: selectedFolioId, ...data }) })
+   301→   301→      if (res.ok) { notify({ type: 'success', title: 'Entry Added' }); closeDialogs(); fetchFolioEntries(detail.id, selectedFolioId); fetchDetail(detail.id, true); refreshAll() }
+   302→   302→      else { const e = await res.json(); notify({ type: 'error', title: 'Error', message: e.error || 'Failed' }) }
+   303→   303→    } catch { /* ignore */ } finally { setSubmitting(false) }
+   304→   304→  }
+   305→   305→
+   306→   306→  const handleCharge = () => { if (!chargeForm.amount || !chargeForm.description) { notify({ type: 'error', title: 'Error', message: 'Amount and description required' }); return }; addLedgerEntry('Charge', { description: chargeForm.description, amount: parseFloat(chargeForm.amount), tax: parseFloat(chargeForm.tax) || 0, invoiceNo: chargeForm.invoiceNo }) }
+   307→   307→  const handlePayment = () => { if (!paymentForm.amount) { notify({ type: 'error', title: 'Error', message: 'Amount required' }); return }; addLedgerEntry('Payment', { description: paymentForm.description || `Payment via ${paymentForm.mode}`, amount: parseFloat(paymentForm.amount), paymentMode: paymentForm.mode, reference: paymentForm.reference }) }
+   308→   308→  const handleRefund = () => { if (!refundForm.amount || !refundForm.description) { notify({ type: 'error', title: 'Error', message: 'Amount and reason required' }); return }; addLedgerEntry('Refund', { description: `${refundForm.reason}: ${refundForm.description}`, amount: parseFloat(refundForm.amount), invoiceNo: refundForm.invoiceNo }) }
+   309→   309→  const handleDiscount = () => { if (!discountForm.amount) { notify({ type: 'error', title: 'Error', message: 'Amount required' }); return }; addLedgerEntry('Discount', { description: discountForm.description || 'Discount applied', amount: parseFloat(discountForm.amount), discountType: discountForm.discountType }) }
+   310→   310→
+   311→   311→  const handleSettle = async () => {
+   312→   312→    if (!detail || !paymentForm.amount || !selectedFolioId) return
+   313→   313→    try { setSubmitting(true)
+   314→   314→      const res = await fetch(`/api/folio/customers/${detail.id}/settle`, { method: 'POST', headers: { ...hdrRef.current, 'Content-Type': 'application/json' }, body: JSON.stringify({ amount: parseFloat(paymentForm.amount), mode: paymentForm.mode, reference: paymentForm.reference, description: paymentForm.description, folioId: selectedFolioId }) })
+   315→   315→      if (res.ok) { notify({ type: 'success', title: 'Settlement Complete' }); closeDialogs(); fetchFolioEntries(detail.id, selectedFolioId); refreshAll() }
+   316→   316→      else { const e = await res.json(); notify({ type: 'error', title: 'Error', message: e.error || 'Failed' }) }
+   317→   317→    } catch { /* ignore */ } finally { setSubmitting(false) }
+   318→   318→  }
+   319→   319→
+   320→   320→  const handleTransfer = async () => {
+   321→   321→    if (!detail || !transferForm.targetCustomerId || !transferForm.amount) { notify({ type: 'error', title: 'Error', message: 'Target and amount required' }); return }
+   322→   322→    try { setSubmitting(true)
+   323→   323→      const res = await fetch(`/api/folio/customers/${detail.id}/transfer`, { method: 'POST', headers: { ...hdrRef.current, 'Content-Type': 'application/json' }, body: JSON.stringify({ targetCustomerId: transferForm.targetCustomerId, amount: parseFloat(transferForm.amount), description: transferForm.description }) })
+   324→   324→      if (res.ok) { notify({ type: 'success', title: 'Transfer Complete' }); closeDialogs(); refreshAll() }
+   325→   325→      else { const e = await res.json(); notify({ type: 'error', title: 'Error', message: e.error || 'Failed' }) }
+   326→   326→    } catch { /* ignore */ } finally { setSubmitting(false) }
+   327→   327→  }
+   328→   328→  const searchTransferTargets = async (q: string) => {
+   329→   329→    if (q.length < 2) { setTransferResults([]); return }
+   330→   330→    try { const res = await fetch(`/api/folio/customers?search=${encodeURIComponent(q)}&limit=10`, { headers: hdrRef.current }); if (res.ok) { const data = await res.json(); const list = Array.isArray(data) ? data : (data.customers || []); setTransferResults(list.filter((c: Customer) => c.id !== detail?.id)) } } catch { /* ignore */ }
+   331→   331→  }
+   332→   332→
+   333→   333→  const handleShift = async () => {
+   334→   334→    if (!detail || !shiftTargetFolioId || selectedEntries.size === 0) { notify({ type: 'error', title: 'Error', message: 'Select entries and target folio' }); return }
+   335→   335→    try { setSubmitting(true)
+   336→   336→      const res = await fetch(`/api/folio/customers/${detail.id}/shift`, { method: 'POST', headers: { ...hdrRef.current, 'Content-Type': 'application/json' }, body: JSON.stringify({ entryIds: Array.from(selectedEntries), targetFolioId: shiftTargetFolioId }) })
+   337→   337→      if (res.ok) { notify({ type: 'success', title: 'Shift Complete' }); setShiftOpen(false); setShiftTargetFolioId(''); setSelectedEntries(new Set()); fetchFolioEntries(detail.id, selectedFolioId!); fetchDetail(detail.id, true) }
+   338→   338→      else { const e = await res.json(); notify({ type: 'error', title: 'Error', message: e.error || 'Failed' }) }
+   339→   339→    } catch { /* ignore */ } finally { setSubmitting(false) }
+   340→   340→  }
+   341→   341→
+   342→   342→  const handleRemove = async () => {
+   343→   343→    if (!detail || selectedEntries.size === 0) return
+   344→   344→    try { setSubmitting(true)
+   345→   345→      const res = await fetch(`/api/folio/customers/${detail.id}/entries/remove`, { method: 'POST', headers: { ...hdrRef.current, 'Content-Type': 'application/json' }, body: JSON.stringify({ entryIds: Array.from(selectedEntries) }) })
+   346→   346→      if (res.ok) { notify({ type: 'success', title: 'Removed' }); setRemoveOpen(false); setSelectedEntries(new Set()); fetchFolioEntries(detail.id, selectedFolioId!); fetchDetail(detail.id, true) }
+   347→   347→      else { const e = await res.json(); notify({ type: 'error', title: 'Error', message: e.error || 'Failed' }) }
+   348→   348→    } catch { /* ignore */ } finally { setSubmitting(false) }
+   349→   349→  }
+   350→   350→
+   351→   351→  const handleSplitAmount = async () => {
+   352→   352→    if (!detail || selectedEntries.size !== 1 || !splitAmountForm.targetFolioId || !splitAmountForm.amount) { notify({ type: 'error', title: 'Error', message: 'Select one entry, target folio, and amount' }); return }
+   353→   353→    try { setSubmitting(true)
+   354→   354→      const entryId = Array.from(selectedEntries)[0]
+   355→   355→      const res = await fetch(`/api/folio/customers/${detail.id}/split`, { method: 'POST', headers: { ...hdrRef.current, 'Content-Type': 'application/json' }, body: JSON.stringify({ entryId, targetFolioId: splitAmountForm.targetFolioId, splitAmount: parseFloat(splitAmountForm.amount), description: 'Split Amount' }) })
+   356→   356→      if (res.ok) { notify({ type: 'success', title: 'Split Complete' }); setSplitAmountOpen(false); setSplitAmountForm({ ...DEFAULT_SPLIT_AMOUNT_FORM }); setSelectedEntries(new Set()); fetchFolioEntries(detail.id, selectedFolioId!); fetchDetail(detail.id, true) }
+   357→   357→      else { const e = await res.json(); notify({ type: 'error', title: 'Error', message: e.error || 'Failed' }) }
+   358→   358→    } catch { /* ignore */ } finally { setSubmitting(false) }
+   359→   359→  }
+   360→   360→
+   361→   361→  const handleCheckout = async () => {
+   362→   362→    if (!detail) return
+   363→   363→    // Save current entries for post-checkout printing
+   364→   364→    setPostCheckoutPrintData([...masterFolioEntries])
+   365→   365→    try { setSubmitting(true)
+   366→   366→      const res = await fetch(`/api/folio/customers/${detail.id}/checkout`, { method: 'POST', headers: { ...hdrRef.current, 'Content-Type': 'application/json' } })
+   367→   367→      if (res.ok) { notify({ type: 'success', title: 'Checkout Complete' }); setCheckoutOpen(false); refreshAll() }
+   368→   368→      else { const e = await res.json(); notify({ type: 'error', title: 'Error', message: e.error || 'Failed' }) }
+   369→   369→    } catch { /* ignore */ } finally { setSubmitting(false) }
+   370→   370→  }
+   371→   371→
+   372→   372→  // ── Handle Checkout Settlement (check balances first) ──
+   373→   373→  const handleCheckoutSettlement = async () => {
+   374→   374→    if (!detail) return
+   375→   375→    try { setSubmitting(true)
+   376→   376→      const res = await fetch(`/api/folio/customers/${detail.id}/settlement-overview`, { headers: hdrRef.current })
+   377→   377→      if (res.ok) { const data = await res.json(); setCheckoutSettlementData(data); setCheckoutSettlementOpen(true) }
+   378→   378→      else { const e = await res.json(); notify({ type: 'error', title: 'Error', message: e.error || 'Failed' }) }
+   379→   379→    } catch { notify({ type: 'error', title: 'Error', message: 'Failed to check settlement status' }) } finally { setSubmitting(false) }
+   380→   380→  }
+   381→   381→
+   382→   382→  // ── Auto-settle all outstanding folios ──
+   383→   383→  const handleAutoSettleAll = async () => {
+   384→   384→    if (!detail || !checkoutSettlementData) return
+   385→   385→    try { setSubmitting(true)
+   386→   386→      const res = await fetch(`/api/folio/customers/${detail.id}/settle`, {
+   387→   387→        method: 'POST', headers: { ...hdrRef.current, 'Content-Type': 'application/json' },
+   388→   388→        body: JSON.stringify({ amount: checkoutSettlementData.totalOutstanding, mode: 'Cash', reference: '', description: 'Auto-settlement (all folios)', autoAllocate: true }),
+   389→   389→      })
+   390→   390→      if (res.ok) { notify({ type: 'success', title: 'All Folios Settled', message: `Settled across all folios` }); setCheckoutSettlementOpen(false); refreshAll(); fetchCheckoutSettlementData() }
+   391→   391→      else { const e = await res.json(); notify({ type: 'error', title: 'Error', message: e.error || 'Failed' }) }
+   392→   392→    } catch { notify({ type: 'error', title: 'Error', message: 'Failed to settle' }) } finally { setSubmitting(false) }
+   393→   393→  }
+   394→   394→
+   395→   395→  const fetchCheckoutSettlementData = async () => {
+   396→   396→    if (!detail) return
+   397→   397→    try {
+   398→   398→      const res = await fetch(`/api/folio/customers/${detail.id}/settlement-overview`, { headers: hdrRef.current })
+   399→   399→      if (res.ok) setCheckoutSettlementData(await res.json())
+   400→   400→    } catch { /* ignore */ }
+   401→   401→  }
+   402→   402→
+   403→   403→  // ── Multi-folio settlement (settle specific folio) ──
+   404→   404→  const handleMultiFolioSettlement = async (payload: SettlementPayload) => {
+   405→   405→    if (!detail) return
+   406→   406→    try { setSubmitting(true)
+   407→   407→      const res = await fetch(`/api/folio/customers/${detail.id}/settle`, {
+   408→   408→        method: 'POST', headers: { ...hdrRef.current, 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+   409→   409→      })
+   410→   410→      if (res.ok) { notify({ type: 'success', title: 'Settlement Complete' }); fetchCheckoutSettlementData(); if (selectedFolioId && selectedFolioId !== 'master') fetchFolioEntries(detail.id, selectedFolioId); fetchMasterFolioEntries(detail.id); refreshAll() }
+   411→   411→      else { const e = await res.json(); notify({ type: 'error', title: 'Error', message: e.error || 'Failed' }) }
+   412→   412→    } catch { /* ignore */ } finally { setSubmitting(false) }
+   413→   413→  }
+   414→   414→
+   415→   415→  const handleDeleteFolio = async () => {
+   416→   416→    if (!detail || !folioToDelete) return
+   417→   417→    try { setSubmitting(true)
+   418→   418→      const res = await fetch(`/api/folio/customers/${detail.id}/folios/${folioToDelete}`, { method: 'DELETE', headers: hdrRef.current })
+   419→   419→      if (res.ok) { notify({ type: 'success', title: 'Folio Deleted' }); setDeleteFolioOpen(false); setFolioToDelete(null); fetchDetail(detail.id) }
+   420→   420→      else { const e = await res.json(); notify({ type: 'error', title: 'Error', message: e.error || 'Failed' }) }
+   421→   421→    } catch { notify({ type: 'error', title: 'Error', message: 'Failed to delete folio' }) } finally { setSubmitting(false) }
+   422→   422→  }
+   423→   423→
+   424→   424→  // ── Reopen: after success, re-fetch detail properly ──
+   425→   425→  const handleReopen = async () => {
+   426→   426→    if (!detail) return
+   427→   427→    try { setSubmitting(true)
+   428→   428→      const res = await fetch(`/api/folio/customers/${detail.id}/reopen`, { method: 'POST', headers: { ...hdrRef.current, 'Content-Type': 'application/json' }, body: JSON.stringify({}) })
+   429→   429→      if (res.ok) {
+   430→   430→        notify({ type: 'success', title: 'Reopened' })
+   431→   431→        // Re-fetch detail to get updated state
+   432→   432→        await fetchDetail(detail.id, true)
+   433→   433→        await fetchMasterFolioEntries(detail.id)
+   434→   434→        fetchCustomers(true)
+   435→   435→        onRefreshData()
+   436→   436→      }
+   437→   437→      else { const e = await res.json(); notify({ type: 'error', title: 'Error', message: e.error || 'Failed' }) }
+   438→   438→    } catch { /* ignore */ } finally { setSubmitting(false) }
+   439→   439→  }
+   440→   440→
+   441→   441→  const handleDelete = async () => {
+   442→   442→    if (!detail) return
+   443→   443→    try { setSubmitting(true)
+   444→   444→      const res = await fetch(`/api/folio/customers/${detail.id}`, { method: 'DELETE', headers: hdrRef.current })
+   445→   445→      if (res.ok) { notify({ type: 'success', title: 'Archived' }); setDeleteOpen(false); goBack(); fetchCustomers(); onRefreshData() }
+   446→   446→      else notify({ type: 'error', title: 'Error', message: 'Failed' })
+   447→   447→    } catch { /* ignore */ } finally { setSubmitting(false) }
+   448→   448→  }
+   449→   449→
+   450→   450→  const handleAddDoc = async () => { if (!detail || !docForm.name) { notify({ type: 'error', title: 'Error', message: 'Name required' }); return } try { setSubmitting(true); const res = await fetch(`/api/folio/customers/${detail.id}/documents`, { method: 'POST', headers: { ...hdrRef.current, 'Content-Type': 'application/json' }, body: JSON.stringify(docForm) }); if (res.ok) { notify({ type: 'success', title: 'Document Added' }); setDocForm({ ...DEFAULT_DOC_FORM }); await fetchDetail(detail.id); } } catch { /* ignore */ } finally { setSubmitting(false) } }
+   451→   451→  const handleDeleteDoc = async (docId: string) => { if (!detail) return; try { await fetch(`/api/folio/customers/${detail.id}/documents/${docId}`, { method: 'DELETE', headers: hdrRef.current }); notify({ type: 'success', title: 'Deleted' }); await fetchDetail(detail.id) } catch { /* ignore */ } }
+   452→   452→  const handleAddNote = async () => { if (!detail || !noteForm.content) { notify({ type: 'error', title: 'Error', message: 'Content required' }); return } try { setSubmitting(true); const res = await fetch(`/api/folio/customers/${detail.id}/notes`, { method: 'POST', headers: { ...hdrRef.current, 'Content-Type': 'application/json' }, body: JSON.stringify(noteForm) }); if (res.ok) { notify({ type: 'success', title: 'Note Added' }); setNoteForm({ ...DEFAULT_NOTE_FORM }); await fetchDetail(detail.id); } } catch { /* ignore */ } finally { setSubmitting(false) } }
+   453→   453→  const handleDeleteNote = async (noteId: string) => { if (!detail) return; try { await fetch(`/api/folio/customers/${detail.id}/notes/${noteId}`, { method: 'DELETE', headers: hdrRef.current }); notify({ type: 'success', title: 'Deleted' }); await fetchDetail(detail.id) } catch { /* ignore */ } }
+   454→   454→  const handleToggleTag = async (tagName: string) => { if (!detail) return; const has = customerTags.includes(tagName); try { if (has) { await fetch(`/api/folio/customers/${detail.id}/tags?tagName=${encodeURIComponent(tagName)}`, { method: 'DELETE', headers: hdrRef.current }); setCustomerTags(prev => prev.filter(t => t !== tagName)) } else { await fetch(`/api/folio/customers/${detail.id}/tags`, { method: 'POST', headers: { ...hdrRef.current, 'Content-Type': 'application/json' }, body: JSON.stringify({ tagName }) }); setCustomerTags(prev => [...prev, tagName]) } fetchDetail(detail.id, true); fetchCustomers(true) } catch { /* ignore */ } }
+   455→   455→
+   456→   456→  // ── Invoice / statement helpers ──
+   457→   457→  const fetchInvoiceData = async () => {
+   458→   458→    if (!detail) return
+   459→   459→    try { setInvoiceLoading(true); const params = new URLSearchParams(); if (invoiceFrom) params.set('from', invoiceFrom); if (invoiceTo) params.set('to', invoiceTo)
+   460→   460→      const res = await fetch(`/api/folio/customers/${detail.id}/statement?${params}`, { headers: hdrRef.current }); if (res.ok) setInvoiceData(await res.json()); else notify({ type: 'error', title: 'Error', message: 'Failed' })
+   461→   461→    } catch { /* ignore */ } finally { setInvoiceLoading(false) }
+   462→   462→  }
+   463→   463→  const fetchFolioStatement = async (folioId: string) => {
+   464→   464→    if (!detail) return
+   465→   465→    try { setFolioStatementData(null)
+   466→   466→      const res = await fetch(`/api/folio/customers/${detail.id}/statement?folioId=${folioId}`, { headers: hdrRef.current }); if (res.ok) setFolioStatementData(await res.json())
+   467→   467→    } catch { /* ignore */ }
+   468→   468→  }
+   469→   469→
+   470→   470→  // ── Print wrappers (async, using ref) ──
+   471→   471→  const bal = detail?.balance ?? 0
+   472→   472→  const isActive = detail?.status === 'Active'
+   473→   473→  const isCheckedOut = detail?.status === 'CheckedOut'
+   474→   474→  // Include all payment/settlement/refund entries from ALL folios for voucher history
+   475→   475→  const paymentEntries = masterFolioEntries.filter(e => e.type === 'Payment' || e.type === 'Settlement' || e.type === 'Refund')
+   476→   476→  const selectedEntryObj = selectedEntries.size === 1 ? folioEntries.find(e => e.id === Array.from(selectedEntries)[0]) : null
+   477→   477→
+   478→   478→  const doPrintReceipt = async () => {
+   479→   479→    if (!detail) return
+   480→   480→    const entriesToPrint = postCheckoutPrintData.length > 0 ? postCheckoutPrintData : (folioEntries.length > 0 ? folioEntries : masterFolioEntries)
+   481→   481→    await _printReceipt(detail, entriesToPrint, hdrRef as any)
+   482→   482→  }
+   483→   483→  const doPrintInvoice = () => { if (!detail) return; _printInvoice(detail, invoiceData, invoiceFrom, invoiceTo) }
+   484→   484→  const doPrintSingleFolio = () => { if (!detail) return; _printSingleFolio(detail, folioStatementData) }
+   485→   485→  // Combined fetch + print for folio statement (avoids confusing two-step UX)
+   486→   486→  const handlePrintFolioStatement = async (folioId: string) => {
+   487→   487→    if (!detail) return
+   488→   488→    try {
+   489→   489→      const res = await fetch(`/api/folio/customers/${detail.id}/statement?folioId=${folioId}`, { headers: hdrRef.current })
+   490→   490→      if (res.ok) {
+   491→   491→        const data = await res.json()
+   492→   492→        setFolioStatementData(data)
+   493→   493→        _printSingleFolio(detail!, data)
+   494→   494→      } else {
+   495→   495→        notify({ type: 'error', title: 'Error', message: 'Failed to fetch folio statement' })
+   496→   496→      }
+   497→   497→    } catch { notify({ type: 'error', title: 'Error', message: 'Failed to print folio statement' }) }
+   498→   498→  }
+   499→   499→  const doPrintVoucherHistory = async () => { if (!detail) return; await _printVoucherHistory(detail, paymentEntries, hdrRef as any) }
+   500→   500→
+   501→   501→  // ── Thermal Print wrappers ──
+   502→   502→  const doThermalPrintReceipt = async () => {
+   503→   503→    if (!detail) return
+   504→   504→    const entriesToPrint = postCheckoutPrintData.length > 0 ? postCheckoutPrintData : (folioEntries.length > 0 ? folioEntries : masterFolioEntries)
+   505→   505→    await _thermalPrintReceipt(detail, entriesToPrint, hdrRef as any)
+   506→   506→  }
+   507→   507→  const doThermalPrintInvoice = () => { if (!detail) return; _thermalPrintInvoice(detail, invoiceData, invoiceFrom, invoiceTo) }
+   508→   508→  const doThermalPrintFolio = () => { if (!detail) return; _thermalPrintFolioStatement(detail, folioStatementData) }
+   509→   509→  const doThermalPrintVoucher = async () => { if (!detail) return; await _thermalPrintVoucherHistory(detail, paymentEntries, hdrRef as any) }
+   510→   510→
+   511→   511→  const handlePrintHistoryFolio = (folioData: { entries: any[]; openingBalance: number; closingBalance: number }) => {
+   512→   512→    if (!detail) return
+   513→   513→    setInvoiceData({ entries: folioData.entries, openingBalance: folioData.openingBalance, closingBalance: folioData.closingBalance })
+   514→   514→    setInvoiceFrom('')
+   515→   515→    setInvoiceTo('')
+   516→   516→    // Use the first entry date as from and last as to
+   517→   517→    if (folioData.entries.length > 0) {
+   518→   518→      setInvoiceFrom(folioData.entries[0].date)
+   519→   519→      setInvoiceTo(folioData.entries[folioData.entries.length - 1].date)
+   520→   520→    }
+   521→   521→    setInvoiceOpen(true)
+   522→   522→  }
+   523→   523→
+   524→   524→  // ── RENDER ──
+   525→   525→  return (
+   526→   526→    <FolioErrorBoundary>
+   527→   527→    <TooltipProvider delayDuration={200}>
+   528→   528→    <>
+   529→   529→    {!canAccess && <ReadOnlyBanner module="Customer Folio" noAccess />}
+   530→   530→
+   531→   531→    <div className={isFullscreen ? 'fixed inset-0 z-[60] flex flex-col' : ''}>
+   532→   532→      <div className={`flex flex-col ${isFullscreen ? 'h-full' : 'min-h-0'} border border-slate-200 dark:border-slate-700 ${isFullscreen ? 'border-0 rounded-none' : 'rounded-lg'} overflow-hidden bg-white dark:bg-slate-900 shadow-sm`}>
+   533→   533→
+   534→   534→        {/* ── HEADER BAR ── */}
+   535→   535→        <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 px-4 py-2.5 flex items-center justify-between shrink-0">
+   536→   536→          <div className="flex items-center gap-3">
+   537→   537→            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-600 to-emerald-700 flex items-center justify-center shadow-sm shadow-emerald-600/20">
+   538→   538→              <span className="text-white text-sm font-bold">CF</span>
+   539→   539→            </div>
+   540→   540→            <div>
+   541→   541→              <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100">Customer Folio</h2>
+   542→   542→              <p className="text-[10px] text-slate-400 dark:text-slate-500">Guest profiles &amp; billing management</p>
+   543→   543→            </div>
+   544→   544→          </div>
+   545→   545→          <div className="flex items-center gap-2">
+   546→   546→            <button onClick={() => setIsFullscreen(!isFullscreen)} className="text-[10px] text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 px-2 py-1 rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+   547→   547→              {isFullscreen ? 'Exit Full' : 'Fullscreen'}
+   548→   548→            </button>
+   549→   549→          </div>
+   550→   550→        </div>
+   551→   551→
+   552→   552→        {/* ── MAIN BODY ── */}
+   553→   553→        <div className="flex flex-col flex-1 min-h-0">
+   554→   554→          {/* CUSTOMER PROFILE GRID VIEW (when no customer selected) */}
+   555→   555→          {!selectedId && (
+   556→   556→            <CustomerFolioProfileGrid
+   557→   557→              customers={customers} loading={loading} search={search} setSearch={setSearch}
+   558→   558→              filter={filter} setFilter={setFilter} sort={sort} setSort={setSort}
+   559→   559→              canCreate={canCreate} onAddCustomer={() => { resetForm(); setAddOpen(true) }}
+   560→   560→              onSelectCustomer={openCustomer}
+   561→   561→              onReports={() => setReportsOpen(true)}
+   562→   562→            />
+   563→   563→          )}
+   564→   564→
+   565→   565→          {/* CUSTOMER DETAIL VIEW (when customer selected) — full width */}
+   566→   566→          {selectedId && detail && detailLoading && !folioEntries.length ? (
+   567→   567→            <div className="flex-1 flex flex-col items-center justify-center">
+   568→   568→              <Loader2 className="size-8 animate-spin text-emerald-500 mb-3" />
+   569→   569→              <p className="text-sm text-muted-foreground">Loading customer details...</p>
+   570→   570→            </div>
+   571→   571→          ) : selectedId && detail ? (
+   572→   572→            <CustomerFolioManagement
+   573→   573→              detail={detail} allFolios={allFolios} folioEntries={folioEntries}
+   574→   574→              selectedEntries={selectedEntries} selectedFolioId={selectedFolioId}
+   575→   575→              folioEntriesLoading={folioEntriesLoading} submitting={submitting}
+   576→   576→              isAdmin={isAdmin} isActive={isActive} isCheckedOut={isCheckedOut}
+   577→   577→              folioStatementData={folioStatementData}
+   578→   578→              masterFolioEntries={masterFolioEntries}
+   579→   579→              onCheckoutSettlement={handleCheckoutSettlement}
+   580→   580→              goBack={goBack} setSelectedFolioId={setSelectedFolioId}
+   581→   581→              setSelectedEntries={setSelectedEntries} fetchFolioEntries={fetchFolioEntries}
+   582→   582→              toggleEntrySelection={toggleEntrySelection} toggleAllEntries={toggleAllEntries}
+   583→   583→              handleCreateFolio={handleCreateFolio} handleReopen={handleReopen}
+   584→   584→              printReceipt={doPrintReceipt} printSingleFolio={doPrintSingleFolio}
+   585→   585→              onPrintFolioStatement={handlePrintFolioStatement}
+   586→   586→              fetchFolioStatement={fetchFolioStatement}
+   587→   587→              onVoucher={() => setVoucherOpen(true)}
+   588→   588→              onInvoice={() => { setInvoiceFrom(''); setInvoiceTo(''); setInvoiceData(null); fetchInvoiceData(); setInvoiceOpen(true) }}
+   589→   589→              onCharge={() => setChargeOpen(true)}
+   590→   590→              onSettlement={() => { setPaymentForm({ ...DEFAULT_PAYMENT_FORM }); setSettlingMode(true); setPaymentOpen(true) }}
+   591→   591→              onPayment={() => { setPaymentForm({ ...DEFAULT_PAYMENT_FORM }); setSettlingMode(false); setPaymentOpen(true) }}
+   592→   592→              onCheckout={() => setCheckoutOpen(true)}
+   593→   593→              onRefund={() => { setRefundForm({ ...DEFAULT_REFUND_FORM }); setRefundOpen(true) }}
+   594→   594→              onDiscount={() => { setDiscountForm({ ...DEFAULT_DISCOUNT_FORM }); setDiscountOpen(true) }}
+   595→   595→              onTransfer={() => setTransferOpen(true)}
+   596→   596→              onShift={() => setShiftOpen(true)}
+   597→   597→              onSplit={() => { if (selectedEntries.size === 1) { setSplitAmountForm({ ...DEFAULT_SPLIT_AMOUNT_FORM }); setSplitAmountOpen(true) } else notify({ type: 'info', title: 'Info', message: 'Select 1 entry to split' }) }}
+   598→   598→              onRemove={() => setRemoveOpen(true)}
+   599→   599→              onEdit={() => { populateEditForm(); setEditOpen(true) }}
+   600→   600→              onDetails={() => setDetailsSheetOpen(true)}
+   601→   601→              onTags={() => setTagsOpen(true)}
+   602→   602→              onNotes={() => setNoteOpen(true)}
+   603→   603→              onDocs={() => setDocOpen(true)}
+   604→   604→              onDelete={() => setDeleteOpen(true)}
+   605→   605→              onReports={() => setReportsOpen(true)}
+   606→   606→              onHistory={() => setHistoryOpen(true)}
+   607→   607→              onDeleteFolio={(folioId: string) => { setFolioToDelete(folioId); setDeleteFolioOpen(true) }}
+   608→   608→              isFullscreen={isFullscreen}
+   609→   609→              thermalPrintReceipt={doThermalPrintReceipt}
+   610→   610→              thermalPrintInvoice={doThermalPrintInvoice}
+   611→   611→              thermalPrintFolio={doThermalPrintFolio}
+   612→   612→              thermalPrintVoucher={doThermalPrintVoucher}
+   613→   613→            />
+   614→   614→          ) : null}
+   615→   615→        </div>
+   616→   616→      </div>
+   617→   617→    </div>
+   618→   618→
+   619→   619→      {/* All Dialogs */}
+   620→   620→        <CustomerFolioDialogs
+   621→   621→          detail={detail || null} allFolios={allFolios} selectedEntries={selectedEntries}
+   622→   622→          submitting={submitting} settlingMode={settlingMode} selectedFolioId={selectedFolioId}
+   623→   623→          bal={bal} selectedEntryObj={selectedEntryObj} isActive={isActive}
+   624→   624→          isCheckedOut={isCheckedOut} invoiceData={invoiceData} invoiceLoading={invoiceLoading}
+   625→   625→          folioStatementData={folioStatementData} customerTags={customerTags}
+   626→   626→          transferResults={transferResults} paymentEntries={paymentEntries}
+   627→   627→          addOpen={addOpen} editOpen={editOpen} chargeOpen={chargeOpen}
+   628→   628→          paymentOpen={paymentOpen} refundOpen={refundOpen} transferOpen={transferOpen}
+   629→   629→          discountOpen={discountOpen} docOpen={docOpen} noteOpen={noteOpen}
+   630→   630→          tagsOpen={tagsOpen} checkoutOpen={checkoutOpen} deleteOpen={deleteOpen}
+   631→   631→          splitAmountOpen={splitAmountOpen} shiftOpen={shiftOpen} removeOpen={removeOpen}
+   632→   632→          voucherOpen={voucherOpen} invoiceOpen={invoiceOpen} detailsSheetOpen={detailsSheetOpen}
+   633→   633→          form={form} chargeForm={chargeForm} paymentForm={paymentForm}
+   634→   634→          refundForm={refundForm} transferForm={transferForm} discountForm={discountForm}
+   635→   635→          docForm={docForm} noteForm={noteForm} splitAmountForm={splitAmountForm}
+   636→   636→          invoiceFrom={invoiceFrom} invoiceTo={invoiceTo} shiftTargetFolioId={shiftTargetFolioId}
+   637→   637→          duplicate={duplicate}
+   638→   638→          setAddOpen={setAddOpen} setEditOpen={setEditOpen} setChargeOpen={setChargeOpen}
+   639→   639→          setPaymentOpen={setPaymentOpen} setRefundOpen={setRefundOpen} setTransferOpen={setTransferOpen}
+   640→   640→          setDiscountOpen={setDiscountOpen} setDocOpen={setDocOpen} setNoteOpen={setNoteOpen}
+   641→   641→          setTagsOpen={setTagsOpen} setCheckoutOpen={setCheckoutOpen} setDeleteOpen={setDeleteOpen}
+   642→   642→          setSplitAmountOpen={setSplitAmountOpen} setShiftOpen={setShiftOpen} setRemoveOpen={setRemoveOpen}
+   643→   643→          setVoucherOpen={setVoucherOpen} setInvoiceOpen={setInvoiceOpen} setDetailsSheetOpen={setDetailsSheetOpen}
+   644→   644→          setForm={setForm} setChargeForm={setChargeForm} setPaymentForm={setPaymentForm}
+   645→   645→          setRefundForm={setRefundForm} setTransferForm={setTransferForm} setDiscountForm={setDiscountForm}
+   646→   646→          setDocForm={setDocForm} setNoteForm={setNoteForm} setSplitAmountForm={setSplitAmountForm}
+   647→   647→          setInvoiceFrom={setInvoiceFrom} setInvoiceTo={setInvoiceTo} setShiftTargetFolioId={setShiftTargetFolioId}
+   648→   648→          setDuplicate={setDuplicate}
+   649→   649→          handleCreate={handleCreate} handleUpdate={handleUpdate} handleCharge={handleCharge}
+   650→   650→          handlePayment={handlePayment} handleSettle={handleSettle} handleRefund={handleRefund}
+   651→   651→          handleDiscount={handleDiscount} handleTransfer={handleTransfer} handleShift={handleShift}
+   652→   652→          handleSplitAmount={handleSplitAmount} handleRemove={handleRemove} handleCheckout={handleCheckout}
+   653→   653→          handleDelete={handleDelete} handleAddDoc={handleAddDoc} handleAddNote={handleAddNote}
+   654→   654→          handleToggleTag={handleToggleTag} handleDeleteDoc={handleDeleteDoc} handleDeleteNote={handleDeleteNote}
+   655→   655→          fetchInvoiceData={fetchInvoiceData} fetchFolioStatement={fetchFolioStatement}
+   656→   656→          printInvoice={doPrintInvoice} printSingleFolio={doPrintSingleFolio} printVoucherHistory={doPrintVoucherHistory}
+   657→   657→          closeDialogs={closeDialogs} searchTransferTargets={searchTransferTargets}
+   658→   658→          checkoutSettlementData={checkoutSettlementData} checkoutSettlementOpen={checkoutSettlementOpen}
+   659→   659→          splitPayments={splitPayments} setCheckoutSettlementOpen={setCheckoutSettlementOpen}
+   660→   660→          setSplitPayments={setSplitPayments}
+   661→   661→          handleMultiFolioSettlement={handleMultiFolioSettlement} handleAutoSettleAll={handleAutoSettleAll}
+   662→   662→          deleteFolioOpen={deleteFolioOpen} folioToDelete={folioToDelete}
+   663→   663→          setDeleteFolioOpen={setDeleteFolioOpen} handleDeleteFolio={handleDeleteFolio}
+   664→   664→          onPrintReceipt={doPrintReceipt}
+   665→   665→          onThermalPrintReceipt={doThermalPrintReceipt}
+   666→   666→          onThermalPrintInvoice={doThermalPrintInvoice}
+   667→   667→          onThermalPrintVoucher={doThermalPrintVoucher}
+   668→   668→          historyOpen={historyOpen}
+   669→   669→          setHistoryOpen={setHistoryOpen}
+   670→   670→          onPrintHistoryFolio={handlePrintHistoryFolio}
+   671→   671→          apiHeaders={hdrRef.current}
+   672→   672→        />
+   673→   673→
+   674→   674→        {/* Reports Sheet */}
+   675→   675→        {reportsOpen && (
+   676→   676→          <CustomerFolioReports
+   677→   677→            onClose={() => setReportsOpen(false)}
+   678→   678→            hdrRef={hdrRef as any}
+   679→   679→            canAccess={canAccess}
+   680→   680→          />
+   681→   681→        )}
+   682→   682→    </>
+   683→   683→    </TooltipProvider>
+   684→   684→    </FolioErrorBoundary>
+   685→   685→  )
+   686→   686→}

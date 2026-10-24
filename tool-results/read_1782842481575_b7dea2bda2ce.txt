@@ -1,0 +1,393 @@
+  1340→              </button>
+  1341→            </PopoverContent>
+  1342→          </Popover>
+  1343→        </div>
+  1344→      </DialogContent>
+  1345→    </Dialog>
+  1346→
+  1347→    {/* Document Dialog */}
+  1348→    <Dialog open={docOpen} onOpenChange={setDocOpen}>
+  1349→      <DialogContent className="max-w-md">
+  1350→        <DialogHeader><DialogTitle className="flex items-center gap-2"><FileUp className="size-4 text-emerald-600" />Documents</DialogTitle></DialogHeader>
+  1351→        <div className="space-y-3 py-2">
+  1352→          <div className="grid grid-cols-2 gap-2">
+  1353→            <div><Label className="text-xs">Type</Label><Select value={docForm.type} onValueChange={v => setDocForm({ ...docForm, type: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Aadhaar"><span>Aadhaar</span></SelectItem><SelectItem value="PAN"><span>PAN</span></SelectItem><SelectItem value="GST"><span>GST</span></SelectItem><SelectItem value="Agreement"><span>Agreement</span></SelectItem><SelectItem value="Receipt"><span>Receipt</span></SelectItem><SelectItem value="Invoice"><span>Invoice</span></SelectItem><SelectItem value="Contract"><span>Contract</span></SelectItem><SelectItem value="Photo"><span>Photo</span></SelectItem><SelectItem value="ID Proof"><span>ID Proof</span></SelectItem><SelectItem value="Address Proof"><span>Address Proof</span></SelectItem><SelectItem value="Medical"><span>Medical</span></SelectItem><SelectItem value="Custom"><span>Custom</span></SelectItem></SelectContent></Select></div>
+  1354→            <div><Label className="text-xs">Name *</Label><Input value={docForm.name} onChange={e => setDocForm({ ...docForm, name: e.target.value })} placeholder="Document name" /></div>
+  1355→          </div>
+  1356→          <div><Label className="text-xs">URL / File Link</Label><Input value={docForm.url} onChange={e => setDocForm({ ...docForm, url: e.target.value })} placeholder="https://..." /></div>
+  1357→          <div><Label className="text-xs">Notes</Label><Input value={docForm.notes} onChange={e => setDocForm({ ...docForm, notes: e.target.value })} placeholder="Optional notes" /></div>
+  1358→        </div>
+  1359→        <div className="max-h-56 overflow-auto border border-slate-100 dark:border-slate-700 rounded-lg mt-2">
+  1360→          {detail?.documents.length === 0 ? (
+  1361→            <div className="py-4 text-center text-muted-foreground text-[10px]">No documents uploaded yet</div>
+  1362→          ) : detail?.documents.map(doc => (
+  1363→            <div key={doc.id} className="flex items-center justify-between px-2.5 py-2.5 text-[11px] border-b border-slate-50 dark:border-slate-800 last:border-b-0">
+  1364→              <div className="min-w-0 flex-1">
+  1365→                <div className="font-medium text-slate-700 dark:text-slate-300 truncate flex items-center gap-1.5">
+  1366→                  {doc.url ? (
+  1367→                    <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-emerald-600 dark:text-emerald-400 hover:underline truncate" title="Click to preview">{doc.name}</a>
+  1368→                  ) : (
+  1369→                    <span className="truncate">{doc.name}</span>
+  1370→                  )}
+  1371→                </div>
+  1372→                <div className="text-[9px] text-slate-400 mt-0.5 flex items-center gap-1.5">
+  1373→                  <span className={`px-1.5 py-0.5 rounded text-[8px] font-medium ${DOC_TYPE_COLORS[doc.type] || 'bg-slate-100 dark:bg-slate-700 text-slate-500'}`}>{doc.type}</span>
+  1374→                  <span>{fmtDate(doc.createdAt)}</span>
+  1375→                  {doc.fileSize > 0 && <span>({(doc.fileSize / 1024).toFixed(1)} KB)</span>}
+  1376→                </div>
+  1377→                {doc.notes && <div className="text-[9px] text-slate-400 italic mt-0.5 truncate">{doc.notes}</div>}
+  1378→              </div>
+  1379→              <div className="flex items-center gap-1.5 shrink-0 ml-2">
+  1380→                {doc.url && (
+  1381→                  <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-slate-400 hover:text-emerald-600 transition-colors" title="Open/Preview">
+  1382→                    <Eye className="size-3.5" />
+  1383→                  </a>
+  1384→                )}
+  1385→                {canDelete && (
+  1386→                  <button onClick={() => handleDeleteDoc(doc.id)} className="text-red-500 hover:text-red-700 transition-colors" title="Delete document">
+  1387→                    <Trash2 className="size-3.5" />
+  1388→                  </button>
+  1389→                )}
+  1390→              </div>
+  1391→            </div>
+  1392→          ))}
+  1393→        </div>
+  1394→        <DialogFooter>
+  1395→          <Button variant="outline" onClick={() => setDocOpen(false)}>Cancel</Button>
+  1396→          <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleAddDoc} disabled={submitting || !docForm.name}>{submitting ? <Loader2 className="size-3 animate-spin" /> : 'Add Document'}</Button>
+  1397→        </DialogFooter>
+  1398→      </DialogContent>
+  1399→    </Dialog>
+  1400→
+  1401→    {/* Note Dialog */}
+  1402→    <Dialog open={noteOpen} onOpenChange={setNoteOpen}>
+  1403→      <DialogContent className="max-w-md">
+  1404→        <DialogHeader><DialogTitle className="flex items-center gap-2"><StickyNote className="size-4 text-emerald-600" />Notes</DialogTitle></DialogHeader>
+  1405→        <div className="space-y-3 py-2">
+  1406→          <div className="grid grid-cols-2 gap-2">
+  1407→            <div><Label className="text-xs">Type</Label><Select value={noteForm.type} onValueChange={v => setNoteForm({ ...noteForm, type: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Internal"><span>Internal</span></SelectItem><SelectItem value="Customer"><span>Customer</span></SelectItem><SelectItem value="Staff"><span>Staff</span></SelectItem><SelectItem value="Private"><span>Private</span></SelectItem><SelectItem value="Complaint"><span>Complaint</span></SelectItem><SelectItem value="Feedback"><span>Feedback</span></SelectItem><SelectItem value="FollowUp"><span>Follow Up</span></SelectItem></SelectContent></Select></div>
+  1408→            {isAdmin && (
+  1409→              <div className="flex items-center gap-2 pt-5">
+  1410→                <Label className="text-xs flex items-center gap-1.5 cursor-pointer select-none">
+  1411→                  <input type="checkbox" checked={noteForm.isPrivate} onChange={e => setNoteForm({ ...noteForm, isPrivate: e.target.checked })} className="rounded border-slate-300" />
+  1412→                  <Lock className="size-3 text-slate-400" />
+  1413→                  Private
+  1414→                </Label>
+  1415→              </div>
+  1416→            )}
+  1417→          </div>
+  1418→          <div><Label className="text-xs">Content *</Label><Textarea value={noteForm.content} onChange={e => setNoteForm({ ...noteForm, content: e.target.value })} rows={3} placeholder="Write your note..." /></div>
+  1419→        </div>
+  1420→        <div className="max-h-56 overflow-auto border border-slate-100 dark:border-slate-700 rounded-lg mt-2">
+  1421→          {detail?.notes.length === 0 ? (
+  1422→            <div className="py-4 text-center text-muted-foreground text-[10px]">No notes added yet</div>
+  1423→          ) : detail?.notes.map(note => (
+  1424→            <div key={note.id} className="px-2.5 py-2.5 text-[11px] border-b border-slate-50 dark:border-slate-800 last:border-b-0">
+  1425→              <div className="flex justify-between items-start gap-2">
+  1426→                <div className="min-w-0 flex-1">
+  1427→                  <div className="font-medium text-slate-700 dark:text-slate-300 break-all flex items-center gap-1.5">
+  1428→                    {note.isPrivate && <Lock className="size-3 text-amber-500 shrink-0" />}
+  1429→                    <span className="break-all">{note.content}</span>
+  1430→                  </div>
+  1431→                  <div className="text-[9px] text-slate-400 mt-0.5 flex items-center gap-1.5">
+  1432→                    <span className={`px-1.5 py-0.5 rounded text-[8px] font-medium ${NOTE_TYPE_COLORS[note.type] || 'bg-slate-100 dark:bg-slate-700 text-slate-500'}`}>{note.type}</span>
+  1433→                    <span>{note.userName || ''}</span>
+  1434→                    <span>— {fmtDate(note.createdAt)}</span>
+  1435→                  </div>
+  1436→                </div>
+  1437→                {canDelete && (
+  1438→                  <button onClick={() => handleDeleteNote(note.id)} className="text-red-500 hover:text-red-700 transition-colors shrink-0" title="Delete note">
+  1439→                    <Trash2 className="size-3.5" />
+  1440→                  </button>
+  1441→                )}
+  1442→              </div>
+  1443→            </div>
+  1444→          ))}
+  1445→        </div>
+  1446→        <DialogFooter>
+  1447→          <Button variant="outline" onClick={() => setNoteOpen(false)}>Cancel</Button>
+  1448→          <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleAddNote} disabled={submitting || !noteForm.content}>{submitting ? <Loader2 className="size-3 animate-spin" /> : 'Add Note'}</Button>
+  1449→        </DialogFooter>
+  1450→      </DialogContent>
+  1451→    </Dialog>
+  1452→
+  1453→    {/* Delete Folio Confirmation */}
+  1454→    <AlertDialog open={deleteFolioOpen} onOpenChange={setDeleteFolioOpen}>
+  1455→      <AlertDialogContent>
+  1456→        <AlertDialogHeader>
+  1457→          <AlertDialogTitle>Delete Empty Folio?</AlertDialogTitle>
+  1458→          <AlertDialogDescription>Permanently delete this empty folio? This cannot be undone.</AlertDialogDescription>
+  1459→        </AlertDialogHeader>
+  1460→        <AlertDialogFooter>
+  1461→          <AlertDialogCancel>Cancel</AlertDialogCancel>
+  1462→          <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={handleDeleteFolio} disabled={submitting}>{submitting ? <Loader2 className="size-3 animate-spin" /> : 'Delete Folio'}</AlertDialogAction>
+  1463→        </AlertDialogFooter>
+  1464→      </AlertDialogContent>
+  1465→    </AlertDialog>
+  1466→
+  1467→    {/* Tags Dialog */}
+  1468→    <Dialog open={tagsOpen} onOpenChange={setTagsOpen}>
+  1469→      <DialogContent className="max-w-sm">
+  1470→        <DialogHeader><DialogTitle className="flex items-center gap-2"><Tag className="size-4 text-emerald-600" />Customer Tags</DialogTitle></DialogHeader>
+  1471→        <div className="flex flex-wrap gap-2 py-3">
+  1472→          {ALL_TAGS.map(tag => {
+  1473→            const active = customerTags.includes(tag)
+  1474→            return (
+  1475→              <button key={tag} onClick={() => handleToggleTag(tag)}
+  1476→                className={`text-[11px] font-medium px-3 py-1.5 rounded-full border transition-all
+  1477→                  ${active ? TAG_COLORS[tag] || TAG_COLORS.Regular : 'bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-700 hover:border-slate-400'}`}
+  1478→              >
+  1479→                {active && '✓ '}{tag}
+  1480→              </button>
+  1481→            )
+  1482→          })}
+  1483→        </div>
+  1484→      </DialogContent>
+  1485→    </Dialog>
+  1486→
+  1487→    {/* ══════════════════════════════════════════════════════════ */}
+  1488→    {/* ─── HISTORY DIALOG (per-customer checkout history) ──── */}
+  1489→    {/* ══════════════════════════════════════════════════════════ */}
+  1490→    <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+  1491→      <DialogContent className="max-w-4xl w-[95vw] max-h-[90vh] flex flex-col p-0 gap-0 overflow-hidden">
+  1492→        <div className="px-5 sm:px-6 pt-5 pb-3 shrink-0 bg-white dark:bg-slate-900">
+  1493→          <DialogHeader>
+  1494→            <DialogTitle className="flex items-center gap-2 text-sm sm:text-base">
+  1495→              <History className="size-4 sm:size-5 text-teal-600 shrink-0" />
+  1496→              <span className="truncate">{detail?.fullName} — Checkout History</span>
+  1497→            </DialogTitle>
+  1498→            <DialogDescription className="text-[11px] sm:text-xs">
+  1499→              Previous checkout records and bills for this customer
+  1500→            </DialogDescription>
+  1501→          </DialogHeader>
+  1502→        </div>
+  1503→
+  1504→        <ScrollArea className="flex-1 min-h-0 px-5 sm:px-6 pb-4">
+  1505→          {historyLoading ? (
+  1506→            <div className="flex items-center justify-center py-12 gap-2 text-slate-400">
+  1507→              <Loader2 className="size-5 animate-spin" />
+  1508→              <span className="text-sm">Loading history...</span>
+  1509→            </div>
+  1510→          ) : !customerHistory || customerHistory.historicalFolios.length === 0 ? (
+  1511→            <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+  1512→              <History className="size-10 opacity-30 mb-3" />
+  1513→              <p className="text-sm font-medium">No checkout history found</p>
+  1514→              <p className="text-xs mt-1">Previous folios will appear here after checkout</p>
+  1515→            </div>
+  1516→          ) : (
+  1517→            <div className="space-y-3 mt-2">
+  1518→              {customerHistory.historicalFolios.map((folio: HistoricalFolio) => {
+  1519→                const isExpanded = expandedFolioId === folio.folioId
+  1520→                const entries = expandedFolioEntries[folio.folioId]
+  1521→                return (
+  1522→                  <div key={folio.id} className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+  1523→                    {/* Folio Header Row */}
+  1524→                    <button
+  1525→                      onClick={() => toggleFolioEntries(folio.folioId)}
+  1526→                      className="w-full flex items-center justify-between px-3 sm:px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors text-left"
+  1527→                    >
+  1528→                      <div className="flex items-center gap-2.5 min-w-0">
+  1529→                        <span className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded shrink-0">#{folio.visitNumber}</span>
+  1530→                        <div className="min-w-0">
+  1531→                          <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">Folio {folio.folioId}</span>
+  1532→                          <div className="text-[10px] text-slate-400 mt-0.5">{folio.startDate} → {folio.endDate || '—'}</div>
+  1533→                        </div>
+  1534→                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium shrink-0 ${STATUS_BADGE[folio.status] || 'bg-slate-100 text-slate-500'}`}>{folio.status}</span>
+  1535→                      </div>
+  1536→                      <div className="flex items-center gap-2 shrink-0">
+  1537→                        {folio.entryCount > 0 && (
+  1538→                          <button
+  1539→                            onClick={(e) => { e.stopPropagation(); onPrintHistoryFolio?.({ entries: folio.entries || entries || [], openingBalance: folio.openingBalance, closingBalance: folio.closingBalance }) }}
+  1540→                            className="flex items-center gap-1 text-[10px] text-orange-600 dark:text-orange-400 hover:text-orange-700 dark:hover:text-orange-300 font-medium transition-colors"
+  1541→                          >
+  1542→                            <Stamp className="size-3" />Final Invoice
+  1543→                          </button>
+  1544→                        )}
+  1545→                        <ChevronDown className={`size-4 text-slate-400 shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+  1546→                      </div>
+  1547→                    </button>
+  1548→
+  1549→                    {/* Folio Summary */}
+  1550→                    <div className="grid grid-cols-4 gap-1.5 px-3 sm:px-4 pb-2 text-center">
+  1551→                      <div className="bg-slate-50 dark:bg-slate-800 rounded-md p-1.5">
+  1552→                        <div className="text-[8px] text-slate-400 uppercase">Entries</div>
+  1553→                        <div className="text-[11px] font-bold text-slate-700 dark:text-slate-200">{folio.entryCount}</div>
+  1554→                      </div>
+  1555→                      <div className="bg-slate-50 dark:bg-slate-800 rounded-md p-1.5">
+  1556→                        <div className="text-[8px] text-slate-400 uppercase">Debit</div>
+  1557→                        <div className="text-[11px] font-bold text-red-600">{fmtCur(folio.totalDebit)}</div>
+  1558→                      </div>
+  1559→                      <div className="bg-slate-50 dark:bg-slate-800 rounded-md p-1.5">
+  1560→                        <div className="text-[8px] text-slate-400 uppercase">Credit</div>
+  1561→                        <div className="text-[11px] font-bold text-emerald-600">{fmtCur(folio.totalCredit)}</div>
+  1562→                      </div>
+  1563→                      <div className="bg-slate-50 dark:bg-slate-800 rounded-md p-1.5">
+  1564→                        <div className="text-[8px] text-slate-400 uppercase">Balance</div>
+  1565→                        <div className={`text-[11px] font-bold ${folio.finalBalance > 0 ? 'text-red-600' : 'text-emerald-600'}`}>{fmtCur(folio.finalBalance)}</div>
+  1566→                      </div>
+  1567→                    </div>
+  1568→
+  1569→                    {/* Print Bill button (when expanded) */}
+  1570→                    {isExpanded && entries && entries.length > 0 && (
+  1571→                      <div className="px-3 sm:px-4 pb-2">
+  1572→                        <button
+  1573→                          onClick={(e) => { e.stopPropagation(); onPrintHistoryFolio?.({ entries, openingBalance: folio.openingBalance, closingBalance: folio.closingBalance }) }}
+  1574→                          className="flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 font-medium transition-colors"
+  1575→                        >
+  1576→                          <Printer className="size-3" />Print Bill
+  1577→                        </button>
+  1578→                      </div>
+  1579→                    )}
+  1580→
+  1581→                    {/* Expanded Entries */}
+  1582→                    {isExpanded && entries && entries.length > 0 && (
+  1583→                      <div className="border-t border-slate-100 dark:border-slate-800 max-h-72 overflow-auto">
+  1584→                        <table className="w-full text-[10px]">
+  1585→                          <thead>
+  1586→                            <tr className="bg-slate-50 dark:bg-slate-800">
+  1587→                              <th className="text-left px-2 py-1 font-semibold text-slate-500">#</th>
+  1588→                              <th className="text-left px-2 py-1 font-semibold text-slate-500">Date</th>
+  1589→                              <th className="text-left px-2 py-1 font-semibold text-slate-500">Type</th>
+  1590→                              <th className="text-left px-2 py-1 font-semibold text-slate-500">Desc</th>
+  1591→                              <th className="text-right px-2 py-1 font-semibold text-slate-500">Dr</th>
+  1592→                              <th className="text-right px-2 py-1 font-semibold text-slate-500">Cr</th>
+  1593→                              <th className="text-right px-2 py-1 font-semibold text-slate-500">Bal</th>
+  1594→                            </tr>
+  1595→                          </thead>
+  1596→                          <tbody>
+  1597→                            {entries.map((e: any, i: number) => (
+  1598→                              <tr key={e.id} className="border-t border-slate-50 dark:border-slate-800">
+  1599→                                <td className="px-2 py-1 text-slate-400">{i + 1}</td>
+  1600→                                <td className="px-2 py-1 whitespace-nowrap">{fmtDate(e.date)}</td>
+  1601→                                <td className="px-2 py-1"><span className={`text-[8px] px-1 py-0.5 rounded font-medium ${TYPE_ICON[e.type] || 'bg-gray-100 text-gray-600'}`}>{e.type}</span></td>
+  1602→                                <td className="px-2 py-1 truncate max-w-[120px]">{stripInternalDescriptions(e.description)}</td>
+  1603→                                <td className="px-2 py-1 text-right text-red-600">{e.debit > 0 ? fmtINR(e.debit) : ''}</td>
+  1604→                                <td className="px-2 py-1 text-right text-emerald-600">{e.credit > 0 ? fmtINR(e.credit) : ''}</td>
+  1605→                                <td className={`px-2 py-1 text-right font-bold ${e.balance > 0 ? 'text-red-600' : e.balance < 0 ? 'text-emerald-600' : 'text-slate-500'}`}>{fmtINR(e.balance)}</td>
+  1606→                              </tr>
+  1607→                            ))}
+  1608→                          </tbody>
+  1609→                        </table>
+  1610→                      </div>
+  1611→                    )}
+  1612→                  </div>
+  1613→                )
+  1614→              })}
+  1615→            </div>
+  1616→          )}
+  1617→        </ScrollArea>
+  1618→
+  1619→        <div className="px-5 sm:px-6 py-3 border-t border-slate-200 dark:border-slate-700 shrink-0">
+  1620→          <Button variant="outline" size="sm" className="w-full" onClick={() => setHistoryOpen(false)}>Close</Button>
+  1621→        </div>
+  1622→      </DialogContent>
+  1623→    </Dialog>
+  1624→
+  1625→    {/* ══════════════════════════════════════════════════════════ */}
+  1626→    {/* ─── DETAILS SHEET (slides in from right) ─────────────────── */}
+  1627→    {/* ══════════════════════════════════════════════════════════ */}
+  1628→    {detail && (
+  1629→      <Sheet open={detailsSheetOpen} onOpenChange={setDetailsSheetOpen}>
+  1630→        <SheetContent className="w-[320px] sm:w-[360px] p-0 overflow-y-auto">
+  1631→          <SheetHeader className="px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 sticky top-0 z-10">
+  1632→            <SheetTitle className="flex items-center gap-2 text-sm font-bold">
+  1633→              <Eye className="size-4 text-slate-500 dark:text-slate-400" /> Customer Details
+  1634→            </SheetTitle>
+  1635→          </SheetHeader>
+  1636→          <div className="p-4 space-y-4">
+  1637→            {/* Guest Info */}
+  1638→            <div className="space-y-2.5">
+  1639→              <h4 className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Guest Information</h4>
+  1640→              <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-3 space-y-2 border border-slate-100 dark:border-slate-700">
+  1641→                <div className="flex items-center gap-3">
+  1642→                  <div className="w-10 h-10 rounded-full bg-slate-800 dark:bg-slate-600 flex items-center justify-center text-sm font-bold text-white">{detail.fullName.charAt(0).toUpperCase()}</div>
+  1643→                  <div>
+  1644→                    <p className="text-sm font-bold text-slate-800 dark:text-slate-200">{detail.fullName}</p>
+  1645→                    <p className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">{detail.customerId}</p>
+  1646→                  </div>
+  1647→                </div>
+  1648→              </div>
+  1649→              <div className="grid grid-cols-2 gap-2">
+  1650→                <div className="text-[11px]"><span className="text-slate-500 dark:text-slate-400">Type</span><div><span className={`font-semibold text-[10px] px-2 py-0.5 rounded-md ${TYPE_BADGE[detail.customerType] || TYPE_BADGE.Retail}`}>{detail.customerType}</span></div></div>
+  1651→                <div className="text-[11px]"><span className="text-slate-500 dark:text-slate-400">Status</span><div><span className={`font-semibold text-[10px] px-2 py-0.5 rounded-md ${STATUS_BADGE[detail.status] || STATUS_BADGE.Active}`}>{detail.status}</span></div></div>
+  1652→                {detail.mobile && <div className="text-[11px]"><span className="text-slate-500 dark:text-slate-400">Mobile</span><div className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1"><Phone className="size-3 text-slate-400" />{detail.mobile}</div></div>}
+  1653→                {detail.email && <div className="text-[11px]"><span className="text-slate-500 dark:text-slate-400">Email</span><div className="font-semibold text-slate-700 dark:text-slate-300 text-[10px] truncate">{detail.email}</div></div>}
+  1654→              </div>
+  1655→              {/* GST, PAN, Aadhaar Details */}
+  1656→              {(detail.gstNumber || detail.panNumber || detail.aadhaarNumber) && (
+  1657→                <div className="mt-2 pt-2 border-t border-slate-200 dark:border-slate-600">
+  1658→                  <div className="grid grid-cols-1 gap-1.5">
+  1659→                    {detail.gstNumber && <div className="flex items-center gap-2 text-[11px] bg-emerald-50 dark:bg-emerald-900/20 rounded-lg px-2.5 py-1.5 border border-emerald-100 dark:border-emerald-800/50"><span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">GSTIN</span><span className="font-mono font-semibold text-slate-700 dark:text-slate-300 text-[10px]">{detail.gstNumber}</span></div>}
+  1660→                    {detail.panNumber && <div className="flex items-center gap-2 text-[11px]"><span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">PAN</span><span className="font-mono font-semibold text-slate-700 dark:text-slate-300 text-[10px]">{detail.panNumber}</span></div>}
+  1661→                    {detail.aadhaarNumber && <div className="flex items-center gap-2 text-[11px]"><span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Aadhaar</span><span className="font-mono font-semibold text-slate-700 dark:text-slate-300 text-[10px]">{detail.aadhaarNumber}</span></div>}
+  1662→                  </div>
+  1663→                </div>
+  1664→              )}
+  1665→              {/* Advance / Credit Balance */}
+  1666→              {bal < 0 && (
+  1667→                <div className="mt-2 flex items-center gap-2 text-[11px] bg-green-50 dark:bg-green-900/20 rounded-lg px-2.5 py-1.5 border border-green-200 dark:border-green-800/50">
+  1668→                  <Wallet className="size-3.5 text-green-600 dark:text-green-400" />
+  1669→                  <span className="font-bold text-green-700 dark:text-green-300">Advance: {fmtCur(Math.abs(bal))}</span>
+  1670→                </div>
+  1671→              )}
+  1672→            </div>
+  1673→
+  1674→            <Separator className="bg-slate-100 dark:bg-slate-700" />
+  1675→
+  1676→            {/* Folio Info */}
+  1677→            <div className="space-y-2.5">
+  1678→              <h4 className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Folio</h4>
+  1679→              <div className="grid grid-cols-2 gap-2 text-[11px]">
+  1680→                <div><span className="text-slate-500 dark:text-slate-400">Folio No</span><div className="font-mono font-semibold text-slate-700 dark:text-slate-300">{fmtFolioNum(detail.activeFolio?.folioNumber)}</div></div>
+  1681→                <div><span className="text-slate-500 dark:text-slate-400">Status</span><div><span className={`font-semibold text-[10px] px-2 py-0.5 rounded-md ${detail.activeFolio?.status === 'Active' ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'}`}>{detail.activeFolio?.status || '—'}</span></div></div>
+  1682→                <div><span className="text-slate-500 dark:text-slate-400">Total Folios</span><div className="font-semibold text-slate-700 dark:text-slate-300">{allFolios.length}</div></div>
+  1683→              </div>
+  1684→            </div>
+  1685→
+  1686→            <Separator className="bg-slate-100 dark:bg-slate-700" />
+  1687→
+  1688→            {/* Balance Card */}
+  1689→            <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-3 space-y-2 border border-slate-100 dark:border-slate-700">
+  1690→              <h4 className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Balance Summary</h4>
+  1691→              <div className="flex justify-between items-center text-[11px]">
+  1692→                <span className="text-slate-500 dark:text-slate-400">Current Balance</span>
+  1693→                <span className={`font-bold text-base tabular-nums ${bal > 0 ? 'text-red-600' : bal < 0 ? 'text-green-600' : 'text-slate-500 dark:text-slate-400'}`}>
+  1694→                  {bal > 0 ? '+' : bal < 0 ? '-' : ''}{fmtCur(bal)}
+  1695→                </span>
+  1696→              </div>
+  1697→              <div className="grid grid-cols-2 gap-2">
+  1698→                <div className="bg-white dark:bg-slate-700 rounded-lg p-2 text-center">
+  1699→                  <div className="text-[9px] text-slate-400 dark:text-slate-500">Revenue</div>
+  1700→                  <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{fmtCur(detail.lifetimeRevenue)}</div>
+  1701→                </div>
+  1702→                <div className="bg-white dark:bg-slate-700 rounded-lg p-2 text-center">
+  1703→                  <div className="text-[9px] text-slate-400 dark:text-slate-500">Payments</div>
+  1704→                  <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{fmtCur(detail.lifetimePayments)}</div>
+  1705→                </div>
+  1706→                <div className="bg-white dark:bg-slate-700 rounded-lg p-2 text-center">
+  1707→                  <div className="text-[9px] text-slate-400 dark:text-slate-500">Refunds</div>
+  1708→                  <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{fmtCur(detail.lifetimeRefunds)}</div>
+  1709→                </div>
+  1710→                <div className="bg-white dark:bg-slate-700 rounded-lg p-2 text-center">
+  1711→                  <div className="text-[9px] text-slate-400 dark:text-slate-500">Transactions</div>
+  1712→                  <div className="text-xs font-bold text-slate-700 dark:text-slate-300">{detail.totalTransactions}</div>
+  1713→                </div>
+  1714→              </div>
+  1715→            </div>
+  1716→
+  1717→            <Separator className="bg-slate-100 dark:bg-slate-700" />
+  1718→
+  1719→            {/* Visits */}
+  1720→            <div className="space-y-2.5">
+  1721→              <h4 className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Activity</h4>
+  1722→              <div className="text-[11px]"><span className="text-slate-500 dark:text-slate-400">Total Visits</span><div className="font-semibold text-slate-700 dark:text-slate-300">{detail.totalVisits}</div></div>
+  1723→              {detail.lastVisitDate && <div className="text-[11px]"><span className="text-slate-500 dark:text-slate-400">Last Visit</span><div className="font-semibold text-slate-700 dark:text-slate-300">{relTime(detail.lastVisitDate)}</div></div>}
+  1724→              {detail.lastTxnDate && <div className="text-[11px]"><span className="text-slate-500 dark:text-slate-400">Last Txn</span><div className="font-semibold text-slate-700 dark:text-slate-300">{relTime(detail.lastTxnDate)}</div></div>}
+  1725→            </div>
+  1726→          </div>
+  1727→        </SheetContent>
+  1728→      </Sheet>
+  1729→    )}
+  1730→    </>
+  1731→  )
+  1732→}

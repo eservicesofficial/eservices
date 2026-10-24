@@ -1,0 +1,517 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→import React from 'react'
+     4→     4→import {
+     5→     5→  ArrowLeft, BookOpen, Plus, Loader2, TrendingUp, TrendingDown, CheckCircle,
+     6→     6→  ReceiptText, FileCheck2, FileText, CircleDollarSign, Landmark, Wallet,
+     7→     7→  LogOut, ArrowDownLeft, ArrowRightLeft, ArrowDownToLine, Split, Trash2,
+     8→     8→  Edit3, Eye, Tag, StickyNote, FileUp, Percent, Undo2, Printer, Download,
+     9→     9→  Phone, Mail, Calendar, CreditCard, User, Layers, FileBarChart, Flame,
+    10→    10→  History, ChevronDown,
+    11→    11→} from 'lucide-react'
+    12→    12→import { Button } from '@/components/ui/button'
+    13→    13→import { Checkbox } from '@/components/ui/checkbox'
+    14→    14→import { Separator } from '@/components/ui/separator'
+    15→    15→import { Badge } from '@/components/ui/badge'
+    16→    16→import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
+    17→    17→import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+    18→    18→import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+    19→    19→import { fmtCur, fmtDate, fmtINR, TYPE_ICON, fmtFolioNum } from './customer-folio-helpers'
+    20→    20→import type { CustomerDetail, Folio, LedgerEntry } from './customer-folio-types'
+    21→    21→
+    22→    22→// ─── Action Button for bottom bar (light-mode safe) ───
+    23→    23→function ActionBtn({ icon: Icon, label, color, onClick, disabled, badge }: {
+    24→    24→  icon: React.ElementType; label: string; color?: string; onClick: () => void; disabled?: boolean; badge?: number
+    25→    25→}) {
+    26→    26→  const colorMap: Record<string, string> = {
+    27→    27→    red: 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100 hover:text-red-800 hover:border-red-300 dark:bg-red-950/40 dark:text-red-400 dark:border-red-800 dark:hover:bg-red-900/50 dark:hover:text-red-300',
+    28→    28→    amber: 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 hover:text-amber-800 hover:border-amber-300 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800 dark:hover:bg-amber-900/50 dark:hover:text-amber-300',
+    29→    29→    orange: 'bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100 hover:text-orange-800 hover:border-orange-300 dark:bg-orange-950/40 dark:text-orange-400 dark:border-orange-800 dark:hover:bg-orange-900/50 dark:hover:text-orange-300',
+    30→    30→    teal: 'bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100 hover:text-teal-800 hover:border-teal-300 dark:bg-teal-950/40 dark:text-teal-400 dark:border-teal-800 dark:hover:bg-teal-900/50 dark:hover:text-teal-300',
+    31→    31→    emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 hover:text-emerald-800 hover:border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800 dark:hover:bg-emerald-900/50 dark:hover:text-emerald-300',
+    32→    32→  }
+    33→    33→
+    34→    34→  const baseClass = 'flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap border cursor-pointer select-none'
+    35→    35→  const disabledClass = 'opacity-35 cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200 dark:bg-slate-800 dark:text-slate-600 dark:border-slate-700'
+    36→    36→  const activeClass = colorMap[color || ''] || 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200 hover:text-slate-800 hover:border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-200'
+    37→    37→
+    38→    38→  return (
+    39→    39→    <Tooltip>
+    40→    40→      <TooltipTrigger asChild>
+    41→    41→        <button
+    42→    42→          type="button"
+    43→    43→          onClick={(e) => { e.stopPropagation(); onClick() }}
+    44→    44→          disabled={disabled}
+    45→    45→          className={`${baseClass} ${disabled ? disabledClass : activeClass}`}
+    46→    46→        >
+    47→    47→          <Icon className="size-3.5 shrink-0" />
+    48→    48→          <span className="hidden sm:inline">{label}</span>
+    49→    49→          {badge != null && badge > 0 && (
+    50→    50→            <span className="ml-0.5 px-1.5 py-0.5 text-[9px] font-bold rounded-full bg-slate-200 text-slate-700 dark:bg-slate-600 dark:text-slate-200 min-w-[16px] text-center">{badge}</span>
+    51→    51→          )}
+    52→    52→        </button>
+    53→    53→      </TooltipTrigger>
+    54→    54→      <TooltipContent side="top" className="text-[10px]">{label}</TooltipContent>
+    55→    55→    </Tooltip>
+    56→    56→  )
+    57→    57→}
+    58→    58→
+    59→    59→// ─── Print Options Dropdown (Popover with A4 + Thermal) ───
+    60→    60→function PrintOptionsBtn({ icon: Icon, label, color, onA4, onThermal, disabled }: {
+    61→    61→  icon: React.ElementType; label: string; color?: string;
+    62→    62→  onA4: () => void; onThermal: () => void; disabled?: boolean
+    63→    63→}) {
+    64→    64→  const colorMap: Record<string, string> = {
+    65→    65→    emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 hover:text-emerald-800 hover:border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800 dark:hover:bg-emerald-900/50 dark:hover:text-emerald-300',
+    66→    66→    teal: 'bg-teal-50 text-teal-700 border-teal-200 hover:bg-teal-100 hover:text-teal-800 hover:border-teal-300 dark:bg-teal-950/40 dark:text-teal-400 dark:border-teal-800 dark:hover:bg-teal-900/50 dark:hover:text-teal-300',
+    67→    67→  }
+    68→    68→
+    69→    69→  const baseClass = 'flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap border cursor-pointer select-none'
+    70→    70→  const disabledClass = 'opacity-35 cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200 dark:bg-slate-800 dark:text-slate-600 dark:border-slate-700'
+    71→    71→  const activeClass = colorMap[color || ''] || 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200 hover:text-slate-800 hover:border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-200'
+    72→    72→
+    73→    73→  return (
+    74→    74→    <Popover>
+    75→    75→      <Tooltip>
+    76→    76→        <TooltipTrigger asChild>
+    77→    77→          <PopoverTrigger asChild>
+    78→    78→            <button
+    79→    79→              type="button"
+    80→    80→              disabled={disabled}
+    81→    81→              className={`${baseClass} ${disabled ? disabledClass : activeClass}`}
+    82→    82→            >
+    83→    83→              <Icon className="size-3.5 shrink-0" />
+    84→    84→              <span className="hidden sm:inline">{label}</span>
+    85→    85→              <ChevronDown className="size-3 shrink-0 opacity-50" />
+    86→    86→            </button>
+    87→    87→          </PopoverTrigger>
+    88→    88→        </TooltipTrigger>
+    89→    89→        <TooltipContent side="top" className="text-[10px]">{label}</TooltipContent>
+    90→    90→      </Tooltip>
+    91→    91→      <PopoverContent className="w-44 p-1" side="top" align="start">
+    92→    92→        <button
+    93→    93→          onClick={(e) => { e.stopPropagation(); onA4() }}
+    94→    94→          className="flex items-center gap-2 w-full px-3 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition-colors"
+    95→    95→        >
+    96→    96→          <Printer className="size-3.5 text-slate-500" />
+    97→    97→          <div className="text-left">
+    98→    98→            <div className="font-medium">A4 Print</div>
+    99→    99→            <div className="text-[9px] text-slate-400">Standard paper size</div>
+   100→   100→          </div>
+   101→   101→        </button>
+   102→   102→        <button
+   103→   103→          onClick={(e) => { e.stopPropagation(); onThermal() }}
+   104→   104→          className="flex items-center gap-2 w-full px-3 py-2 text-xs text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition-colors"
+   105→   105→        >
+   106→   106→          <Flame className="size-3.5 text-orange-500" />
+   107→   107→          <div className="text-left">
+   108→   108→            <div className="font-medium">Thermal Print</div>
+   109→   109→            <div className="text-[9px] text-slate-400">Receipt printer</div>
+   110→   110→          </div>
+   111→   111→        </button>
+   112→   112→      </PopoverContent>
+   113→   113→    </Popover>
+   114→   114→  )
+   115→   115→}
+   116→   116→
+   117→   117→// ─── Props ───
+   118→   118→interface FolioManagementProps {
+   119→   119→  detail: CustomerDetail
+   120→   120→  allFolios: Folio[]
+   121→   121→  folioEntries: LedgerEntry[]
+   122→   122→  selectedEntries: Set<string>
+   123→   123→  selectedFolioId: string | null
+   124→   124→  folioEntriesLoading: boolean
+   125→   125→  submitting: boolean
+   126→   126→  isFullscreen: boolean
+   127→   127→  isAdmin: boolean
+   128→   128→  isActive: boolean
+   129→   129→  isCheckedOut: boolean
+   130→   130→  forceEditMode: boolean
+   131→   131→  canForceEdit: boolean
+   132→   132→  canReopen: boolean
+   133→   133→  canRemove: boolean
+   134→   134→  canTransfer: boolean
+   135→   135→  folioStatementData: any
+   136→   136→  masterFolioEntries: LedgerEntry[]
+   137→   137→  onCheckoutSettlement: () => void
+   138→   138→  onToggleForceEdit: () => void
+   139→   139→
+   140→   140→  // Handlers
+   141→   141→  goBack: () => void
+   142→   142→  setSelectedFolioId: (id: string) => void
+   143→   143→  setSelectedEntries: (ids: Set<string>) => void
+   144→   144→  fetchFolioEntries: (customerId: string, fId: string) => void
+   145→   145→  toggleEntrySelection: (id: string) => void
+   146→   146→  toggleAllEntries: () => void
+   147→   147→  handleCreateFolio: () => void
+   148→   148→  handleReopen: () => void
+   149→   149→  printReceipt: () => void
+   150→   150→  printSingleFolio: () => void
+   151→   151→  fetchFolioStatement: (folioId: string) => void
+   152→   152→  onPrintFolioStatement?: (folioId: string) => void
+   153→   153→
+   154→   154→  onDeleteFolio?: (folioId: string) => void
+   155→   155→
+   156→   156→  // Dialog openers
+   157→   157→  onVoucher: () => void
+   158→   158→  onInvoice: () => void
+   159→   159→  onCharge: () => void
+   160→   160→  onSettlement: () => void
+   161→   161→  onPayment: () => void
+   162→   162→  onCheckout: () => void
+   163→   163→  onRefund: () => void
+   164→   164→  onDiscount: () => void
+   165→   165→  onTransfer: () => void
+   166→   166→  onShift: () => void
+   167→   167→  onSplit: () => void
+   168→   168→  onRemove: () => void
+   169→   169→  onEdit: () => void
+   170→   170→  onDetails: () => void
+   171→   171→  onTags: () => void
+   172→   172→  onNotes: () => void
+   173→   173→  onDocs: () => void
+   174→   174→  onDelete: () => void
+   175→   175→  onReports: () => void
+   176→   176→  onHistory: () => void
+   177→   177→
+   178→   178→  // Thermal print handlers
+   179→   179→  thermalPrintReceipt?: () => void
+   180→   180→  thermalPrintInvoice?: () => void
+   181→   181→  thermalPrintFolio?: () => void
+   182→   182→  thermalPrintVoucher?: () => void
+   183→   183→}
+   184→   184→
+   185→   185→export function CustomerFolioManagement({
+   186→   186→  detail, allFolios, folioEntries, selectedEntries, selectedFolioId,
+   187→   187→  folioEntriesLoading, submitting, isFullscreen, isAdmin, isActive, isCheckedOut,
+   188→   188→  forceEditMode, canForceEdit, canReopen, canRemove, canTransfer,
+   189→   189→  folioStatementData, masterFolioEntries, onCheckoutSettlement, onToggleForceEdit,
+   190→   190→  goBack, setSelectedFolioId, setSelectedEntries, fetchFolioEntries,
+   191→   191→  toggleEntrySelection, toggleAllEntries, handleCreateFolio, handleReopen,
+   192→   192→  printReceipt, printSingleFolio, fetchFolioStatement, onPrintFolioStatement,
+   193→   193→  onVoucher, onInvoice, onCharge, onSettlement, onPayment, onCheckout,
+   194→   194→  onDeleteFolio,
+   195→   195→  onRefund, onDiscount, onTransfer, onShift, onSplit, onRemove, onEdit,
+   196→   196→  onDetails, onTags, onNotes, onDocs, onDelete, onReports, onHistory,
+   197→   197→  thermalPrintReceipt, thermalPrintInvoice, thermalPrintFolio, thermalPrintVoucher,
+   198→   198→}: FolioManagementProps) {
+   199→   199→  const bal = detail?.balance ?? 0
+   200→   200→  const selectedFolio = allFolios.find(f => f.id === selectedFolioId)
+   201→   201→  const selectedEntryObj = selectedEntries.size === 1 ? folioEntries.find(e => e.id === Array.from(selectedEntries)[0]) : null
+   202→   202→  const displayEntries = selectedFolioId === 'master' ? masterFolioEntries : folioEntries
+   203→   203→
+   204→   204→  const folioTotalDebits = displayEntries.reduce((s, e) => s + (e.debit || 0), 0)
+   205→   205→  const folioTotalCredits = displayEntries.reduce((s, e) => s + (e.credit || 0), 0)
+   206→   206→  const folioTotalTax = displayEntries.reduce((s, e) => s + (e.tax || 0), 0)
+   207→   207→  const folioCurrentBalance = displayEntries.length > 0 ? displayEntries[displayEntries.length - 1].balance : 0
+   208→   208→
+   209→   209→  return (
+   210→   210→    <div className="flex flex-col h-full min-h-0">
+   211→   211→      {/* ── Customer Profile Header ── */}
+   212→   212→      <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 px-4 py-3 shrink-0">
+   213→   213→        <div className="flex items-center gap-3">
+   214→   214→          {/* Back button */}
+   215→   215→          <button onClick={goBack} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 transition-colors font-medium">
+   216→   216→            <ArrowLeft className="size-3.5" />
+   217→   217→            <span className="hidden sm:inline">Back</span>
+   218→   218→          </button>
+   219→   219→
+   220→   220→          <Separator orientation="vertical" className="h-8 bg-slate-200 dark:bg-slate-700" />
+   221→   221→
+   222→   222→          {/* Avatar */}
+   223→   223→          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center text-white text-sm font-bold shadow-sm shrink-0">
+   224→   224→            {detail.fullName.charAt(0).toUpperCase()}
+   225→   225→          </div>
+   226→   226→
+   227→   227→          {/* Customer Info */}
+   228→   228→          <div className="flex-1 min-w-0">
+   229→   229→            <div className="flex items-center gap-2 flex-wrap">
+   230→   230→              <h3 className="text-base font-bold text-slate-800 dark:text-slate-100">{detail.fullName}</h3>
+   231→   231→              <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">{detail.customerId}</span>
+   232→   232→              <span className={`text-[9px] px-2 py-0.5 rounded-md font-semibold ${
+   233→   233→                detail.status === 'Active' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300' :
+   234→   234→                detail.status === 'CheckedOut' ? 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400' :
+   235→   235→                'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+   236→   236→              }`}>{detail.status === 'CheckedOut' ? 'Checked Out' : detail.status}</span>
+   237→   237→            </div>
+   238→   238→            <div className="flex items-center gap-4 mt-1 text-xs text-slate-500 dark:text-slate-400">
+   239→   239→              {detail.mobile && (
+   240→   240→                <span className="flex items-center gap-1"><Phone className="size-3" />{detail.mobile}</span>
+   241→   241→              )}
+   242→   242→              {detail.email && (
+   243→   243→                <span className="flex items-center gap-1 hidden sm:flex"><Mail className="size-3" />{detail.email}</span>
+   244→   244→              )}
+   245→   245→              <span className="font-bold text-slate-700 dark:text-slate-300">{detail.customerType}</span>
+   246→   246→            </div>
+   247→   247→          </div>
+   248→   248→
+   249→   249→          {/* Balance Badge */}
+   250→   250→          <div className="text-right shrink-0">
+   251→   251→            <div className="text-[10px] text-slate-400 dark:text-slate-500 font-medium uppercase tracking-wider">Balance</div>
+   252→   252→            <div className={`text-lg font-bold tabular-nums ${
+   253→   253→              bal > 0 ? 'text-red-600 dark:text-red-400' :
+   254→   254→              bal < 0 ? 'text-green-600 dark:text-green-400' :
+   255→   255→              'text-slate-400 dark:text-slate-500'
+   256→   256→            }`}>
+   257→   257→              {bal > 0 ? '+' : ''}{fmtCur(bal)}
+   258→   258→            </div>
+   259→   259→          </div>
+   260→   260→        </div>
+   261→   261→
+   262→   262→        {/* Quick stats */}
+   263→   263→        <div className="flex items-center gap-4 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs">
+   264→   264→          <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
+   265→   265→            <Calendar className="size-3" />
+   266→   266→            <span>Visits: <strong className="text-slate-700 dark:text-slate-200">{detail.totalVisits || 0}</strong></span>
+   267→   267→          </div>
+   268→   268→          <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
+   269→   269→            <CreditCard className="size-3" />
+   270→   270→            <span>Folios: <strong className="text-slate-700 dark:text-slate-200">{allFolios.length}</strong></span>
+   271→   271→          </div>
+   272→   272→          <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
+   273→   273→            <User className="size-3" />
+   274→   274→            <span>Type: <strong className="text-slate-700 dark:text-slate-200">{detail.customerType}</strong></span>
+   275→   275→          </div>
+   276→   276→        </div>
+   277→   277→      </div>
+   278→   278→
+   279→   279→      {/* ── Folio Tabs ── */}
+   280→   280→      <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/50 px-4 py-2 shrink-0 overflow-x-auto border-b border-slate-200 dark:border-slate-700">
+   281→   281→        <span className="text-[10px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider mr-1 shrink-0">Folios</span>
+   282→   282→        <button
+   283→   283→          key="master"
+   284→   284→          onClick={() => { setSelectedFolioId('master'); setSelectedEntries(new Set()) }}
+   285→   285→          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all whitespace-nowrap ${
+   286→   286→            selectedFolioId === 'master'
+   287→   287→              ? 'bg-emerald-600 text-white shadow-sm'
+   288→   288→              : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-600'
+   289→   289→          }`}
+   290→   290→        >
+   291→   291→          <Layers className="size-3" />
+   292→   292→          Master
+   293→   293→          <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${
+   294→   294→            selectedFolioId === 'master'
+   295→   295→              ? 'bg-white/20 text-white'
+   296→   296→              : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300'
+   297→   297→          }`}>
+   298→   298→            ALL
+   299→   299→          </span>
+   300→   300→        </button>
+   301→   301→        {allFolios.map((f) => (
+   302→   302→          <button key={f.id} onClick={() => { setSelectedFolioId(f.id); setSelectedEntries(new Set()); fetchFolioEntries(detail!.id, f.id) }}
+   303→   303→            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all whitespace-nowrap ${
+   304→   304→              selectedFolioId === f.id
+   305→   305→                ? 'bg-slate-800 dark:bg-slate-600 text-white shadow-sm'
+   306→   306→                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-600'
+   307→   307→            }`}
+   308→   308→          >
+   309→   309→            <BookOpen className="size-3" />
+   310→   310→            {fmtFolioNum(f.folioNumber)}
+   311→   311→            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${
+   312→   312→              selectedFolioId === f.id
+   313→   313→                ? 'bg-white/20 text-white'
+   314→   314→                : f.status === 'Active' ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-300'
+   315→   315→                : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
+   316→   316→            }`}>
+   317→   317→              {f.status}
+   318→   318→            </span>
+   319→   319→          </button>
+   320→   320→        ))}
+   321→   321→        {(isActive || isAdmin) && (
+   322→   322→          <Tooltip>
+   323→   323→            <TooltipTrigger asChild>
+   324→   324→              <button onClick={handleCreateFolio} disabled={submitting} className="flex items-center justify-center w-8 h-8 rounded-lg border border-dashed border-slate-300 dark:border-slate-600 text-slate-400 dark:text-slate-500 hover:border-slate-500 dark:hover:border-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors shrink-0">
+   325→   325→                {submitting ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
+   326→   326→              </button>
+   327→   327→            </TooltipTrigger>
+   328→   328→            <TooltipContent side="bottom" className="text-[10px]">Create New Folio</TooltipContent>
+   329→   329→          </Tooltip>
+   330→   330→        )}
+   331→   331→      </div>
+   332→   332→
+   333→   333→      {/* ── Multi-select info bar ── */}
+   334→   334→      {selectedEntries.size > 0 && (
+   335→   335→        <div className="bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800 px-4 py-2 flex items-center gap-3 shrink-0">
+   336→   336→          <span className="text-xs font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+   337→   337→            <CheckCircle className="size-3.5" />
+   338→   338→            {selectedEntries.size} {selectedEntries.size === 1 ? 'entry' : 'entries'} selected
+   339→   339→          </span>
+   340→   340→          <Separator orientation="vertical" className="h-4 bg-amber-300 dark:bg-amber-700" />
+   341→   341→          <button onClick={onShift} disabled={allFolios.length < 2} className="text-xs text-amber-700 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-200 font-medium underline disabled:opacity-40">Shift to Folio</button>
+   342→   342→          <button onClick={onSplit} disabled={selectedEntries.size !== 1} className="text-xs text-amber-700 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-200 font-medium underline disabled:opacity-40">Split Amount</button>
+   343→   343→          <button onClick={onRemove} className="text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 font-medium underline">Remove</button>
+   344→   344→          <div className="flex-1" />
+   345→   345→          <button onClick={() => setSelectedEntries(new Set())} className="text-xs text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-200 font-medium">Clear Selection</button>
+   346→   346→        </div>
+   347→   347→      )}
+   348→   348→
+   349→   349→      {/* ── Transaction Table ── */}
+   350→   350→      <div className="flex-1 overflow-auto min-h-0">
+   351→   351→        <Table>
+   352→   352→          <TableHeader className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
+   353→   353→            <TableRow className="hover:bg-slate-50 dark:hover:bg-slate-800">
+   354→   354→              <TableHead className="w-9 p-2"><Checkbox checked={displayEntries.length > 0 && selectedEntries.size === displayEntries.length} onCheckedChange={toggleAllEntries} /></TableHead>
+   355→   355→              <TableHead className="w-8 p-2 text-[10px] text-slate-500 dark:text-slate-400 font-semibold">#</TableHead>
+   356→   356→              <TableHead className="p-2 text-[10px] text-slate-500 dark:text-slate-400 font-semibold">Date</TableHead>
+   357→   357→              <TableHead className="p-2 text-[10px] text-slate-500 dark:text-slate-400 font-semibold">Voucher</TableHead>
+   358→   358→              <TableHead className="p-2 text-[10px] text-slate-500 dark:text-slate-400 font-semibold">Description</TableHead>
+   359→   359→              <TableHead className="p-2 text-[10px] text-slate-500 dark:text-slate-400 font-semibold text-right">Debit</TableHead>
+   360→   360→              <TableHead className="p-2 text-[10px] text-slate-500 dark:text-slate-400 font-semibold text-right">Credit</TableHead>
+   361→   361→              <TableHead className="p-2 text-[10px] text-slate-500 dark:text-slate-400 font-semibold text-right hidden sm:table-cell">Tax</TableHead>
+   362→   362→              <TableHead className="p-2 text-[10px] text-slate-500 dark:text-slate-400 font-semibold text-right">Balance</TableHead>
+   363→   363→              <TableHead className="p-2 text-[10px] text-slate-500 dark:text-slate-400 font-semibold hidden md:table-cell">Mode</TableHead>
+   364→   364→            </TableRow>
+   365→   365→          </TableHeader>
+   366→   366→          <TableBody>
+   367→   367→            {folioEntriesLoading
+   368→   368→              ? <TableRow><TableCell colSpan={10} className="text-center py-10"><Loader2 className="size-5 animate-spin mx-auto text-emerald-500" /></TableCell></TableRow>
+   369→   369→              : displayEntries.length === 0
+   370→   370→                ? <TableRow><TableCell colSpan={10} className="text-center py-10">
+   371→   371→                    <div className="text-slate-400 dark:text-slate-500 text-xs flex flex-col items-center gap-2"><BookOpen className="size-6 opacity-30" />No transactions in this folio</div>
+   372→   372→                    {selectedFolioId !== 'master' && onDeleteFolio && allFolios.find(f => f.id === selectedFolioId)?.folioNumber !== 0 && (
+   373→   373→                      <button onClick={(e) => { e.stopPropagation(); onDeleteFolio(selectedFolioId!) }} className="mt-2 text-xs text-red-500 hover:text-red-700 underline">Delete this empty folio</button>
+   374→   374→                    )}
+   375→   375→                  </TableCell></TableRow>
+   376→   376→                : displayEntries.map((e, i) => (
+   377→   377→                  <TableRow key={e.id} className={`transition-colors border-b border-slate-100 dark:border-slate-800 ${
+   378→   378→                    selectedEntries.has(e.id) ? 'bg-blue-50 dark:bg-blue-900/20' : i % 2 === 1 ? 'bg-slate-50/80 dark:bg-slate-800/30' : ''
+   379→   379→                  } hover:bg-slate-100 dark:hover:bg-slate-800/50`}>
+   380→   380→                    <TableCell className="p-2"><Checkbox checked={selectedEntries.has(e.id)} onCheckedChange={() => toggleEntrySelection(e.id)} /></TableCell>
+   381→   381→                    <TableCell className="p-2 text-[10px] text-slate-400 dark:text-slate-500 font-mono">{i + 1}</TableCell>
+   382→   382→                    <TableCell className="p-2 text-xs whitespace-nowrap text-slate-600 dark:text-slate-300">{fmtDate(e.date)}</TableCell>
+   383→   383→                    <TableCell className="p-2 text-[10px] font-mono text-slate-400 dark:text-slate-500">{e.invoiceNo || e.docNo || '—'}</TableCell>
+   384→   384→                    <TableCell className="p-2">
+   385→   385→                      <div className="flex items-center gap-1.5">
+   386→   386→                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-medium inline-flex items-center ${TYPE_ICON[e.type] || 'text-gray-600 bg-gray-50 dark:text-gray-400 dark:bg-gray-800'}`}>{e.type}</span>
+   387→   387→                        <span className="text-xs truncate max-w-[220px] text-slate-700 dark:text-slate-200" title={e.description}>{e.description || '—'}</span>
+   388→   388→                      </div>
+   389→   389→                    </TableCell>
+   390→   390→                    <TableCell className="p-2 text-xs text-right font-semibold text-red-600 dark:text-red-400 tabular-nums">{e.debit > 0 ? fmtINR(e.debit) : ''}</TableCell>
+   391→   391→                    <TableCell className="p-2 text-xs text-right font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">{e.credit > 0 ? fmtINR(e.credit) : ''}</TableCell>
+   392→   392→                    <TableCell className="p-2 text-[11px] text-right text-slate-400 dark:text-slate-500 tabular-nums hidden sm:table-cell">{e.tax > 0 ? fmtINR(e.tax) : ''}</TableCell>
+   393→   393→                    <TableCell className={`p-2 text-xs text-right font-bold tabular-nums ${e.balance > 0 ? 'text-red-600 dark:text-red-400' : e.balance < 0 ? 'text-green-600 dark:text-green-400' : 'text-slate-500 dark:text-slate-400'}`}>{fmtINR(e.balance)}</TableCell>
+   394→   394→                    <TableCell className="p-2 hidden md:table-cell">{e.paymentMode ? <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-slate-200 dark:border-slate-600 text-slate-500 dark:text-slate-400">{e.paymentMode}</Badge> : <span className="text-[10px] text-slate-300 dark:text-slate-600">—</span>}</TableCell>
+   395→   395→                  </TableRow>
+   396→   396→                ))
+   397→   397→            }
+   398→   398→          </TableBody>
+   399→   399→        </Table>
+   400→   400→      </div>
+   401→   401→
+   402→   402→      {/* ── Summary Footer ── */}
+   403→   403→      <div className="border-t-2 border-slate-800 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/50 px-4 py-2.5 flex items-center justify-between shrink-0">
+   404→   404→        <div className="flex items-center gap-5 flex-wrap">
+   405→   405→          <div className="flex items-center gap-1.5">
+   406→   406→            <span className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider font-semibold">Entries</span>
+   407→   407→            <span className="text-xs text-slate-800 dark:text-slate-200 font-bold tabular-nums">{displayEntries.length}</span>
+   408→   408→          </div>
+   409→   409→          <div className="flex items-center gap-1.5">
+   410→   410→            <TrendingUp className="size-3 text-red-500 dark:text-red-400" />
+   411→   411→            <span className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider font-semibold">Debit</span>
+   412→   412→            <span className="text-xs text-red-600 dark:text-red-400 font-bold tabular-nums">{fmtCur(folioTotalDebits)}</span>
+   413→   413→          </div>
+   414→   414→          <div className="flex items-center gap-1.5">
+   415→   415→            <TrendingDown className="size-3 text-green-600 dark:text-green-400" />
+   416→   416→            <span className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider font-semibold">Credit</span>
+   417→   417→            <span className="text-xs text-green-600 dark:text-green-400 font-bold tabular-nums">{fmtCur(folioTotalCredits)}</span>
+   418→   418→          </div>
+   419→   419→          <div className="flex items-center gap-1.5 hidden sm:flex">
+   420→   420→            <span className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider font-semibold">Tax</span>
+   421→   421→            <span className="text-xs text-slate-700 dark:text-slate-300 font-bold tabular-nums">{fmtCur(folioTotalTax)}</span>
+   422→   422→          </div>
+   423→   423→        </div>
+   424→   424→        <div className="flex items-center gap-2">
+   425→   425→          {selectedEntries.size > 0 && (
+   426→   426→            <span className="px-2 py-0.5 rounded-full bg-slate-800 dark:bg-slate-600 text-white text-[10px] font-bold">{selectedEntries.size} selected</span>
+   427→   427→          )}
+   428→   428→          <Separator orientation="vertical" className="h-5 bg-slate-300 dark:bg-slate-600" />
+   429→   429→          <span className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider font-semibold">Balance</span>
+   430→   430→          <span className={`text-sm font-bold tabular-nums ${folioCurrentBalance > 0 ? 'text-red-600 dark:text-red-400' : folioCurrentBalance < 0 ? 'text-green-600 dark:text-green-400' : 'text-slate-500 dark:text-slate-400'}`}>{fmtCur(folioCurrentBalance)}</span>
+   431→   431→        </div>
+   432→   432→      </div>
+   433→   433→
+   434→   434→      {/* ═══════════════════════════════════════════════════════════════
+   435→   435→          ── ACTION BUTTONS BAR — Always visible, sticky at bottom ──
+   436→   436→          ═══════════════════════════════════════════════════════════════ */}
+   437→   437→      <div className="border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2 sm:py-3 shrink-0 overflow-x-auto">
+   438→   438→        <div className="text-[10px] text-slate-400 dark:text-slate-500 font-semibold uppercase tracking-wider mb-2">Actions</div>
+   439→   439→
+   440→   440→        <div className="flex flex-wrap gap-1.5">
+   441→   441→          {/* Row 1: Billing & Print — using PrintOptionsBtn for dropdown */}
+   442→   442→          <PrintOptionsBtn
+   443→   443→            icon={ReceiptText}
+   444→   444→            label="Folio Print"
+   445→   445→            color="emerald"
+   446→   446→            onA4={printReceipt}
+   447→   447→            onThermal={thermalPrintReceipt || (() => {})}
+   448→   448→          />
+   449→   449→          <PrintOptionsBtn
+   450→   450→            icon={FileCheck2}
+   451→   451→            label="Voucher"
+   452→   452→            onA4={onVoucher}
+   453→   453→            onThermal={thermalPrintVoucher || (() => {})}
+   454→   454→          />
+   455→   455→          <PrintOptionsBtn
+   456→   456→            icon={Printer}
+   457→   457→            label="Proforma"
+   458→   458→            color="teal"
+   459→   459→            onA4={() => { if (selectedFolioId) onPrintFolioStatement?.(selectedFolioId) }}
+   460→   460→            onThermal={thermalPrintFolio || (() => {})}
+   461→   461→            disabled={!selectedFolioId}
+   462→   462→          />
+   463→   463→
+   464→   464→          <Separator orientation="vertical" className="h-9 bg-slate-200 dark:bg-slate-700 mx-1" />
+   465→   465→
+   466→   466→          {/* Row 2: Transactions (active only — disabled with clear indication when checked out) */}
+   467→   467→          <ActionBtn icon={CircleDollarSign} label="Charge" onClick={onCharge} color="red" disabled={!isActive} />
+   468→   468→          <ActionBtn icon={Wallet} label="Payment" onClick={onPayment} color="emerald" disabled={!isActive} />
+   469→   469→          <ActionBtn icon={ArrowDownLeft} label="Refund" onClick={onRefund} color="orange" disabled={!isActive} />
+   470→   470→          <ActionBtn icon={Percent} label="Discount" onClick={onDiscount} color="teal" disabled={!isActive} />
+   471→   471→          {isAdmin && <ActionBtn icon={LogOut} label="Checkout" onClick={onCheckoutSettlement} color="amber" disabled={!isActive} />}
+   472→   472→
+   473→   473→          <Separator orientation="vertical" className="h-9 bg-slate-200 dark:bg-slate-700 mx-1" />
+   474→   474→
+   475→   475→          {/* Row 3: Entry operations (permission-gated) */}
+   476→   476→          <ActionBtn icon={ArrowRightLeft} label="Transfer" onClick={onTransfer} disabled={!isActive || !canTransfer} />
+   477→   477→          <ActionBtn icon={ArrowDownToLine} label="Shift" onClick={onShift} disabled={!isActive || selectedEntries.size === 0 || allFolios.length < 2} badge={selectedEntries.size || undefined} />
+   478→   478→          <ActionBtn icon={Split} label="Split" onClick={onSplit} disabled={!isActive || selectedEntries.size !== 1 || allFolios.length < 2} />
+   479→   479→          <ActionBtn icon={Trash2} label="Remove" onClick={onRemove} disabled={!isActive || selectedEntries.size === 0 || !canRemove} color="red" badge={selectedEntries.size || undefined} />
+   480→   480→
+   481→   481→          <Separator orientation="vertical" className="h-9 bg-slate-200 dark:bg-slate-700 mx-1" />
+   482→   482→
+   483→   483→          <ActionBtn icon={History} label="History" onClick={onHistory} color="teal" />
+   484→   484→
+   485→   485→          <Separator orientation="vertical" className="h-9 bg-slate-200 dark:bg-slate-700 mx-1" />
+   486→   486→
+   487→   487→          {/* Row 4: Profile management — always available (works for checked-out customers) */}
+   488→   488→          <ActionBtn icon={Edit3} label="Edit Profile" onClick={onEdit} />
+   489→   489→          <ActionBtn icon={Eye} label="Details" onClick={onDetails} />
+   490→   490→          <ActionBtn icon={Tag} label="Tags" onClick={onTags} />
+   491→   491→          <ActionBtn icon={StickyNote} label="Notes" onClick={onNotes} />
+   492→   492→          <ActionBtn icon={FileUp} label="Documents" onClick={onDocs} />
+   493→   493→          {isAdmin && <ActionBtn icon={Trash2} label="Archive" onClick={onDelete} color="red" />}
+   494→   494→        </div>
+   495→   495→
+   496→   496→        {/* Force Edit + Reopen buttons for checked-out folios */}
+   497→   497→        {isCheckedOut && (
+   498→   498→          <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2 flex-wrap">
+   499→   499→            {canForceEdit && (
+   500→   500→              <Button size="sm" variant={forceEditMode ? 'default' : 'outline'} className={`gap-1.5 text-xs h-8 ${forceEditMode ? 'bg-amber-600 hover:bg-amber-700 text-white border-amber-600' : 'text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800 hover:bg-amber-50 dark:hover:bg-amber-900/30'}`} onClick={onToggleForceEdit}>
+   501→   501→                {forceEditMode ? <><CheckCircle className="size-3.5" />Force Edit ON</> : <><Edit3 className="size-3.5" />Force Edit</>}
+   502→   502→              </Button>
+   503→   503→            )}
+   504→   504→            {forceEditMode && (
+   505→   505→              <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">⚠️ Edit mode active — all operations enabled</span>
+   506→   506→            )}
+   507→   507→            {canReopen && (
+   508→   508→              <Button size="sm" variant="outline" className="gap-1.5 text-xs h-8 text-teal-600 dark:text-teal-400 border-teal-200 dark:border-teal-800 hover:bg-teal-50 dark:hover:bg-teal-900/30" onClick={handleReopen}>
+   509→   509→                <Undo2 className="size-3.5" />Reopen Folio
+   510→   510→              </Button>
+   511→   511→            )}
+   512→   512→          </div>
+   513→   513→        )}
+   514→   514→      </div>
+   515→   515→    </div>
+   516→   516→  )
+   517→   517→}

@@ -1,0 +1,771 @@
+     1→'use client'
+     2→
+     3→import React, { useState, useMemo, useCallback } from 'react'
+     4→import { Button } from '@/components/ui/button'
+     5→import { Input } from '@/components/ui/input'
+     6→import { Label } from '@/components/ui/label'
+     7→import { Textarea } from '@/components/ui/textarea'
+     8→import { Badge } from '@/components/ui/badge'
+     9→import { Separator } from '@/components/ui/separator'
+    10→import { Card, CardContent } from '@/components/ui/card'
+    11→import { ScrollArea } from '@/components/ui/scroll-area'
+    12→import {
+    13→  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+    14→} from '@/components/ui/select'
+    15→import {
+    16→  FileText, Plus, Trash2, Search, Download, ExternalLink,
+    17→  Eye, StickyNote, FileUp, Filter, X, Clock, User, Shield,
+    18→  Loader2, CheckCircle2,
+    19→} from 'lucide-react'
+    20→import {
+    21→  CustomerDetail, CustomerNote, CustomerDocument, NoteForm, DocForm,
+    22→} from './customer-folio-types'
+    23→import { fmtDate, fmtDateTime, relTime } from './customer-folio-helpers'
+    24→import { notify } from '@/lib/notification-store'
+    25→
+    26→// ─── Constants ───
+    27→
+    28→const NOTE_TYPES = ['Internal', 'Customer', 'Staff', 'Private', 'Complaint', 'Feedback', 'FollowUp'] as const
+    29→
+    30→const DOC_CATEGORIES = [
+    31→  'Aadhaar', 'PAN', 'GST', 'Agreement', 'Receipt', 'Invoice',
+    32→  'Contract', 'Photo', 'ID Proof', 'Address Proof', 'Medical', 'Custom',
+    33→] as const
+    34→
+    35→const NOTE_TYPE_COLORS: Record<string, string> = {
+    36→  Internal: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+    37→  Customer: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300',
+    38→  Staff: 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300',
+    39→  Private: 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300',
+    40→  Complaint: 'bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300',
+    41→  Feedback: 'bg-teal-100 text-teal-700 dark:bg-teal-900/50 dark:text-teal-300',
+    42→  FollowUp: 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300',
+    43→}
+    44→
+    45→const DOC_TYPE_COLORS: Record<string, string> = {
+    46→  Aadhaar: 'bg-teal-100 text-teal-700 dark:bg-teal-900/50 dark:text-teal-300',
+    47→  PAN: 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300',
+    48→  GST: 'bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300',
+    49→  Agreement: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300',
+    50→  Receipt: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
+    51→  Invoice: 'bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300',
+    52→  Contract: 'bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300',
+    53→  Photo: 'bg-pink-100 text-pink-700 dark:bg-pink-900/50 dark:text-pink-300',
+    54→  'ID Proof': 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/50 dark:text-cyan-300',
+    55→  'Address Proof': 'bg-lime-100 text-lime-700 dark:bg-lime-900/50 dark:text-lime-300',
+    56→  Medical: 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300',
+    57→  Custom: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+    58→}
+    59→
+    60→const DOC_TYPE_ICONS: Record<string, string> = {
+    61→  Aadhaar: '🪪', PAN: '📄', GST: '📋', Agreement: '📝',
+    62→  Receipt: '🧾', Invoice: '💲', Contract: '📑', Photo: '📷',
+    63→  'ID Proof': '🪪', 'Address Proof': '🏠', Medical: '🏥', Custom: '📎',
+    64→}
+    65→
+    66→// ─── Props ───
+    67→
+    68→interface NotesDocsProps {
+    69→  detail: CustomerDetail | null
+    70→  submitting: boolean
+    71→  isAdmin: boolean
+    72→  canManageDocs: boolean
+    73→  canDeleteDocs: boolean
+    74→  token: string | null
+    75→  onRefresh: () => void
+    76→}
+    77→
+    78→// ─── Component ───
+    79→
+    80→export function CustomerFolioNotesDocs({
+    81→  detail, submitting, isAdmin, canManageDocs, canDeleteDocs, token, onRefresh,
+    82→}: NotesDocsProps) {
+    83→  const [activeTab, setActiveTab] = useState<'notes' | 'documents'>('notes')
+    84→  const [noteSearch, setNoteSearch] = useState('')
+    85→  const [docSearch, setDocSearch] = useState('')
+    86→  const [docCategoryFilter, setDocCategoryFilter] = useState<string>('All')
+    87→  const [showNoteForm, setShowNoteForm] = useState(false)
+    88→  const [showDocForm, setShowDocForm] = useState(false)
+    89→  const [deletingId, setDeletingId] = useState<string | null>(null)
+    90→  const [confirmDeleteId, setConfirmDeleteId] = useState<{ id: string; type: 'note' | 'doc' } | null>(null)
+    91→
+    92→  // ─── Note form state ───
+    93→  const [noteForm, setNoteForm] = useState<NoteForm>({ type: 'Internal', content: '' })
+    94→  const [noteIsPrivate, setNoteIsPrivate] = useState(false)
+    95→  const [noteSubmitting, setNoteSubmitting] = useState(false)
+    96→
+    97→  // ─── Doc form state ───
+    98→  const [docForm, setDocForm] = useState<DocForm>({ type: 'Aadhaar', name: '', url: '', notes: '' })
+    99→  const [docSubmitting, setDocSubmitting] = useState(false)
+   100→
+   101→  // ─── Helpers ───
+   102→  const headers = useMemo(() => ({
+   103→    'Content-Type': 'application/json',
+   104→    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+   105→  }), [token])
+   106→
+   107→  const resetNoteForm = useCallback(() => {
+   108→    setNoteForm({ type: 'Internal', content: '' })
+   109→    setNoteIsPrivate(false)
+   110→    setShowNoteForm(false)
+   111→  }, [])
+   112→
+   113→  const resetDocForm = useCallback(() => {
+   114→    setDocForm({ type: 'Aadhaar', name: '', url: '', notes: '' })
+   115→    setShowDocForm(false)
+   116→  }, [])
+   117→
+   118→  // ─── Filtered lists ───
+   119→  const filteredNotes = useMemo(() => {
+   120→    if (!detail?.notes) return []
+   121→    if (!noteSearch.trim()) return detail.notes
+   122→    const q = noteSearch.toLowerCase()
+   123→    return detail.notes.filter(n =>
+   124→      n.content.toLowerCase().includes(q) ||
+   125→      n.type.toLowerCase().includes(q) ||
+   126→      (n.userName || '').toLowerCase().includes(q)
+   127→    )
+   128→  }, [detail?.notes, noteSearch])
+   129→
+   130→  const filteredDocs = useMemo(() => {
+   131→    if (!detail?.documents) return []
+   132→    let docs = detail.documents
+   133→    if (docCategoryFilter !== 'All') {
+   134→      docs = docs.filter(d => d.type === docCategoryFilter)
+   135→    }
+   136→    if (docSearch.trim()) {
+   137→      const q = docSearch.toLowerCase()
+   138→      docs = docs.filter(d =>
+   139→        d.name.toLowerCase().includes(q) ||
+   140→        d.type.toLowerCase().includes(q) ||
+   141→        (d.notes || '').toLowerCase().includes(q)
+   142→      )
+   143→    }
+   144→    return docs
+   145→  }, [detail?.documents, docCategoryFilter, docSearch])
+   146→
+   147→  // ─── Doc category counts ───
+   148→  const docCategoryCounts = useMemo(() => {
+   149→    const counts: Record<string, number> = { All: 0 }
+   150→    if (!detail?.documents) return counts
+   151→    counts.All = detail.documents.length
+   152→    for (const doc of detail.documents) {
+   153→      counts[doc.type] = (counts[doc.type] || 0) + 1
+   154→    }
+   155→    return counts
+   156→  }, [detail?.documents])
+   157→
+   158→  // ─── Actions ───
+   159→  const handleAddNote = async () => {
+   160→    if (!detail || !noteForm.content.trim()) return
+   161→    setNoteSubmitting(true)
+   162→    try {
+   163→      const res = await fetch(`/api/folio/customers/${detail.id}/notes`, {
+   164→        method: 'POST',
+   165→        headers,
+   166→        body: JSON.stringify({
+   167→          type: noteForm.type,
+   168→          content: noteForm.content.trim(),
+   169→          ...(isAdmin && noteIsPrivate ? { isPrivate: true } : {}),
+   170→        }),
+   171→      })
+   172→      if (!res.ok) {
+   173→        const data = await res.json().catch(() => ({}))
+   174→        throw new Error(data.error || 'Failed to add note')
+   175→      }
+   176→      notify({ type: 'success', title: 'Note Added', message: 'Note has been added successfully.' })
+   177→      resetNoteForm()
+   178→      onRefresh()
+   179→    } catch (err: any) {
+   180→      notify({ type: 'error', title: 'Error', message: err.message || 'Failed to add note' })
+   181→    } finally {
+   182→      setNoteSubmitting(false)
+   183→    }
+   184→  }
+   185→
+   186→  const handleDeleteNote = async (noteId: string) => {
+   187→    if (!detail) return
+   188→    setDeletingId(noteId)
+   189→    try {
+   190→      const res = await fetch(`/api/folio/customers/${detail.id}/notes/${noteId}`, {
+   191→        method: 'DELETE',
+   192→        headers,
+   193→      })
+   194→      if (!res.ok) {
+   195→        const data = await res.json().catch(() => ({}))
+   196→        throw new Error(data.error || 'Failed to delete note')
+   197→      }
+   198→      notify({ type: 'success', title: 'Note Deleted', message: 'Note has been deleted.' })
+   199→      setConfirmDeleteId(null)
+   200→      onRefresh()
+   201→    } catch (err: any) {
+   202→      notify({ type: 'error', title: 'Error', message: err.message || 'Failed to delete note' })
+   203→    } finally {
+   204→      setDeletingId(null)
+   205→    }
+   206→  }
+   207→
+   208→  const handleAddDoc = async () => {
+   209→    if (!detail || !docForm.name.trim()) return
+   210→    setDocSubmitting(true)
+   211→    try {
+   212→      const res = await fetch(`/api/folio/customers/${detail.id}/documents`, {
+   213→        method: 'POST',
+   214→        headers,
+   215→        body: JSON.stringify({
+   216→          type: docForm.type,
+   217→          name: docForm.name.trim(),
+   218→          url: docForm.url.trim(),
+   219→          notes: docForm.notes.trim(),
+   220→        }),
+   221→      })
+   222→      if (!res.ok) {
+   223→        const data = await res.json().catch(() => ({}))
+   224→        throw new Error(data.error || 'Failed to add document')
+   225→      }
+   226→      notify({ type: 'success', title: 'Document Added', message: 'Document has been added successfully.' })
+   227→      resetDocForm()
+   228→      onRefresh()
+   229→    } catch (err: any) {
+   230→      notify({ type: 'error', title: 'Error', message: err.message || 'Failed to add document' })
+   231→    } finally {
+   232→      setDocSubmitting(false)
+   233→    }
+   234→  }
+   235→
+   236→  const handleDeleteDoc = async (docId: string) => {
+   237→    if (!detail) return
+   238→    setDeletingId(docId)
+   239→    try {
+   240→      const res = await fetch(`/api/folio/customers/${detail.id}/documents/${docId}`, {
+   241→        method: 'DELETE',
+   242→        headers,
+   243→      })
+   244→      if (!res.ok) {
+   245→        const data = await res.json().catch(() => ({}))
+   246→        throw new Error(data.error || 'Failed to delete document')
+   247→      }
+   248→      notify({ type: 'success', title: 'Document Deleted', message: 'Document has been deleted.' })
+   249→      setConfirmDeleteId(null)
+   250→      onRefresh()
+   251→    } catch (err: any) {
+   252→      notify({ type: 'error', title: 'Error', message: err.message || 'Failed to delete document' })
+   253→    } finally {
+   254→      setDeletingId(null)
+   255→    }
+   256→  }
+   257→
+   258→  // ─── Render ───
+   259→
+   260→  if (!detail) return null
+   261→
+   262→  return (
+   263→    <div className="flex flex-col gap-4">
+   264→      {/* Tab Switcher */}
+   265→      <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800 rounded-lg w-fit">
+   266→        <button
+   267→          type="button"
+   268→          onClick={() => setActiveTab('notes')}
+   269→          className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${
+   270→            activeTab === 'notes'
+   271→              ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm'
+   272→              : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+   273→          }`}
+   274→        >
+   275→          <StickyNote className="size-4" />
+   276→          Notes
+   277→          {detail.notes.length > 0 && (
+   278→            <span className="text-xs bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded-full">
+   279→              {detail.notes.length}
+   280→            </span>
+   281→          )}
+   282→        </button>
+   283→        <button
+   284→          type="button"
+   285→          onClick={() => setActiveTab('documents')}
+   286→          className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${
+   287→            activeTab === 'documents'
+   288→              ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm'
+   289→              : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+   290→          }`}
+   291→        >
+   292→          <FileUp className="size-4" />
+   293→          Documents
+   294→          {detail.documents.length > 0 && (
+   295→            <span className="text-xs bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded-full">
+   296→              {detail.documents.length}
+   297→            </span>
+   298→          )}
+   299→        </button>
+   300→      </div>
+   301→
+   302→      {/* ─── NOTES TAB ─── */}
+   303→      {activeTab === 'notes' && (
+   304→        <div className="flex flex-col gap-3">
+   305→          {/* Search + Add */}
+   306→          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+   307→            <div className="relative flex-1">
+   308→              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
+   309→              <Input
+   310→                placeholder="Search notes..."
+   311→                value={noteSearch}
+   312→                onChange={e => setNoteSearch(e.target.value)}
+   313→                className="pl-9 h-9 text-sm"
+   314→              />
+   315→              {noteSearch && (
+   316→                <button
+   317→                  type="button"
+   318→                  onClick={() => setNoteSearch('')}
+   319→                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+   320→                >
+   321→                  <X className="size-3.5" />
+   322→                </button>
+   323→              )}
+   324→            </div>
+   325→            {canManageDocs && (
+   326→              <Button
+   327→                size="sm"
+   328→                onClick={() => { setShowNoteForm(!showNoteForm); if (showNoteForm) resetNoteForm() }}
+   329→                className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white shrink-0"
+   330→              >
+   331→                {showNoteForm ? <X className="size-3.5" /> : <Plus className="size-3.5" />}
+   332→                {showNoteForm ? 'Cancel' : 'Add Note'}
+   333→              </Button>
+   334→            )}
+   335→          </div>
+   336→
+   337→          {/* Inline Note Form */}
+   338→          {showNoteForm && canManageDocs && (
+   339→            <Card className="border-emerald-200 dark:border-emerald-800">
+   340→              <CardContent className="p-4 space-y-3">
+   341→                <div className="flex flex-col sm:flex-row gap-3">
+   342→                  <div className="sm:w-48">
+   343→                    <Label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">Type</Label>
+   344→                    <Select value={noteForm.type} onValueChange={v => setNoteForm({ ...noteForm, type: v })}>
+   345→                      <SelectTrigger className="h-9 text-sm">
+   346→                        <SelectValue />
+   347→                      </SelectTrigger>
+   348→                      <SelectContent>
+   349→                        {NOTE_TYPES.map(t => (
+   350→                          <SelectItem key={t} value={t}>{t}</SelectItem>
+   351→                        ))}
+   352→                      </SelectContent>
+   353→                    </Select>
+   354→                  </div>
+   355→                  {isAdmin && (
+   356→                    <div className="flex items-end gap-2">
+   357→                      <label className="flex items-center gap-2 cursor-pointer pb-2">
+   358→                        <input
+   359→                          type="checkbox"
+   360→                          checked={noteIsPrivate}
+   361→                          onChange={e => setNoteIsPrivate(e.target.checked)}
+   362→                          className="rounded border-slate-300 dark:border-slate-600"
+   363→                        />
+   364→                        <span className="text-xs flex items-center gap-1 text-slate-600 dark:text-slate-400">
+   365→                          <Shield className="size-3" />
+   366→                          Private (Admin only)
+   367→                        </span>
+   368→                      </label>
+   369→                    </div>
+   370→                  )}
+   371→                </div>
+   372→                <div>
+   373→                  <Label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">Content *</Label>
+   374→                  <Textarea
+   375→                    value={noteForm.content}
+   376→                    onChange={e => setNoteForm({ ...noteForm, content: e.target.value })}
+   377→                    placeholder="Write your note here..."
+   378→                    rows={3}
+   379→                    className="text-sm resize-none"
+   380→                  />
+   381→                </div>
+   382→                <div className="flex justify-end">
+   383→                  <Button
+   384→                    size="sm"
+   385→                    onClick={handleAddNote}
+   386→                    disabled={!noteForm.content.trim() || noteSubmitting || submitting}
+   387→                    className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+   388→                  >
+   389→                    {noteSubmitting ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
+   390→                    Save Note
+   391→                  </Button>
+   392→                </div>
+   393→              </CardContent>
+   394→            </Card>
+   395→          )}
+   396→
+   397→          <Separator className="my-1" />
+   398→
+   399→          {/* Notes List */}
+   400→          <ScrollArea className="max-h-96">
+   401→            {filteredNotes.length === 0 ? (
+   402→              <div className="flex flex-col items-center justify-center py-12 text-slate-400 dark:text-slate-500">
+   403→                <StickyNote className="size-10 mb-3 opacity-40" />
+   404→                <p className="text-sm font-medium">No notes found</p>
+   405→                <p className="text-xs mt-1">
+   406→                  {noteSearch ? 'Try a different search term' : 'Add your first note using the button above'}
+   407→                </p>
+   408→              </div>
+   409→            ) : (
+   410→              <div className="flex flex-col gap-2 pr-1">
+   411→                {filteredNotes.map(note => (
+   412→                  <Card key={note.id} className="overflow-hidden">
+   413→                    <CardContent className="p-3 sm:p-4">
+   414→                      <div className="flex items-start justify-between gap-3">
+   415→                        <div className="flex-1 min-w-0">
+   416→                          {/* Type badge + private indicator */}
+   417→                          <div className="flex items-center gap-2 mb-2 flex-wrap">
+   418→                            <Badge
+   419→                              variant="secondary"
+   420→                              className={`text-[10px] font-semibold px-2 py-0.5 ${NOTE_TYPE_COLORS[note.type] || NOTE_TYPE_COLORS.Internal}`}
+   421→                            >
+   422→                              {note.type}
+   423→                            </Badge>
+   424→                            {note.isPrivate && (
+   425→                              <Badge variant="secondary" className="text-[10px] bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400 gap-1">
+   426→                                <Shield className="size-2.5" />
+   427→                                Private
+   428→                              </Badge>
+   429→                            )}
+   430→                          </div>
+   431→                          {/* Content */}
+   432→                          <p className="text-sm text-slate-800 dark:text-slate-200 whitespace-pre-wrap break-words leading-relaxed">
+   433→                            {note.content}
+   434→                          </p>
+   435→                          {/* Meta */}
+   436→                          <div className="flex items-center gap-3 mt-2.5 text-[11px] text-slate-400 dark:text-slate-500 flex-wrap">
+   437→                            {note.userName && (
+   438→                              <span className="flex items-center gap-1">
+   439→                                <User className="size-3" />
+   440→                                {note.userName}
+   441→                              </span>
+   442→                            )}
+   443→                            <span className="flex items-center gap-1" title={fmtDateTime(note.createdAt)}>
+   444→                              <Clock className="size-3" />
+   445→                              {fmtDate(note.createdAt)}
+   446→                            </span>
+   447→                            <span className="text-slate-300 dark:text-slate-600">
+   448→                              {relTime(note.createdAt)}
+   449→                            </span>
+   450→                          </div>
+   451→                        </div>
+   452→                        {/* Delete button */}
+   453→                        {canDeleteDocs && (
+   454→                          <div className="shrink-0">
+   455→                            {confirmDeleteId?.id === note.id && confirmDeleteId?.type === 'note' ? (
+   456→                              <div className="flex items-center gap-1">
+   457→                                <Button
+   458→                                  variant="destructive"
+   459→                                  size="sm"
+   460→                                  className="h-7 text-[10px] px-2 gap-1"
+   461→                                  onClick={() => handleDeleteNote(note.id)}
+   462→                                  disabled={deletingId === note.id}
+   463→                                >
+   464→                                  {deletingId === note.id ? (
+   465→                                    <Loader2 className="size-3 animate-spin" />
+   466→                                  ) : (
+   467→                                    <CheckCircle2 className="size-3" />
+   468→                                  )}
+   469→                                  Confirm
+   470→                                </Button>
+   471→                                <Button
+   472→                                  variant="ghost"
+   473→                                  size="sm"
+   474→                                  className="h-7 text-[10px] px-2"
+   475→                                  onClick={() => setConfirmDeleteId(null)}
+   476→                                >
+   477→                                  Cancel
+   478→                                </Button>
+   479→                              </div>
+   480→                            ) : (
+   481→                              <Button
+   482→                                variant="ghost"
+   483→                                size="sm"
+   484→                                className="h-7 w-7 p-0 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+   485→                                onClick={() => setConfirmDeleteId({ id: note.id, type: 'note' })}
+   486→                                title="Delete note"
+   487→                              >
+   488→                                <Trash2 className="size-3.5" />
+   489→                              </Button>
+   490→                            )}
+   491→                          </div>
+   492→                        )}
+   493→                      </div>
+   494→                    </CardContent>
+   495→                  </Card>
+   496→                ))}
+   497→              </div>
+   498→            )}
+   499→          </ScrollArea>
+   500→        </div>
+   501→      )}
+   502→
+   503→      {/* ─── DOCUMENTS TAB ─── */}
+   504→      {activeTab === 'documents' && (
+   505→        <div className="flex flex-col gap-3">
+   506→          {/* Search + Category Filter + Add */}
+   507→          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+   508→            <div className="relative flex-1">
+   509→              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
+   510→              <Input
+   511→                placeholder="Search documents..."
+   512→                value={docSearch}
+   513→                onChange={e => setDocSearch(e.target.value)}
+   514→                className="pl-9 h-9 text-sm"
+   515→              />
+   516→              {docSearch && (
+   517→                <button
+   518→                  type="button"
+   519→                  onClick={() => setDocSearch('')}
+   520→                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+   521→                >
+   522→                  <X className="size-3.5" />
+   523→                </button>
+   524→              )}
+   525→            </div>
+   526→            <div className="relative sm:w-48">
+   527→              <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-slate-400 pointer-events-none" />
+   528→              <Select value={docCategoryFilter} onValueChange={setDocCategoryFilter}>
+   529→                <SelectTrigger className="h-9 text-sm pl-8">
+   530→                  <SelectValue placeholder="Category" />
+   531→                </SelectTrigger>
+   532→                <SelectContent>
+   533→                  <SelectItem value="All">
+   534→                    <span className="flex items-center gap-2">
+   535→                      All Categories
+   536→                      {docCategoryCounts.All > 0 && (
+   537→                        <span className="text-[10px] bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded-full">
+   538→                          {docCategoryCounts.All}
+   539→                        </span>
+   540→                      )}
+   541→                    </span>
+   542→                  </SelectItem>
+   543→                  {DOC_CATEGORIES.map(cat => (
+   544→                    <SelectItem key={cat} value={cat}>
+   545→                      <span className="flex items-center gap-2">
+   546→                        <span>{DOC_TYPE_ICONS[cat] || '📎'}</span>
+   547→                        {cat}
+   548→                        {(docCategoryCounts[cat] || 0) > 0 && (
+   549→                          <span className="text-[10px] bg-slate-200 dark:bg-slate-600 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded-full">
+   550→                            {docCategoryCounts[cat]}
+   551→                          </span>
+   552→                        )}
+   553→                      </span>
+   554→                    </SelectItem>
+   555→                  ))}
+   556→                </SelectContent>
+   557→              </Select>
+   558→            </div>
+   559→            {canManageDocs && (
+   560→              <Button
+   561→                size="sm"
+   562→                onClick={() => { setShowDocForm(!showDocForm); if (showDocForm) resetDocForm() }}
+   563→                className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white shrink-0"
+   564→              >
+   565→                {showDocForm ? <X className="size-3.5" /> : <Plus className="size-3.5" />}
+   566→                {showDocForm ? 'Cancel' : 'Add Document'}
+   567→              </Button>
+   568→            )}
+   569→          </div>
+   570→
+   571→          {/* Inline Doc Form */}
+   572→          {showDocForm && canManageDocs && (
+   573→            <Card className="border-emerald-200 dark:border-emerald-800">
+   574→              <CardContent className="p-4 space-y-3">
+   575→                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+   576→                  <div>
+   577→                    <Label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">Type *</Label>
+   578→                    <Select value={docForm.type} onValueChange={v => setDocForm({ ...docForm, type: v })}>
+   579→                      <SelectTrigger className="h-9 text-sm">
+   580→                        <SelectValue />
+   581→                      </SelectTrigger>
+   582→                      <SelectContent>
+   583→                        {DOC_CATEGORIES.map(cat => (
+   584→                          <SelectItem key={cat} value={cat}>
+   585→                            <span className="flex items-center gap-2">
+   586→                              <span>{DOC_TYPE_ICONS[cat] || '📎'}</span>
+   587→                              {cat}
+   588→                            </span>
+   589→                          </SelectItem>
+   590→                        ))}
+   591→                      </SelectContent>
+   592→                    </Select>
+   593→                  </div>
+   594→                  <div>
+   595→                    <Label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">Name *</Label>
+   596→                    <Input
+   597→                      value={docForm.name}
+   598→                      onChange={e => setDocForm({ ...docForm, name: e.target.value })}
+   599→                      placeholder="Document name"
+   600→                      className="h-9 text-sm"
+   601→                    />
+   602→                  </div>
+   603→                </div>
+   604→                <div>
+   605→                  <Label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">URL</Label>
+   606→                  <Input
+   607→                    value={docForm.url}
+   608→                    onChange={e => setDocForm({ ...docForm, url: e.target.value })}
+   609→                    placeholder="https://example.com/document.pdf"
+   610→                    className="h-9 text-sm"
+   611→                  />
+   612→                </div>
+   613→                <div>
+   614→                  <Label className="text-xs text-slate-500 dark:text-slate-400 mb-1 block">Notes</Label>
+   615→                  <Input
+   616→                    value={docForm.notes}
+   617→                    onChange={e => setDocForm({ ...docForm, notes: e.target.value })}
+   618→                    placeholder="Optional notes"
+   619→                    className="h-9 text-sm"
+   620→                  />
+   621→                </div>
+   622→                <div className="flex justify-end">
+   623→                  <Button
+   624→                    size="sm"
+   625→                    onClick={handleAddDoc}
+   626→                    disabled={!docForm.name.trim() || docSubmitting || submitting}
+   627→                    className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+   628→                  >
+   629→                    {docSubmitting ? <Loader2 className="size-3.5 animate-spin" /> : <CheckCircle2 className="size-3.5" />}
+   630→                    Save Document
+   631→                  </Button>
+   632→                </div>
+   633→              </CardContent>
+   634→            </Card>
+   635→          )}
+   636→
+   637→          <Separator className="my-1" />
+   638→
+   639→          {/* Documents List */}
+   640→          <ScrollArea className="max-h-96">
+   641→            {filteredDocs.length === 0 ? (
+   642→              <div className="flex flex-col items-center justify-center py-12 text-slate-400 dark:text-slate-500">
+   643→                <FileText className="size-10 mb-3 opacity-40" />
+   644→                <p className="text-sm font-medium">No documents found</p>
+   645→                <p className="text-xs mt-1">
+   646→                  {docSearch || docCategoryFilter !== 'All'
+   647→                    ? 'Try a different search or category filter'
+   648→                    : 'Add your first document using the button above'}
+   649→                </p>
+   650→              </div>
+   651→            ) : (
+   652→              <div className="flex flex-col gap-2 pr-1">
+   653→                {filteredDocs.map(doc => (
+   654→                  <Card key={doc.id} className="overflow-hidden">
+   655→                    <CardContent className="p-3 sm:p-4">
+   656→                      <div className="flex items-start justify-between gap-3">
+   657→                        <div className="flex-1 min-w-0">
+   658→                          {/* Header: type badge + name */}
+   659→                          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+   660→                            <Badge
+   661→                              variant="secondary"
+   662→                              className={`text-[10px] font-semibold px-2 py-0.5 gap-1 ${DOC_TYPE_COLORS[doc.type] || DOC_TYPE_COLORS.Custom}`}
+   663→                            >
+   664→                              <span>{DOC_TYPE_ICONS[doc.type] || '📎'}</span>
+   665→                              {doc.type}
+   666→                            </Badge>
+   667→                            <span className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">
+   668→                              {doc.name || 'Untitled'}
+   669→                            </span>
+   670→                          </div>
+   671→                          {/* Notes */}
+   672→                          {doc.notes && (
+   673→                            <p className="text-xs text-slate-500 dark:text-slate-400 mb-1.5 truncate">
+   674→                              {doc.notes}
+   675→                            </p>
+   676→                          )}
+   677→                          {/* Meta */}
+   678→                          <div className="flex items-center gap-3 text-[11px] text-slate-400 dark:text-slate-500 flex-wrap">
+   679→                            <span className="flex items-center gap-1" title={fmtDateTime(doc.createdAt)}>
+   680→                              <Clock className="size-3" />
+   681→                              {fmtDate(doc.createdAt)}
+   682→                            </span>
+   683→                            <span className="text-slate-300 dark:text-slate-600">
+   684→                              {relTime(doc.createdAt)}
+   685→                            </span>
+   686→                          </div>
+   687→                        </div>
+   688→                        {/* Action buttons */}
+   689→                        <div className="flex items-center gap-1 shrink-0">
+   690→                          {doc.url && (
+   691→                            <>
+   692→                              <Button
+   693→                                variant="ghost"
+   694→                                size="sm"
+   695→                                className="h-7 w-7 p-0 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20"
+   696→                                onClick={() => window.open(doc.url, '_blank', 'noopener,noreferrer')}
+   697→                                title="Preview in new tab"
+   698→                              >
+   699→                                <ExternalLink className="size-3.5" />
+   700→                              </Button>
+   701→                              <Button
+   702→                                variant="ghost"
+   703→                                size="sm"
+   704→                                className="h-7 w-7 p-0 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20"
+   705→                                onClick={() => {
+   706→                                  const a = document.createElement('a')
+   707→                                  a.href = doc.url
+   708→                                  a.download = doc.name || 'document'
+   709→                                  a.target = '_blank'
+   710→                                  a.rel = 'noopener noreferrer'
+   711→                                  document.body.appendChild(a)
+   712→                                  a.click()
+   713→                                  document.body.removeChild(a)
+   714→                                }}
+   715→                                title="Download"
+   716→                              >
+   717→                                <Download className="size-3.5" />
+   718→                              </Button>
+   719→                            </>
+   720→                          )}
+   721→                          {canDeleteDocs && (
+   722→                            confirmDeleteId?.id === doc.id && confirmDeleteId?.type === 'doc' ? (
+   723→                              <div className="flex items-center gap-1">
+   724→                                <Button
+   725→                                  variant="destructive"
+   726→                                  size="sm"
+   727→                                  className="h-7 text-[10px] px-2 gap-1"
+   728→                                  onClick={() => handleDeleteDoc(doc.id)}
+   729→                                  disabled={deletingId === doc.id}
+   730→                                >
+   731→                                  {deletingId === doc.id ? (
+   732→                                    <Loader2 className="size-3 animate-spin" />
+   733→                                  ) : (
+   734→                                    <CheckCircle2 className="size-3" />
+   735→                                  )}
+   736→                                  Confirm
+   737→                                </Button>
+   738→                                <Button
+   739→                                  variant="ghost"
+   740→                                  size="sm"
+   741→                                  className="h-7 text-[10px] px-2"
+   742→                                  onClick={() => setConfirmDeleteId(null)}
+   743→                                >
+   744→                                  Cancel
+   745→                                </Button>
+   746→                              </div>
+   747→                            ) : (
+   748→                              <Button
+   749→                                variant="ghost"
+   750→                                size="sm"
+   751→                                className="h-7 w-7 p-0 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+   752→                                onClick={() => setConfirmDeleteId({ id: doc.id, type: 'doc' })}
+   753→                                title="Delete document"
+   754→                              >
+   755→                                <Trash2 className="size-3.5" />
+   756→                              </Button>
+   757→                            )
+   758→                          )}
+   759→                        </div>
+   760→                      </div>
+   761→                    </CardContent>
+   762→                  </Card>
+   763→                ))}
+   764→              </div>
+   765→            )}
+   766→          </ScrollArea>
+   767→        </div>
+   768→      )}
+   769→    </div>
+   770→  )
+   771→}

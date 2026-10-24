@@ -1,0 +1,2002 @@
+     1→'use client';
+     2→
+     3→import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+     4→import {
+     5→  BarChart3,
+     6→  TrendingUp,
+     7→  TrendingDown,
+     8→  IndianRupee,
+     9→  CalendarDays,
+    10→  Clock,
+    11→  Download,
+    12→  Filter,
+    13→  RotateCcw,
+    14→  Loader2,
+    15→  FileText,
+    16→  Wallet,
+    17→  ArrowUpRight,
+    18→  ArrowDownRight,
+    19→  RefreshCw,
+    20→  Package,
+    21→  ShoppingCart,
+    22→  CreditCard,
+    23→  PieChart as PieChartIcon,
+    24→  AlertTriangle,
+    25→  PackageX,
+    26→  CircleDollarSign,
+    27→  Receipt,
+    28→  Banknote,
+    29→  ArrowRightLeft,
+    30→  Users,
+    31→  UserCheck,
+    32→} from 'lucide-react';
+    33→import {
+    34→  BarChart,
+    35→  Bar,
+    36→  XAxis,
+    37→  YAxis,
+    38→  Tooltip,
+    39→  ResponsiveContainer,
+    40→  PieChart,
+    41→  Pie,
+    42→  Cell,
+    43→  Legend,
+    44→} from 'recharts';
+    45→import {
+    46→  Card,
+    47→  CardContent,
+    48→  CardHeader,
+    49→  CardTitle,
+    50→} from '@/components/ui/card';
+    51→import { Button } from '@/components/ui/button';
+    52→import { Input } from '@/components/ui/input';
+    53→import { Label } from '@/components/ui/label';
+    54→import { Badge } from '@/components/ui/badge';
+    55→import { Separator } from '@/components/ui/separator';
+    56→import {
+    57→  Tabs,
+    58→  TabsContent,
+    59→  TabsList,
+    60→  TabsTrigger,
+    61→} from '@/components/ui/tabs';
+    62→import {
+    63→  Select,
+    64→  SelectContent,
+    65→  SelectItem,
+    66→  SelectTrigger,
+    67→  SelectValue,
+    68→} from '@/components/ui/select';
+    69→import {
+    70→  Table,
+    71→  TableBody,
+    72→  TableCell,
+    73→  TableHead,
+    74→  TableHeader,
+    75→  TableRow,
+    76→} from '@/components/ui/table';
+    77→import { Skeleton } from '@/components/ui/skeleton';
+    78→import { notify } from '@/lib/notification-store';
+    79→import { useAuth } from '@/components/auth-provider';
+    80→import ReadOnlyBanner from '@/components/read-only-banner';
+    81→
+    82→// ─── Types ────────────────────────────────────────────────────────────────────
+    83→
+    84→interface OverviewData {
+    85→  totalInvoices: number;
+    86→  activeInvoices: number;
+    87→  totalRevenue: number;
+    88→  totalPaid: number;
+    89→  totalBalance: number;
+    90→  totalDiscount: number;
+    91→  totalDelivery: number;
+    92→  totalGST: number;
+    93→  pettyIncome: number;
+    94→  pettyExpense: number;
+    95→  dailyRevenue: { date: string; revenue: number }[];
+    96→  paymentBreakdown: { method: string; count: number; total: number }[];
+    97→}
+    98→
+    99→interface BalanceBill {
+   100→  id: string;
+   101→  invoiceNumber: string;
+   102→  date: string;
+   103→  customerName: string;
+   104→  grandTotal: number;
+   105→  paidAmount: number;
+   106→  balanceAmount: number;
+   107→  paymentMethod: string;
+   108→  orderType: string;
+   109→}
+   110→
+   111→interface BalanceData {
+   112→  totalBills: number;
+   113→  totalBalanceAmount: number;
+   114→  totalGrandTotal: number;
+   115→  totalPaid: number;
+   116→  bills: BalanceBill[];
+   117→}
+   118→
+   119→interface RefundItem {
+   120→  id: string;
+   121→  refundNumber: string;
+   122→  date: string;
+   123→  originalInvoiceNumber: string;
+   124→  customerName: string;
+   125→  refundAmount: number;
+   126→  reason: string;
+   127→  status: string;
+   128→  items: unknown[];
+   129→}
+   130→
+   131→interface RefundsData {
+   132→  totalRefunds: number;
+   133→  totalRefundAmount: number;
+   134→  refunds: RefundItem[];
+   135→}
+   136→
+   137→interface ReturnItem {
+   138→  id: string;
+   139→  invoiceNumber: string;
+   140→  date: string;
+   141→  customerName: string;
+   142→  grandTotal: number;
+   143→  status: string;
+   144→  paymentMethod: string;
+   145→  refundCount: number;
+   146→  totalRefunded: number;
+   147→  items: unknown[];
+   148→}
+   149→
+   150→interface ReturnsData {
+   151→  totalReturns: number;
+   152→  totalReturnedAmount: number;
+   153→  returns: ReturnItem[];
+   154→}
+   155→
+   156→interface ReplaceItem {
+   157→  id: string;
+   158→  invoiceNumber: string;
+   159→  date: string;
+   160→  customerName: string;
+   161→  grandTotal: number;
+   162→  paidAmount: number;
+   163→  paymentMethod: string;
+   164→  orderType: string;
+   165→  items: unknown[];
+   166→}
+   167→
+   168→interface ReplaceData {
+   169→  totalReplaced: number;
+   170→  totalReplacedAmount: number;
+   171→  replacements: ReplaceItem[];
+   172→}
+   173→
+   174→interface ItemSalesEntry {
+   175→  name: string;
+   176→  totalQty: number;
+   177→  totalRevenue: number;
+   178→  count: number;
+   179→}
+   180→
+   181→interface ItemSalesData {
+   182→  totalItems: number;
+   183→  totalItemRevenue: number;
+   184→  totalItemQty: number;
+   185→  items: ItemSalesEntry[];
+   186→}
+   187→
+   188→interface InventoryCategory {
+   189→  category: string;
+   190→  count: number;
+   191→  value: number;
+   192→  qty: number;
+   193→}
+   194→
+   195→interface LowStockItem {
+   196→  id: string;
+   197→  name: string;
+   198→  category: string;
+   199→  price: number;
+   200→  quantity: number;
+   201→}
+   202→
+   203→interface InventoryData {
+   204→  totalItems: number;
+   205→  totalValue: number;
+   206→  lowStockCount: number;
+   207→  outOfStockCount: number;
+   208→  wellStockedCount: number;
+   209→  categoryBreakdown: InventoryCategory[];
+   210→  lowStockItems: LowStockItem[];
+   211→}
+   212→
+   213→interface DailyCashFlow {
+   214→  date: string;
+   215→  income: number;
+   216→  expense: number;
+   217→  net: number;
+   218→}
+   219→
+   220→interface CashFlowTransaction {
+   221→  id: string;
+   222→  date: string;
+   223→  type: string;
+   224→  amount: number;
+   225→  description: string;
+   226→}
+   227→
+   228→interface CashFlowData {
+   229→  totalInvoiceIncome: number;
+   230→  totalPettyIncome: number;
+   231→  totalPettyExpense: number;
+   232→  netCashFlow: number;
+   233→  dailyCashFlow: DailyCashFlow[];
+   234→  transactions: CashFlowTransaction[];
+   235→}
+   236→
+   237→interface StatusEntry {
+   238→  status: string;
+   239→  count: number;
+   240→  totalAmount: number;
+   241→  totalPaid: number;
+   242→  totalBalance: number;
+   243→}
+   244→
+   245→interface StatusData {
+   246→  totalInvoices: number;
+   247→  totalAmount: number;
+   248→  statusSummary: StatusEntry[];
+   249→}
+   250→
+   251→interface CsvColumn {
+   252→  key: string;
+   253→  label: string;
+   254→}
+   255→
+   256→interface ReportsSectionProps {
+   257→  dataVersion?: number;
+   258→}
+   259→
+   260→// ─── Helpers ──────────────────────────────────────────────────────────────────
+   261→
+   262→function formatCurrency(amount: number): string {
+   263→  return `₹${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+   264→}
+   265→
+   266→function getTodayFilename(prefix: string): string {
+   267→  const today = new Date().toISOString().split('T')[0];
+   268→  return `${prefix}_${today}.csv`;
+   269→}
+   270→
+   271→function exportToCSV<T extends Record<string, unknown>>(
+   272→  data: T[],
+   273→  filename: string,
+   274→  columns: CsvColumn[]
+   275→) {
+   276→  if (data.length === 0) return;
+   277→
+   278→  const escapeCSV = (value: unknown): string => {
+   279→    const str = String(value ?? '');
+   280→    if (str.includes('"') || str.includes(',') || str.includes('\n')) {
+   281→      return `"${str.replace(/"/g, '""')}"`;
+   282→    }
+   283→    return str;
+   284→  };
+   285→
+   286→  const header = columns.map((c) => escapeCSV(c.label)).join(',');
+   287→  const rows = data.map((row) =>
+   288→    columns.map((c) => escapeCSV(row[c.key])).join(',')
+   289→  );
+   290→  const csv = [header, ...rows].join('\n');
+   291→
+   292→  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+   293→  const url = URL.createObjectURL(blob);
+   294→  const link = document.createElement('a');
+   295→  link.href = url;
+   296→  link.download = filename;
+   297→  document.body.appendChild(link);
+   298→  link.click();
+   299→  document.body.removeChild(link);
+   300→  URL.revokeObjectURL(url);
+   301→}
+   302→
+   303→const paymentMethods = ['All', 'Cash', 'Card', 'UPI', 'Net Banking', 'Replace', 'Refund'];
+   304→
+   305→const CHART_COLORS = [
+   306→  '#10b981', '#14b8a6', '#06b6d4', '#0ea5e9',
+   307→  '#8b5cf6', '#f59e0b', '#ef4444', '#ec4899',
+   308→  '#6366f1', '#84cc16',
+   309→];
+   310→
+   311→const STATUS_COLORS: Record<string, string> = {
+   312→  Paid: '#10b981',
+   313→  Completed: '#10b981',
+   314→  Balance: '#f59e0b',
+   315→  Pending: '#f59e0b',
+   316→  Partial: '#f59e0b',
+   317→  Refunded: '#ef4444',
+   318→  Cancelled: '#ef4444',
+   319→  Replaced: '#8b5cf6',
+   320→  Active: '#10b981',
+   321→};
+   322→
+   323→function getStatusColor(status: string): string {
+   324→  return STATUS_COLORS[status] || '#6b7280';
+   325→}
+   326→
+   327→function getStatusBadgeVariant(status: string): 'default' | 'secondary' | 'destructive' | 'outline' {
+   328→  switch (status.toLowerCase()) {
+   329→    case 'paid':
+   330→    case 'completed':
+   331→    case 'active':
+   332→      return 'default';
+   333→    case 'pending':
+   334→    case 'balance':
+   335→    case 'partial':
+   336→      return 'secondary';
+   337→    case 'refunded':
+   338→    case 'cancelled':
+   339→      return 'destructive';
+   340→    default:
+   341→      return 'outline';
+   342→  }
+   343→}
+   344→
+   345→function formatDateShort(dateStr: string): string {
+   346→  try {
+   347→    const d = new Date(dateStr + 'T00:00:00');
+   348→    return d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
+   349→  } catch {
+   350→    return dateStr;
+   351→  }
+   352→}
+   353→
+   354→// ─── Tab Type ─────────────────────────────────────────────────────────────────
+   355→
+   356→type ReportTab = 'overview' | 'balance' | 'refunds' | 'returns' | 'replace' | 'items' | 'inventory' | 'cashflow' | 'status';
+   357→
+   358→// ─── Component ────────────────────────────────────────────────────────────────
+   359→
+   360→export default function ReportsSection({ dataVersion }: ReportsSectionProps) {
+   361→  const { token, hasPermission } = useAuth();
+   362→  const canAccess = hasPermission('reports', 'access');
+   363→  const canExport = hasPermission('reports', 'export');
+   364→  const noAccess = !canAccess;
+   365→  const isReadOnly = !canAccess || !canExport;
+   366→  const authHeaders: Record<string, string> = token ? { 'Authorization': `Bearer ${token}` } : {};
+   367→  const [lastFetched, setLastFetched] = useState<string>('');
+   368→  const [activeTab, setActiveTab] = useState<ReportTab>('overview');
+   369→
+   370→  // Date range filters
+   371→  const [startDate, setStartDate] = useState(() => {
+   372→    const d = new Date();
+   373→    d.setDate(1);
+   374→    return d.toISOString().split('T')[0];
+   375→  });
+   376→  const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0]);
+   377→  const [paymentFilter, setPaymentFilter] = useState('All');
+   378→
+   379→  // ── Overview State ──
+   380→  const [overviewData, setOverviewData] = useState<OverviewData | null>(null);
+   381→  const [overviewLoading, setOverviewLoading] = useState(false);
+   382→
+   383→  // ── Balance State ──
+   384→  const [balanceData, setBalanceData] = useState<BalanceData | null>(null);
+   385→  const [balanceLoading, setBalanceLoading] = useState(false);
+   386→
+   387→  // ── Refunds State ──
+   388→  const [refundsData, setRefundsData] = useState<RefundsData | null>(null);
+   389→  const [refundsLoading, setRefundsLoading] = useState(false);
+   390→
+   391→  // ── Returns State ──
+   392→  const [returnsData, setReturnsData] = useState<ReturnsData | null>(null);
+   393→  const [returnsLoading, setReturnsLoading] = useState(false);
+   394→
+   395→  // ── Replace State ──
+   396→  const [replaceData, setReplaceData] = useState<ReplaceData | null>(null);
+   397→  const [replaceLoading, setReplaceLoading] = useState(false);
+   398→
+   399→  // ── Item Sales State ──
+   400→  const [itemsData, setItemsData] = useState<ItemSalesData | null>(null);
+   401→  const [itemsLoading, setItemsLoading] = useState(false);
+   402→
+   403→  // ── Inventory State ──
+   404→  const [inventoryData, setInventoryData] = useState<InventoryData | null>(null);
+   405→  const [inventoryLoading, setInventoryLoading] = useState(false);
+   406→
+   407→  // ── Cash Flow State ──
+   408→  const [cashFlowData, setCashFlowData] = useState<CashFlowData | null>(null);
+   409→  const [cashFlowLoading, setCashFlowLoading] = useState(false);
+   410→
+   411→  // ── Status State ──
+   412→  const [statusData, setStatusData] = useState<StatusData | null>(null);
+   413→  const [statusLoading, setStatusLoading] = useState(false);
+   414→
+   415→  // ── Fetch URL Builder ──
+   416→  const buildUrl = useCallback((type: ReportTab): string => {
+   417→    const params = new URLSearchParams({ type, startDate, endDate });
+   418→    if (paymentFilter !== 'All') params.set('paymentMethod', paymentFilter);
+   419→    return `/api/reports/advanced?${params}`;
+   420→  }, [startDate, endDate, paymentFilter]);
+   421→
+   422→  // ── Fetch Functions ──
+   423→  const fetchOverview = useCallback(async (silent?: boolean) => {
+   424→    if (!silent) setOverviewLoading(true);
+   425→    try {
+   426→      const res = await fetch(buildUrl('overview'), { headers: authHeaders });
+   427→      if (res.ok) {
+   428→        const data = await res.json();
+   429→        setOverviewData(data);
+   430→      } else {
+   431→        notify({ type: 'error', title: 'Error', message: 'Failed to fetch sales overview' });
+   432→      }
+   433→    } catch {
+   434→      notify({ type: 'error', title: 'Error', message: 'Failed to fetch sales overview' });
+   435→    } finally {
+   436→      setOverviewLoading(false);
+   437→      setLastFetched(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+   438→    }
+   439→  }, [buildUrl]);
+   440→
+   441→  const fetchBalance = useCallback(async (silent?: boolean) => {
+   442→    if (!silent) setBalanceLoading(true);
+   443→    try {
+   444→      const res = await fetch(buildUrl('balance'), { headers: authHeaders });
+   445→      if (res.ok) {
+   446→        const data = await res.json();
+   447→        setBalanceData(data);
+   448→      } else {
+   449→        notify({ type: 'error', title: 'Error', message: 'Failed to fetch balance due data' });
+   450→      }
+   451→    } catch {
+   452→      notify({ type: 'error', title: 'Error', message: 'Failed to fetch balance due data' });
+   453→    } finally {
+   454→      setBalanceLoading(false);
+   455→      setLastFetched(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+   456→    }
+   457→  }, [buildUrl]);
+   458→
+   459→  const fetchRefunds = useCallback(async (silent?: boolean) => {
+   460→    if (!silent) setRefundsLoading(true);
+   461→    try {
+   462→      const res = await fetch(buildUrl('refunds'), { headers: authHeaders });
+   463→      if (res.ok) {
+   464→        const data = await res.json();
+   465→        setRefundsData(data);
+   466→      } else {
+   467→        notify({ type: 'error', title: 'Error', message: 'Failed to fetch refunds data' });
+   468→      }
+   469→    } catch {
+   470→      notify({ type: 'error', title: 'Error', message: 'Failed to fetch refunds data' });
+   471→    } finally {
+   472→      setRefundsLoading(false);
+   473→      setLastFetched(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+   474→    }
+   475→  }, [buildUrl]);
+   476→
+   477→  const fetchReturns = useCallback(async (silent?: boolean) => {
+   478→    if (!silent) setReturnsLoading(true);
+   479→    try {
+   480→      const res = await fetch(buildUrl('returns'), { headers: authHeaders });
+   481→      if (res.ok) {
+   482→        const data = await res.json();
+   483→        setReturnsData(data);
+   484→      } else {
+   485→        notify({ type: 'error', title: 'Error', message: 'Failed to fetch returns data' });
+   486→      }
+   487→    } catch {
+   488→      notify({ type: 'error', title: 'Error', message: 'Failed to fetch returns data' });
+   489→    } finally {
+   490→      setReturnsLoading(false);
+   491→      setLastFetched(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+   492→    }
+   493→  }, [buildUrl]);
+   494→
+   495→  const fetchReplace = useCallback(async (silent?: boolean) => {
+   496→    if (!silent) setReplaceLoading(true);
+   497→    try {
+   498→      const res = await fetch(buildUrl('replace'), { headers: authHeaders });
+   499→      if (res.ok) {
+   500→        const data = await res.json();
+   501→        setReplaceData(data);
+   502→      } else {
+   503→        notify({ type: 'error', title: 'Error', message: 'Failed to fetch replace data' });
+   504→      }
+   505→    } catch {
+   506→      notify({ type: 'error', title: 'Error', message: 'Failed to fetch replace data' });
+   507→    } finally {
+   508→      setReplaceLoading(false);
+   509→      setLastFetched(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+   510→    }
+   511→  }, [buildUrl]);
+   512→
+   513→  const fetchItems = useCallback(async (silent?: boolean) => {
+   514→    if (!silent) setItemsLoading(true);
+   515→    try {
+   516→      const res = await fetch(buildUrl('items'), { headers: authHeaders });
+   517→      if (res.ok) {
+   518→        const data = await res.json();
+   519→        setItemsData(data);
+   520→      } else {
+   521→        notify({ type: 'error', title: 'Error', message: 'Failed to fetch item sales data' });
+   522→      }
+   523→    } catch {
+   524→      notify({ type: 'error', title: 'Error', message: 'Failed to fetch item sales data' });
+   525→    } finally {
+   526→      setItemsLoading(false);
+   527→      setLastFetched(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+   528→    }
+   529→  }, [buildUrl]);
+   530→
+   531→  const fetchInventory = useCallback(async (silent?: boolean) => {
+   532→    if (!silent) setInventoryLoading(true);
+   533→    try {
+   534→      const res = await fetch(buildUrl('inventory'), { headers: authHeaders });
+   535→      if (res.ok) {
+   536→        const data = await res.json();
+   537→        setInventoryData(data);
+   538→      } else {
+   539→        notify({ type: 'error', title: 'Error', message: 'Failed to fetch inventory data' });
+   540→      }
+   541→    } catch {
+   542→      notify({ type: 'error', title: 'Error', message: 'Failed to fetch inventory data' });
+   543→    } finally {
+   544→      setInventoryLoading(false);
+   545→      setLastFetched(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+   546→    }
+   547→  }, [buildUrl]);
+   548→
+   549→  const fetchCashFlow = useCallback(async (silent?: boolean) => {
+   550→    if (!silent) setCashFlowLoading(true);
+   551→    try {
+   552→      const res = await fetch(buildUrl('cashflow'), { headers: authHeaders });
+   553→      if (res.ok) {
+   554→        const data = await res.json();
+   555→        setCashFlowData(data);
+   556→      } else {
+   557→        notify({ type: 'error', title: 'Error', message: 'Failed to fetch cash flow data' });
+   558→      }
+   559→    } catch {
+   560→      notify({ type: 'error', title: 'Error', message: 'Failed to fetch cash flow data' });
+   561→    } finally {
+   562→      setCashFlowLoading(false);
+   563→      setLastFetched(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+   564→    }
+   565→  }, [buildUrl]);
+   566→
+   567→  const fetchStatus = useCallback(async (silent?: boolean) => {
+   568→    if (!silent) setStatusLoading(true);
+   569→    try {
+   570→      const res = await fetch(buildUrl('status'), { headers: authHeaders });
+   571→      if (res.ok) {
+   572→        const data = await res.json();
+   573→        setStatusData(data);
+   574→      } else {
+   575→        notify({ type: 'error', title: 'Error', message: 'Failed to fetch status summary' });
+   576→      }
+   577→    } catch {
+   578→      notify({ type: 'error', title: 'Error', message: 'Failed to fetch status summary' });
+   579→    } finally {
+   580→      setStatusLoading(false);
+   581→      setLastFetched(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+   582→    }
+   583→  }, [buildUrl]);
+   584→
+   585→  // Map tab to fetch function
+   586→  const fetchByTab = useCallback((tab: ReportTab, silent?: boolean) => {
+   587→    switch (tab) {
+   588→      case 'overview': return fetchOverview(silent);
+   589→      case 'balance': return fetchBalance(silent);
+   590→      case 'refunds': return fetchRefunds(silent);
+   591→      case 'returns': return fetchReturns(silent);
+   592→      case 'replace': return fetchReplace(silent);
+   593→      case 'items': return fetchItems(silent);
+   594→      case 'inventory': return fetchInventory(silent);
+   595→      case 'cashflow': return fetchCashFlow(silent);
+   596→      case 'status': return fetchStatus(silent);
+   597→    }
+   598→  }, [fetchOverview, fetchBalance, fetchRefunds, fetchReturns, fetchReplace, fetchItems, fetchInventory, fetchCashFlow, fetchStatus]);
+   599→
+   600→  // Fetch on tab change
+   601→  useEffect(() => {
+   602→    fetchByTab(activeTab);
+   603→  }, [activeTab, fetchByTab]);
+   604→
+   605→  // Re-fetch data when dataVersion changes (sync from other tabs/devices)
+   606→  const prevDataVersion = useRef(dataVersion);
+   607→  useEffect(() => {
+   608→    if (dataVersion !== undefined && dataVersion !== prevDataVersion.current) {
+   609→      prevDataVersion.current = dataVersion;
+   610→      fetchByTab(activeTab, true);  // silent=true for background sync
+   611→    }
+   612→  }, [dataVersion, fetchByTab, activeTab]);
+   613→
+   614→  // Filter handlers
+   615→  const handleApplyFilters = () => {
+   616→    fetchByTab(activeTab);
+   617→  };
+   618→
+   619→  const handleResetFilters = () => {
+   620→    const d = new Date();
+   621→    d.setDate(1);
+   622→    setStartDate(d.toISOString().split('T')[0]);
+   623→    setEndDate(new Date().toISOString().split('T')[0]);
+   624→    setPaymentFilter('All');
+   625→  };
+   626→
+   627→  const handleTabChange = (value: string) => {
+   628→    setActiveTab(value as ReportTab);
+   629→  };
+   630→
+   631→  // ── Computed Chart Data ──
+   632→
+   633→  // Overview: daily revenue bar chart
+   634→  const dailyRevenueChartData = useMemo(() => {
+   635→    if (!overviewData?.dailyRevenue) return [];
+   636→    return overviewData.dailyRevenue.map((d) => ({
+   637→      date: formatDateShort(d.date),
+   638→      revenue: d.revenue,
+   639→    }));
+   640→  }, [overviewData]);
+   641→
+   642→  // Overview: payment method pie chart
+   643→  const paymentPieData = useMemo(() => {
+   644→    if (!overviewData?.paymentBreakdown) return [];
+   645→    return overviewData.paymentBreakdown.map((p) => ({
+   646→      name: p.method,
+   647→      value: p.total,
+   648→      count: p.count,
+   649→    }));
+   650→  }, [overviewData]);
+   651→
+   652→  // Item Sales: top items bar chart
+   653→  const topItemsChartData = useMemo(() => {
+   654→    if (!itemsData?.items) return [];
+   655→    return itemsData.items.slice(0, 10).map((item) => ({
+   656→      name: item.name.length > 12 ? item.name.slice(0, 12) + '…' : item.name,
+   657→      revenue: item.totalRevenue,
+   658→      qty: item.totalQty,
+   659→    }));
+   660→  }, [itemsData]);
+   661→
+   662→  // Cash Flow: daily chart data
+   663→  const cashFlowChartData = useMemo(() => {
+   664→    if (!cashFlowData?.dailyCashFlow) return [];
+   665→    return cashFlowData.dailyCashFlow.map((d) => ({
+   666→      date: formatDateShort(d.date),
+   667→      income: d.income,
+   668→      expense: d.expense,
+   669→      net: d.net,
+   670→    }));
+   671→  }, [cashFlowData]);
+   672→
+   673→  // Inventory: category breakdown pie
+   674→  const inventoryCategoryPie = useMemo(() => {
+   675→    if (!inventoryData?.categoryBreakdown) return [];
+   676→    return inventoryData.categoryBreakdown.map((c) => ({
+   677→      name: c.category,
+   678→      value: c.value,
+   679→      count: c.count,
+   680→    }));
+   681→  }, [inventoryData]);
+   682→
+   683→  // Status: pie chart
+   684→  const statusPieData = useMemo(() => {
+   685→    if (!statusData?.statusSummary) return [];
+   686→    return statusData.statusSummary.map((s) => ({
+   687→      name: s.status,
+   688→      value: s.totalAmount,
+   689→      count: s.count,
+   690→    }));
+   691→  }, [statusData]);
+   692→
+   693→  // ── CSV Export Handlers ──
+   694→
+   695→  const handleExportOverview = () => {
+   696→    if (!overviewData?.dailyRevenue?.length) {
+   697→      notify({ type: 'info', title: 'No Data', message: 'No data to export' });
+   698→      return;
+   699→    }
+   700→    const columns: CsvColumn[] = [
+   701→      { key: 'date', label: 'Date' },
+   702→      { key: 'revenue', label: 'Revenue' },
+   703→    ];
+   704→    exportToCSV(
+   705→      overviewData.dailyRevenue as unknown as Record<string, unknown>[],
+   706→      getTodayFilename('sales-overview'),
+   707→      columns
+   708→    );
+   709→    notify({ type: 'success', title: 'Exported', message: 'Sales overview exported' });
+   710→  };
+   711→
+   712→  const handleExportBalance = () => {
+   713→    if (!balanceData?.bills?.length) {
+   714→      notify({ type: 'info', title: 'No Data', message: 'No data to export' });
+   715→      return;
+   716→    }
+   717→    const columns: CsvColumn[] = [
+   718→      { key: 'invoiceNumber', label: 'Invoice No' },
+   719→      { key: 'date', label: 'Date' },
+   720→      { key: 'customerName', label: 'Customer' },
+   721→      { key: 'grandTotal', label: 'Grand Total' },
+   722→      { key: 'paidAmount', label: 'Paid' },
+   723→      { key: 'balanceAmount', label: 'Balance' },
+   724→      { key: 'paymentMethod', label: 'Payment' },
+   725→      { key: 'orderType', label: 'Order Type' },
+   726→    ];
+   727→    exportToCSV(
+   728→      balanceData.bills as unknown as Record<string, unknown>[],
+   729→      getTodayFilename('balance-due'),
+   730→      columns
+   731→    );
+   732→    notify({ type: 'success', title: 'Exported', message: 'Balance due report exported' });
+   733→  };
+   734→
+   735→  const handleExportRefunds = () => {
+   736→    if (!refundsData?.refunds?.length) {
+   737→      notify({ type: 'info', title: 'No Data', message: 'No data to export' });
+   738→      return;
+   739→    }
+   740→    const columns: CsvColumn[] = [
+   741→      { key: 'refundNumber', label: 'Refund No' },
+   742→      { key: 'date', label: 'Date' },
+   743→      { key: 'originalInvoiceNumber', label: 'Original Invoice' },
+   744→      { key: 'customerName', label: 'Customer' },
+   745→      { key: 'refundAmount', label: 'Refund Amount' },
+   746→      { key: 'reason', label: 'Reason' },
+   747→      { key: 'status', label: 'Status' },
+   748→    ];
+   749→    exportToCSV(
+   750→      refundsData.refunds as unknown as Record<string, unknown>[],
+   751→      getTodayFilename('refunds'),
+   752→      columns
+   753→    );
+   754→    notify({ type: 'success', title: 'Exported', message: 'Refunds report exported' });
+   755→  };
+   756→
+   757→  const handleExportReturns = () => {
+   758→    if (!returnsData?.returns?.length) {
+   759→      notify({ type: 'info', title: 'No Data', message: 'No data to export' });
+   760→      return;
+   761→    }
+   762→    const columns: CsvColumn[] = [
+   763→      { key: 'invoiceNumber', label: 'Invoice No' },
+   764→      { key: 'date', label: 'Date' },
+   765→      { key: 'customerName', label: 'Customer' },
+   766→      { key: 'grandTotal', label: 'Grand Total' },
+   767→      { key: 'status', label: 'Status' },
+   768→      { key: 'paymentMethod', label: 'Payment' },
+   769→      { key: 'refundCount', label: 'Refund Count' },
+   770→      { key: 'totalRefunded', label: 'Total Refunded' },
+   771→    ];
+   772→    exportToCSV(
+   773→      returnsData.returns as unknown as Record<string, unknown>[],
+   774→      getTodayFilename('returns'),
+   775→      columns
+   776→    );
+   777→    notify({ type: 'success', title: 'Exported', message: 'Returns report exported' });
+   778→  };
+   779→
+   780→  const handleExportReplace = () => {
+   781→    if (!replaceData?.replacements?.length) {
+   782→      notify({ type: 'info', title: 'No Data', message: 'No data to export' });
+   783→      return;
+   784→    }
+   785→    const columns: CsvColumn[] = [
+   786→      { key: 'invoiceNumber', label: 'Invoice No' },
+   787→      { key: 'date', label: 'Date' },
+   788→      { key: 'customerName', label: 'Customer' },
+   789→      { key: 'grandTotal', label: 'Grand Total' },
+   790→      { key: 'paidAmount', label: 'Paid' },
+   791→      { key: 'paymentMethod', label: 'Payment' },
+   792→      { key: 'orderType', label: 'Order Type' },
+   793→    ];
+   794→    exportToCSV(
+   795→      replaceData.replacements as unknown as Record<string, unknown>[],
+   796→      getTodayFilename('replacements'),
+   797→      columns
+   798→    );
+   799→    notify({ type: 'success', title: 'Exported', message: 'Replace report exported' });
+   800→  };
+   801→
+   802→  const handleExportItems = () => {
+   803→    if (!itemsData?.items?.length) {
+   804→      notify({ type: 'info', title: 'No Data', message: 'No data to export' });
+   805→      return;
+   806→    }
+   807→    const columns: CsvColumn[] = [
+   808→      { key: 'name', label: 'Item Name' },
+   809→      { key: 'totalQty', label: 'Total Qty' },
+   810→      { key: 'totalRevenue', label: 'Total Revenue' },
+   811→      { key: 'count', label: 'Times Sold' },
+   812→    ];
+   813→    exportToCSV(
+   814→      itemsData.items as unknown as Record<string, unknown>[],
+   815→      getTodayFilename('item-sales'),
+   816→      columns
+   817→    );
+   818→    notify({ type: 'success', title: 'Exported', message: 'Item sales report exported' });
+   819→  };
+   820→
+   821→  const handleExportInventory = () => {
+   822→    if (!inventoryData?.lowStockItems?.length && !inventoryData?.categoryBreakdown?.length) {
+   823→      notify({ type: 'info', title: 'No Data', message: 'No data to export' });
+   824→      return;
+   825→    }
+   826→    // Export category breakdown
+   827→    if (inventoryData.categoryBreakdown.length > 0) {
+   828→      const columns: CsvColumn[] = [
+   829→        { key: 'category', label: 'Category' },
+   830→        { key: 'count', label: 'Item Count' },
+   831→        { key: 'value', label: 'Total Value' },
+   832→        { key: 'qty', label: 'Total Qty' },
+   833→      ];
+   834→      exportToCSV(
+   835→        inventoryData.categoryBreakdown as unknown as Record<string, unknown>[],
+   836→        getTodayFilename('inventory-categories'),
+   837→        columns
+   838→      );
+   839→    }
+   840→    // Export low stock items
+   841→    if (inventoryData.lowStockItems.length > 0) {
+   842→      const columns: CsvColumn[] = [
+   843→        { key: 'name', label: 'Item Name' },
+   844→        { key: 'category', label: 'Category' },
+   845→        { key: 'price', label: 'Price' },
+   846→        { key: 'quantity', label: 'Quantity' },
+   847→      ];
+   848→      exportToCSV(
+   849→        inventoryData.lowStockItems as unknown as Record<string, unknown>[],
+   850→        getTodayFilename('low-stock-items'),
+   851→        columns
+   852→      );
+   853→    }
+   854→    notify({ type: 'success', title: 'Exported', message: 'Inventory report exported' });
+   855→  };
+   856→
+   857→  const handleExportCashFlow = () => {
+   858→    if (!cashFlowData?.transactions?.length) {
+   859→      notify({ type: 'info', title: 'No Data', message: 'No data to export' });
+   860→      return;
+   861→    }
+   862→    const columns: CsvColumn[] = [
+   863→      { key: 'date', label: 'Date' },
+   864→      { key: 'type', label: 'Type' },
+   865→      { key: 'amount', label: 'Amount' },
+   866→      { key: 'description', label: 'Description' },
+   867→    ];
+   868→    exportToCSV(
+   869→      cashFlowData.transactions as unknown as Record<string, unknown>[],
+   870→      getTodayFilename('cash-flow'),
+   871→      columns
+   872→    );
+   873→    notify({ type: 'success', title: 'Exported', message: 'Cash flow report exported' });
+   874→  };
+   875→
+   876→  const handleExportStatus = () => {
+   877→    if (!statusData?.statusSummary?.length) {
+   878→      notify({ type: 'info', title: 'No Data', message: 'No data to export' });
+   879→      return;
+   880→    }
+   881→    const columns: CsvColumn[] = [
+   882→      { key: 'status', label: 'Status' },
+   883→      { key: 'count', label: 'Count' },
+   884→      { key: 'totalAmount', label: 'Total Amount' },
+   885→      { key: 'totalPaid', label: 'Total Paid' },
+   886→      { key: 'totalBalance', label: 'Total Balance' },
+   887→    ];
+   888→    exportToCSV(
+   889→      statusData.statusSummary as unknown as Record<string, unknown>[],
+   890→      getTodayFilename('status-summary'),
+   891→      columns
+   892→    );
+   893→    notify({ type: 'success', title: 'Exported', message: 'Status summary exported' });
+   894→  };
+   895→
+   896→  // ── Tooltip Style ──
+   897→  const tooltipStyle = {
+   898→    borderRadius: '8px',
+   899→    border: '1px solid #e5e7eb',
+   900→    boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
+   901→    fontSize: '12px',
+   902→  };
+   903→
+   904→  // ── Render ──
+   905→
+   906→  return (
+   907→    <div className="space-y-6">
+   908→      {/* ── Gradient Header Banner ── */}
+   909→      {isReadOnly && <ReadOnlyBanner module="Reports" noAccess={noAccess} />}
+   910→      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 p-5 md:p-6 text-white shadow-lg shadow-green-600/20">
+   911→        <div className="pointer-events-none absolute -right-8 -top-8 size-36 rounded-full bg-white/10" />
+   912→        <div className="pointer-events-none absolute -bottom-6 -left-6 size-28 rounded-full bg-white/5" />
+   913→        <div className="pointer-events-none absolute right-24 top-2 size-14 rounded-full bg-white/5" />
+   914→        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+   915→          <div>
+   916→            <h2 className="text-xl md:text-2xl font-bold tracking-tight flex items-center gap-2">
+   917→              <BarChart3 className="size-6" />
+   918→              Reports &amp; Analytics
+   919→            </h2>
+   920→            <p className="text-green-100 text-sm mt-1">
+   921→              Comprehensive business insights across sales, inventory, cash flow &amp; more
+   922→            </p>
+   923→          </div>
+   924→          <div className="flex items-center gap-2">
+   925→            {lastFetched && (
+   926→              <div className="flex items-center gap-1.5 rounded-lg bg-white/15 backdrop-blur-sm px-3 py-1.5 text-xs">
+   927→                <Clock className="size-3" />
+   928→                <span className="text-green-100">Updated</span>
+   929→                <span className="font-medium">{lastFetched}</span>
+   930→              </div>
+   931→            )}
+   932→            <Button
+   933→              size="sm"
+   934→              variant="secondary"
+   935→              className="bg-white/15 hover:bg-white/25 text-white border-white/20 backdrop-blur-sm gap-1.5"
+   936→              onClick={() => fetchByTab(activeTab)}
+   937→            >
+   938→              <RefreshCw className="h-3.5 w-3.5" />
+   939→              Refresh
+   940→            </Button>
+   941→          </div>
+   942→        </div>
+   943→      </div>
+   944→
+   945→      <Card>
+   946→        <CardContent className="pt-6">
+   947→          {/* Date Range Filters (shared across tabs) */}
+   948→          <Card className="mb-4 bg-muted/30 border-0">
+   949→            <CardContent className="p-4">
+   950→              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:flex-wrap">
+   951→                <div className="grid gap-1.5">
+   952→                  <Label className="text-xs text-muted-foreground">Start Date</Label>
+   953→                  <div className="relative">
+   954→                    <CalendarDays className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+   955→                    <Input
+   956→                      type="date"
+   957→                      value={startDate}
+   958→                      onChange={(e) => setStartDate(e.target.value)}
+   959→                      className="w-full sm:w-[160px] pl-9 focus-visible:ring-2 focus-visible:ring-green-500/20 focus-visible:border-green-500 transition-all duration-200"
+   960→                    />
+   961→                  </div>
+   962→                </div>
+   963→                <div className="grid gap-1.5">
+   964→                  <Label className="text-xs text-muted-foreground">End Date</Label>
+   965→                  <div className="relative">
+   966→                    <CalendarDays className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+   967→                    <Input
+   968→                      type="date"
+   969→                      value={endDate}
+   970→                      onChange={(e) => setEndDate(e.target.value)}
+   971→                      className="w-full sm:w-[160px] pl-9 focus-visible:ring-2 focus-visible:ring-green-500/20 focus-visible:border-green-500 transition-all duration-200"
+   972→                    />
+   973→                  </div>
+   974→                </div>
+   975→                <div className="grid gap-1.5">
+   976→                  <Label className="text-xs text-muted-foreground">Payment Method</Label>
+   977→                  <Select value={paymentFilter} onValueChange={setPaymentFilter}>
+   978→                    <SelectTrigger className="w-full sm:w-[160px]">
+   979→                      <SelectValue />
+   980→                    </SelectTrigger>
+   981→                    <SelectContent>
+   982→                      {paymentMethods.map((m) => (
+   983→                        <SelectItem key={m} value={m}>
+   984→                          {m}
+   985→                        </SelectItem>
+   986→                      ))}
+   987→                    </SelectContent>
+   988→                  </Select>
+   989→                </div>
+   990→                <div className="flex gap-2">
+   991→                  <Button
+   992→                    onClick={handleApplyFilters}
+   993→                    className="bg-green-600 hover:bg-green-700 text-white gap-1.5 hover-glow-green"
+   994→                  >
+   995→                    <Filter className="h-4 w-4" />
+   996→                    Apply
+   997→                  </Button>
+   998→                  <Button variant="outline" onClick={handleResetFilters} className="gap-1.5">
+   999→                    <RotateCcw className="h-4 w-4" />
+  1000→                    Reset
+  1001→                  </Button>
+  1002→                </div>
+  1003→              </div>
+  1004→            </CardContent>
+  1005→          </Card>
+  1006→
+  1007→          <Tabs value={activeTab} onValueChange={handleTabChange}>
+  1008→            <div className="overflow-x-auto -mx-1 px-1">
+  1009→              <TabsList className="mb-4 flex-wrap h-auto gap-1">
+  1010→                <TabsTrigger value="overview" className="gap-1.5 text-xs sm:text-sm">
+  1011→                  <TrendingUp className="h-4 w-4" />
+  1012→                  <span className="hidden sm:inline">Sales </span>Overview
+  1013→                </TabsTrigger>
+  1014→                <TabsTrigger value="balance" className="gap-1.5 text-xs sm:text-sm">
+  1015→                  <IndianRupee className="h-4 w-4" />
+  1016→                  Balance Due
+  1017→                </TabsTrigger>
+  1018→                <TabsTrigger value="refunds" className="gap-1.5 text-xs sm:text-sm">
+  1019→                  <ArrowDownRight className="h-4 w-4" />
+  1020→                  Refunds
+  1021→                </TabsTrigger>
+  1022→                <TabsTrigger value="returns" className="gap-1.5 text-xs sm:text-sm">
+  1023→                  <RotateCcw className="h-4 w-4" />
+  1024→                  Returns
+  1025→                </TabsTrigger>
+  1026→                <TabsTrigger value="replace" className="gap-1.5 text-xs sm:text-sm">
+  1027→                  <ArrowRightLeft className="h-4 w-4" />
+  1028→                  Replace
+  1029→                </TabsTrigger>
+  1030→                <TabsTrigger value="items" className="gap-1.5 text-xs sm:text-sm">
+  1031→                  <ShoppingCart className="h-4 w-4" />
+  1032→                  Item Sales
+  1033→                </TabsTrigger>
+  1034→                <TabsTrigger value="inventory" className="gap-1.5 text-xs sm:text-sm">
+  1035→                  <Package className="h-4 w-4" />
+  1036→                  Inventory
+  1037→                </TabsTrigger>
+  1038→                <TabsTrigger value="cashflow" className="gap-1.5 text-xs sm:text-sm">
+  1039→                  <Wallet className="h-4 w-4" />
+  1040→                  Cash Flow
+  1041→                </TabsTrigger>
+  1042→                <TabsTrigger value="status" className="gap-1.5 text-xs sm:text-sm">
+  1043→                  <PieChartIcon className="h-4 w-4" />
+  1044→                  Status Summary
+  1045→                </TabsTrigger>
+  1046→              </TabsList>
+  1047→            </div>
+  1048→
+  1049→            {/* ═══════════════════ SALES OVERVIEW TAB ═══════════════════ */}
+  1050→            <TabsContent value="overview">
+  1051→              {overviewLoading ? (
+  1052→                <div className="space-y-3">
+  1053→                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+  1054→                    {Array.from({ length: 8 }).map((_, i) => (
+  1055→                      <Skeleton key={i} className="h-24 rounded-xl" />
+  1056→                    ))}
+  1057→                  </div>
+  1058→                  <Skeleton className="h-64 rounded-xl" />
+  1059→                  <Skeleton className="h-48 rounded-xl" />
+  1060→                </div>
+  1061→              ) : overviewData ? (
+  1062→                <>
+  1063→                  {/* Summary Cards */}
+  1064→                  <div className="mb-4 grid gap-3 grid-cols-2 lg:grid-cols-4">
+  1065→                    <Card className="py-4 card-hover-glow border-l-4 border-l-green-500">
+  1066→                      <CardContent className="flex items-center gap-3">
+  1067→                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
+  1068→                          <FileText className="h-5 w-5 text-green-600" />
+  1069→                        </div>
+  1070→                        <div>
+  1071→                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Invoices</p>
+  1072→                          <p className="text-lg font-bold tabular-nums">{overviewData.totalInvoices}</p>
+  1073→                        </div>
+  1074→                      </CardContent>
+  1075→                    </Card>
+  1076→                    <Card className="py-4 card-hover-glow border-l-4 border-l-emerald-500">
+  1077→                      <CardContent className="flex items-center gap-3">
+  1078→                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30">
+  1079→                          <TrendingUp className="h-5 w-5 text-emerald-600" />
+  1080→                        </div>
+  1081→                        <div>
+  1082→                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Revenue</p>
+  1083→                          <p className="text-lg font-bold tabular-nums">{formatCurrency(overviewData.totalRevenue)}</p>
+  1084→                        </div>
+  1085→                      </CardContent>
+  1086→                    </Card>
+  1087→                    <Card className="py-4 card-hover-glow border-l-4 border-l-teal-500">
+  1088→                      <CardContent className="flex items-center gap-3">
+  1089→                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-teal-100 dark:bg-teal-900/30">
+  1090→                          <Banknote className="h-5 w-5 text-teal-600" />
+  1091→                        </div>
+  1092→                        <div>
+  1093→                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Paid</p>
+  1094→                          <p className="text-lg font-bold tabular-nums">{formatCurrency(overviewData.totalPaid)}</p>
+  1095→                        </div>
+  1096→                      </CardContent>
+  1097→                    </Card>
+  1098→                    <Card className="py-4 card-hover-glow border-l-4 border-l-amber-500">
+  1099→                      <CardContent className="flex items-center gap-3">
+  1100→                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
+  1101→                          <Clock className="h-5 w-5 text-amber-600" />
+  1102→                        </div>
+  1103→                        <div>
+  1104→                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Balance Due</p>
+  1105→                          <p className="text-lg font-bold tabular-nums">{formatCurrency(overviewData.totalBalance)}</p>
+  1106→                        </div>
+  1107→                      </CardContent>
+  1108→                    </Card>
+  1109→                    <Card className="py-4 card-hover-glow border-l-4 border-l-cyan-500">
+  1110→                      <CardContent className="flex items-center gap-3">
+  1111→                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-cyan-100 dark:bg-cyan-900/30">
+  1112→                          <Receipt className="h-5 w-5 text-cyan-600" />
+  1113→                        </div>
+  1114→                        <div>
+  1115→                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total GST</p>
+  1116→                          <p className="text-lg font-bold tabular-nums">{formatCurrency(overviewData.totalGST)}</p>
+  1117→                        </div>
+  1118→                      </CardContent>
+  1119→                    </Card>
+  1120→                    <Card className="py-4 card-hover-glow border-l-4 border-l-lime-500">
+  1121→                      <CardContent className="flex items-center gap-3">
+  1122→                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-lime-100 dark:bg-lime-900/30">
+  1123→                          <TrendingDown className="h-5 w-5 text-lime-600" />
+  1124→                        </div>
+  1125→                        <div>
+  1126→                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Discount</p>
+  1127→                          <p className="text-lg font-bold tabular-nums">{formatCurrency(overviewData.totalDiscount)}</p>
+  1128→                        </div>
+  1129→                      </CardContent>
+  1130→                    </Card>
+  1131→                    <Card className="py-4 card-hover-glow border-l-4 border-l-rose-500">
+  1132→                      <CardContent className="flex items-center gap-3">
+  1133→                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-100 dark:bg-rose-900/30">
+  1134→                          <ArrowUpRight className="h-5 w-5 text-rose-600" />
+  1135→                        </div>
+  1136→                        <div>
+  1137→                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Petty Income</p>
+  1138→                          <p className="text-lg font-bold tabular-nums">{formatCurrency(overviewData.pettyIncome)}</p>
+  1139→                        </div>
+  1140→                      </CardContent>
+  1141→                    </Card>
+  1142→                    <Card className="py-4 card-hover-glow border-l-4 border-l-purple-500">
+  1143→                      <CardContent className="flex items-center gap-3">
+  1144→                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-100 dark:bg-purple-900/30">
+  1145→                          <ArrowDownRight className="h-5 w-5 text-purple-600" />
+  1146→                        </div>
+  1147→                        <div>
+  1148→                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Petty Expense</p>
+  1149→                          <p className="text-lg font-bold tabular-nums">{formatCurrency(overviewData.pettyExpense)}</p>
+  1150→                        </div>
+  1151→                      </CardContent>
+  1152→                    </Card>
+  1153→                  </div>
+  1154→
+  1155→                  {/* Daily Revenue Bar Chart */}
+  1156→                  {dailyRevenueChartData.length > 0 && (
+  1157→                    <Card className="mb-4">
+  1158→                      <CardHeader className="pb-2 pt-4 px-5">
+  1159→                        <div className="flex items-center justify-between">
+  1160→                          <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
+  1161→                            <BarChart3 className="h-4 w-4 text-green-600" />
+  1162→                            Daily Revenue Breakdown
+  1163→                          </CardTitle>
+  1164→                          <Button
+  1165→                            size="sm"
+  1166→                            variant="outline"
+  1167→                            onClick={handleExportOverview}
+  1168→                            disabled={!canExport}
+  1169→                            className="gap-1.5 text-xs"
+  1170→                          >
+  1171→                            <Download className="h-3.5 w-3.5" />
+  1172→                            CSV
+  1173→                          </Button>
+  1174→                        </div>
+  1175→                      </CardHeader>
+  1176→                      <CardContent className="px-5 pb-4">
+  1177→                        <div className="h-64">
+  1178→                          <ResponsiveContainer width="100%" height="100%">
+  1179→                            <BarChart data={dailyRevenueChartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+  1180→                              <XAxis
+  1181→                                dataKey="date"
+  1182→                                tick={{ fontSize: 11, fill: '#6b7280' }}
+  1183→                                axisLine={{ stroke: '#e5e7eb' }}
+  1184→                                tickLine={false}
+  1185→                              />
+  1186→                              <YAxis
+  1187→                                tick={{ fontSize: 11, fill: '#6b7280' }}
+  1188→                                axisLine={false}
+  1189→                                tickLine={false}
+  1190→                                tickFormatter={(v: number) => `₹${(v / 1000).toFixed(0)}k`}
+  1191→                              />
+  1192→                              <Tooltip
+  1193→                                contentStyle={tooltipStyle}
+  1194→                                formatter={(value: number) => [formatCurrency(value), 'Revenue']}
+  1195→                                cursor={{ fill: 'rgba(16,185,129,0.08)' }}
+  1196→                              />
+  1197→                              <Bar
+  1198→                                dataKey="revenue"
+  1199→                                fill="#10b981"
+  1200→                                radius={[4, 4, 0, 0]}
+  1201→                                animationDuration={800}
+  1202→                                animationEasing="ease-out"
+  1203→                              />
+  1204→                            </BarChart>
+  1205→                          </ResponsiveContainer>
+  1206→                        </div>
+  1207→                      </CardContent>
+  1208→                    </Card>
+  1209→                  )}
+  1210→
+  1211→                  {/* Payment Method Pie Chart */}
+  1212→                  {paymentPieData.length > 0 && (
+  1213→                    <Card className="mb-4">
+  1214→                      <CardHeader className="pb-2 pt-4 px-5">
+  1215→                        <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
+  1216→                          <CreditCard className="h-4 w-4 text-green-600" />
+  1217→                          Payment Method Breakdown
+  1218→                        </CardTitle>
+  1219→                      </CardHeader>
+  1220→                      <CardContent className="px-5 pb-4">
+  1221→                        <div className="h-64">
+  1222→                          <ResponsiveContainer width="100%" height="100%">
+  1223→                            <PieChart>
+  1224→                              <Pie
+  1225→                                data={paymentPieData}
+  1226→                                cx="50%"
+  1227→                                cy="50%"
+  1228→                                innerRadius={50}
+  1229→                                outerRadius={90}
+  1230→                                paddingAngle={3}
+  1231→                                dataKey="value"
+  1232→                                animationDuration={800}
+  1233→                                label={({ name, percent }: { name: string; percent: number }) =>
+  1234→                                  `${name} (${(percent * 100).toFixed(0)}%)`
+  1235→                                }
+  1236→                              >
+  1237→                                {paymentPieData.map((_, index) => (
+  1238→                                  <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+  1239→                                ))}
+  1240→                              </Pie>
+  1241→                              <Tooltip
+  1242→                                contentStyle={tooltipStyle}
+  1243→                                formatter={(value: number, name: string) => [formatCurrency(value), name]}
+  1244→                              />
+  1245→                              <Legend />
+  1246→                            </PieChart>
+  1247→                          </ResponsiveContainer>
+  1248→                        </div>
+  1249→
+  1250→                        {/* Payment Method Table */}
+  1251→                        <div className="mt-4 rounded-lg border overflow-hidden">
+  1252→                          <Table>
+  1253→                            <TableHeader>
+  1254→                              <TableRow className="bg-muted/50">
+  1255→                                <TableHead>Method</TableHead>
+  1256→                                <TableHead className="text-center">Count</TableHead>
+  1257→                                <TableHead className="text-right">Total</TableHead>
+  1258→                              </TableRow>
+  1259→                            </TableHeader>
+  1260→                            <TableBody>
+  1261→                              {overviewData.paymentBreakdown.map((p, idx) => (
+  1262→                                <TableRow key={idx} className="hover:bg-muted/30 transition-all duration-200">
+  1263→                                  <TableCell>
+  1264→                                    <div className="flex items-center gap-2">
+  1265→                                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] }} />
+  1266→                                      <span className="font-medium text-sm">{p.method}</span>
+  1267→                                    </div>
+  1268→                                  </TableCell>
+  1269→                                  <TableCell className="text-center tabular-nums">{p.count}</TableCell>
+  1270→                                  <TableCell className="text-right font-mono">{formatCurrency(p.total)}</TableCell>
+  1271→                                </TableRow>
+  1272→                              ))}
+  1273→                            </TableBody>
+  1274→                          </Table>
+  1275→                        </div>
+  1276→                      </CardContent>
+  1277→                    </Card>
+  1278→                  )}
+  1279→
+  1280→                  {overviewData.totalInvoices === 0 && (
+  1281→                    <div className="border-2 border-dashed border-muted-foreground/15 bg-gradient-to-b from-muted/20 to-transparent rounded-2xl p-6">
+  1282→                      <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+  1283→                        <BarChart3 className="h-12 w-12 mb-3 opacity-40 animate-float" />
+  1284→                        <p className="text-sm">No sales data found for the selected period.</p>
+  1285→                      </div>
+  1286→                    </div>
+  1287→                  )}
+  1288→                </>
+  1289→              ) : null}
+  1290→            </TabsContent>
+  1291→
+  1292→            {/* ═══════════════════ BALANCE DUE TAB ═══════════════════ */}
+  1293→            <TabsContent value="balance">
+  1294→              {balanceLoading ? (
+  1295→                <div className="space-y-3">
+  1296→                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+  1297→                    {Array.from({ length: 4 }).map((_, i) => (
+  1298→                      <Skeleton key={i} className="h-24 rounded-xl" />
+  1299→                    ))}
+  1300→                  </div>
+  1301→                  <Skeleton className="h-48 rounded-xl" />
+  1302→                </div>
+  1303→              ) : balanceData ? (
+  1304→                <>
+  1305→                  {/* Summary Cards */}
+  1306→                  <div className="mb-4 grid gap-3 grid-cols-2 lg:grid-cols-4">
+  1307→                    <Card className="py-4 card-hover-glow border-l-4 border-l-amber-500">
+  1308→                      <CardContent className="flex items-center gap-3">
+  1309→                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
+  1310→                          <FileText className="h-5 w-5 text-amber-600" />
+  1311→                        </div>
+  1312→                        <div>
+  1313→                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Bills</p>
+  1314→                          <p className="text-lg font-bold tabular-nums">{balanceData.totalBills}</p>
+  1315→                        </div>
+  1316→                      </CardContent>
+  1317→                    </Card>
+  1318→                    <Card className="py-4 card-hover-glow border-l-4 border-l-red-500">
+  1319→                      <CardContent className="flex items-center gap-3">
+  1320→                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
+  1321→                          <IndianRupee className="h-5 w-5 text-red-600" />
+  1322→                        </div>
+  1323→                        <div>
+  1324→                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Balance Amount</p>
+  1325→                          <p className="text-lg font-bold tabular-nums text-red-600 dark:text-red-400">{formatCurrency(balanceData.totalBalanceAmount)}</p>
+  1326→                        </div>
+  1327→                      </CardContent>
+  1328→                    </Card>
+  1329→                    <Card className="py-4 card-hover-glow border-l-4 border-l-green-500">
+  1330→                      <CardContent className="flex items-center gap-3">
+  1331→                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
+  1332→                          <Banknote className="h-5 w-5 text-green-600" />
+  1333→                        </div>
+  1334→                        <div>
+  1335→                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Paid</p>
+  1336→                          <p className="text-lg font-bold tabular-nums">{formatCurrency(balanceData.totalPaid)}</p>
+  1337→                        </div>
+  1338→                      </CardContent>
+  1339→                    </Card>
+  1340→                    <Card className="py-4 card-hover-glow border-l-4 border-l-teal-500">
+  1341→                      <CardContent className="flex items-center gap-3">
+  1342→                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-teal-100 dark:bg-teal-900/30">
+  1343→                          <Receipt className="h-5 w-5 text-teal-600" />
+  1344→                        </div>
+  1345→                        <div>
+  1346→                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Grand Total</p>
+  1347→                          <p className="text-lg font-bold tabular-nums">{formatCurrency(balanceData.totalGrandTotal)}</p>
+  1348→                        </div>
+  1349→                      </CardContent>
+  1350→                    </Card>
+  1351→                  </div>
+  1352→
+  1353→                  {/* Export & Table */}
+  1354→                  {balanceData.bills.length > 0 && (
+  1355→                    <div className="flex items-center justify-end mb-2">
+  1356→                      <Button
+  1357→                        size="sm"
+  1358→                        onClick={handleExportBalance}
+  1359→                        disabled={!canExport}
+  1360→                        className="bg-green-600 hover:bg-green-700 text-white gap-1.5 hover-glow-green"
+  1361→                      >
+  1362→                        <Download className="h-4 w-4" />
+  1363→                        Export CSV
+  1364→                      </Button>
+  1365→                    </div>
+  1366→                  )}
+  1367→
+  1368→                  {balanceData.bills.length === 0 ? (
+  1369→                    <div className="border-2 border-dashed border-muted-foreground/15 bg-gradient-to-b from-muted/20 to-transparent rounded-2xl p-6">
+  1370→                      <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+  1371→                        <IndianRupee className="h-12 w-12 mb-3 opacity-40 animate-float" />
+  1372→                        <p className="text-sm">No balance due bills found for the selected period.</p>
+  1373→                      </div>
+  1374→                    </div>
+  1375→                  ) : (
+  1376→                    <div className="rounded-lg border overflow-hidden">
+  1377→                      <Table>
+  1378→                        <TableHeader>
+  1379→                          <TableRow className="bg-muted/50">
+  1380→                            <TableHead>Invoice No</TableHead>
+  1381→                            <TableHead>Date</TableHead>
+  1382→                            <TableHead className="hidden sm:table-cell">Customer</TableHead>
+  1383→                            <TableHead className="text-right">Grand Total</TableHead>
+  1384→                            <TableHead className="text-right">Paid</TableHead>
+  1385→                            <TableHead className="text-right">Balance</TableHead>
+  1386→                            <TableHead className="hidden md:table-cell">Payment</TableHead>
+  1387→                            <TableHead className="hidden lg:table-cell">Order Type</TableHead>
+  1388→                          </TableRow>
+  1389→                        </TableHeader>
+  1390→                        <TableBody>
+  1391→                          {balanceData.bills.map((bill) => (
+  1392→                            <TableRow key={bill.id} className="hover:bg-muted/30 transition-all duration-200">
+  1393→                              <TableCell className="font-mono font-medium text-xs">{bill.invoiceNumber}</TableCell>
+  1394→                              <TableCell className="text-sm">{bill.date}</TableCell>
+  1395→                              <TableCell className="hidden sm:table-cell">{bill.customerName}</TableCell>
+  1396→                              <TableCell className="text-right font-mono">{formatCurrency(bill.grandTotal)}</TableCell>
+  1397→                              <TableCell className="text-right font-mono">{formatCurrency(bill.paidAmount)}</TableCell>
+  1398→                              <TableCell className="text-right font-mono font-semibold text-red-600 dark:text-red-400">{formatCurrency(bill.balanceAmount)}</TableCell>
+  1399→                              <TableCell className="hidden md:table-cell">
+  1400→                                <Badge variant="outline" className="text-xs">{bill.paymentMethod}</Badge>
+  1401→                              </TableCell>
+  1402→                              <TableCell className="hidden lg:table-cell">
+  1403→                                <Badge variant="secondary" className="text-xs">{bill.orderType}</Badge>
+  1404→                              </TableCell>
+  1405→                            </TableRow>
+  1406→                          ))}
+  1407→                        </TableBody>
+  1408→                      </Table>
+  1409→                    </div>
+  1410→                  )}
+  1411→                </>
+  1412→              ) : null}
+  1413→            </TabsContent>
+  1414→
+  1415→            {/* ═══════════════════ REFUNDS TAB ═══════════════════ */}
+  1416→            <TabsContent value="refunds">
+  1417→              {refundsLoading ? (
+  1418→                <div className="space-y-3">
+  1419→                  <div className="grid grid-cols-2 gap-3">
+  1420→                    {Array.from({ length: 2 }).map((_, i) => (
+  1421→                      <Skeleton key={i} className="h-24 rounded-xl" />
+  1422→                    ))}
+  1423→                  </div>
+  1424→                  <Skeleton className="h-48 rounded-xl" />
+  1425→                </div>
+  1426→              ) : refundsData ? (
+  1427→                <>
+  1428→                  {/* Summary Cards */}
+  1429→                  <div className="mb-4 grid gap-3 grid-cols-2 lg:grid-cols-2">
+  1430→                    <Card className="py-4 card-hover-glow border-l-4 border-l-red-500">
+  1431→                      <CardContent className="flex items-center gap-3">
+  1432→                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
+  1433→                          <ArrowDownRight className="h-5 w-5 text-red-600" />
+  1434→                        </div>
+  1435→                        <div>
+  1436→                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Refunds</p>
+  1437→                          <p className="text-lg font-bold tabular-nums">{refundsData.totalRefunds}</p>
+  1438→                        </div>
+  1439→                      </CardContent>
+  1440→                    </Card>
+  1441→                    <Card className="py-4 card-hover-glow border-l-4 border-l-orange-500">
+  1442→                      <CardContent className="flex items-center gap-3">
+  1443→                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-orange-100 dark:bg-orange-900/30">
+  1444→                          <IndianRupee className="h-5 w-5 text-orange-600" />
+  1445→                        </div>
+  1446→                        <div>
+  1447→                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Refund Amount</p>
+  1448→                          <p className="text-lg font-bold tabular-nums text-red-600 dark:text-red-400">{formatCurrency(refundsData.totalRefundAmount)}</p>
+  1449→                        </div>
+  1450→                      </CardContent>
+  1451→                    </Card>
+  1452→                  </div>
+  1453→
+  1454→                  {refundsData.refunds.length > 0 && (
+  1455→                    <div className="flex items-center justify-end mb-2">
+  1456→                      <Button
+  1457→                        size="sm"
+  1458→                        onClick={handleExportRefunds}
+  1459→                        disabled={!canExport}
+  1460→                        className="bg-green-600 hover:bg-green-700 text-white gap-1.5 hover-glow-green"
+  1461→                      >
+  1462→                        <Download className="h-4 w-4" />
+  1463→                        Export CSV
+  1464→                      </Button>
+  1465→                    </div>
+  1466→                  )}
+  1467→
+  1468→                  {refundsData.refunds.length === 0 ? (
+  1469→                    <div className="border-2 border-dashed border-muted-foreground/15 bg-gradient-to-b from-muted/20 to-transparent rounded-2xl p-6">
+  1470→                      <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+  1471→                        <ArrowDownRight className="h-12 w-12 mb-3 opacity-40 animate-float" />
+  1472→                        <p className="text-sm">No refunds found for the selected period.</p>
+  1473→                      </div>
+  1474→                    </div>
+  1475→                  ) : (
+  1476→                    <div className="rounded-lg border overflow-hidden">
+  1477→                      <Table>
+  1478→                        <TableHeader>
+  1479→                          <TableRow className="bg-muted/50">
+  1480→                            <TableHead>Refund No</TableHead>
+  1481→                            <TableHead>Date</TableHead>
+  1482→                            <TableHead className="hidden sm:table-cell">Original Invoice</TableHead>
+  1483→                            <TableHead className="hidden md:table-cell">Customer</TableHead>
+  1484→                            <TableHead className="text-right">Amount</TableHead>
+  1485→                            <TableHead className="hidden lg:table-cell">Reason</TableHead>
+  1486→                            <TableHead className="text-center">Status</TableHead>
+  1487→                          </TableRow>
+  1488→                        </TableHeader>
+  1489→                        <TableBody>
+  1490→                          {refundsData.refunds.map((r) => (
+  1491→                            <TableRow key={r.id} className="hover:bg-muted/30 transition-all duration-200">
+  1492→                              <TableCell className="font-mono font-medium text-xs">{r.refundNumber}</TableCell>
+  1493→                              <TableCell className="text-sm">{r.date}</TableCell>
+  1494→                              <TableCell className="hidden sm:table-cell font-mono text-xs">{r.originalInvoiceNumber}</TableCell>
+  1495→                              <TableCell className="hidden md:table-cell">{r.customerName}</TableCell>
+  1496→                              <TableCell className="text-right font-mono text-red-600 dark:text-red-400">{formatCurrency(r.refundAmount)}</TableCell>
+  1497→                              <TableCell className="hidden lg:table-cell max-w-[200px] truncate">{r.reason}</TableCell>
+  1498→                              <TableCell className="text-center">
+  1499→                                <Badge variant={getStatusBadgeVariant(r.status)} className="text-xs">{r.status}</Badge>
+  1500→                              </TableCell>
+  1501→                            </TableRow>
+  1502→                          ))}
+  1503→                        </TableBody>
+  1504→                      </Table>
+  1505→                    </div>
+  1506→                  )}
+  1507→                </>
+  1508→              ) : null}
+  1509→            </TabsContent>
+  1510→
+  1511→            {/* ═══════════════════ RETURNS TAB ═══════════════════ */}
+  1512→            <TabsContent value="returns">
+  1513→              {returnsLoading ? (
+  1514→                <div className="space-y-3">
+  1515→                  <div className="grid grid-cols-2 gap-3">
+  1516→                    {Array.from({ length: 2 }).map((_, i) => (
+  1517→                      <Skeleton key={i} className="h-24 rounded-xl" />
+  1518→                    ))}
+  1519→                  </div>
+  1520→                  <Skeleton className="h-48 rounded-xl" />
+  1521→                </div>
+  1522→              ) : returnsData ? (
+  1523→                <>
+  1524→                  {/* Summary Cards */}
+  1525→                  <div className="mb-4 grid gap-3 grid-cols-2 lg:grid-cols-2">
+  1526→                    <Card className="py-4 card-hover-glow border-l-4 border-l-orange-500">
+  1527→                      <CardContent className="flex items-center gap-3">
+  1528→                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-orange-100 dark:bg-orange-900/30">
+  1529→                          <RotateCcw className="h-5 w-5 text-orange-600" />
+  1530→                        </div>
+  1531→                        <div>
+  1532→                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Returns</p>
+  1533→                          <p className="text-lg font-bold tabular-nums">{returnsData.totalReturns}</p>
+  1534→                        </div>
+  1535→                      </CardContent>
+  1536→                    </Card>
+  1537→                    <Card className="py-4 card-hover-glow border-l-4 border-l-red-500">
+  1538→                      <CardContent className="flex items-center gap-3">
+  1539→                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
+  1540→                          <IndianRupee className="h-5 w-5 text-red-600" />
+  1541→                        </div>
+  1542→                        <div>
+  1543→                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Returned Amount</p>
+  1544→                          <p className="text-lg font-bold tabular-nums text-red-600 dark:text-red-400">{formatCurrency(returnsData.totalReturnedAmount)}</p>
+  1545→                        </div>
+  1546→                      </CardContent>
+  1547→                    </Card>
+  1548→                  </div>
+  1549→
+  1550→                  {returnsData.returns.length > 0 && (
+  1551→                    <div className="flex items-center justify-end mb-2">
+  1552→                      <Button
+  1553→                        size="sm"
+  1554→                        onClick={handleExportReturns}
+  1555→                        disabled={!canExport}
+  1556→                        className="bg-green-600 hover:bg-green-700 text-white gap-1.5 hover-glow-green"
+  1557→                      >
+  1558→                        <Download className="h-4 w-4" />
+  1559→                        Export CSV
+  1560→                      </Button>
+  1561→                    </div>
+  1562→                  )}
+  1563→
+  1564→                  {returnsData.returns.length === 0 ? (
+  1565→                    <div className="border-2 border-dashed border-muted-foreground/15 bg-gradient-to-b from-muted/20 to-transparent rounded-2xl p-6">
+  1566→                      <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+  1567→                        <RotateCcw className="h-12 w-12 mb-3 opacity-40 animate-float" />
+  1568→                        <p className="text-sm">No returns found for the selected period.</p>
+  1569→                      </div>
+  1570→                    </div>
+  1571→                  ) : (
+  1572→                    <div className="rounded-lg border overflow-hidden">
+  1573→                      <Table>
+  1574→                        <TableHeader>
+  1575→                          <TableRow className="bg-muted/50">
+  1576→                            <TableHead>Invoice No</TableHead>
+  1577→                            <TableHead>Date</TableHead>
+  1578→                            <TableHead className="hidden sm:table-cell">Customer</TableHead>
+  1579→                            <TableHead className="text-right">Grand Total</TableHead>
+  1580→                            <TableHead className="text-center">Status</TableHead>
+  1581→                            <TableHead className="hidden md:table-cell">Payment</TableHead>
+  1582→                            <TableHead className="text-center hidden lg:table-cell">Refunds</TableHead>
+  1583→                            <TableHead className="text-right hidden lg:table-cell">Total Refunded</TableHead>
+  1584→                          </TableRow>
+  1585→                        </TableHeader>
+  1586→                        <TableBody>
+  1587→                          {returnsData.returns.map((r) => (
+  1588→                            <TableRow key={r.id} className="hover:bg-muted/30 transition-all duration-200">
+  1589→                              <TableCell className="font-mono font-medium text-xs">{r.invoiceNumber}</TableCell>
+  1590→                              <TableCell className="text-sm">{r.date}</TableCell>
+  1591→                              <TableCell className="hidden sm:table-cell">{r.customerName}</TableCell>
+  1592→                              <TableCell className="text-right font-mono">{formatCurrency(r.grandTotal)}</TableCell>
+  1593→                              <TableCell className="text-center">
+  1594→                                <Badge variant={getStatusBadgeVariant(r.status)} className="text-xs">{r.status}</Badge>
+  1595→                              </TableCell>
+  1596→                              <TableCell className="hidden md:table-cell">
+  1597→                                <Badge variant="outline" className="text-xs">{r.paymentMethod}</Badge>
+  1598→                              </TableCell>
+  1599→                              <TableCell className="text-center hidden lg:table-cell tabular-nums">{r.refundCount}</TableCell>
+  1600→                              <TableCell className="text-right hidden lg:table-cell font-mono text-red-600 dark:text-red-400">{formatCurrency(r.totalRefunded)}</TableCell>
+  1601→                            </TableRow>
+  1602→                          ))}
+  1603→                        </TableBody>
+  1604→                      </Table>
+  1605→                    </div>
+  1606→                  )}
+  1607→                </>
+  1608→              ) : null}
+  1609→            </TabsContent>
+  1610→
+  1611→            {/* ═══════════════════ REPLACE TAB ═══════════════════ */}
+  1612→            <TabsContent value="replace">
+  1613→              {replaceLoading ? (
+  1614→                <div className="space-y-3">
+  1615→                  <div className="grid grid-cols-2 gap-3">
+  1616→                    {Array.from({ length: 2 }).map((_, i) => (
+  1617→                      <Skeleton key={i} className="h-24 rounded-xl" />
+  1618→                    ))}
+  1619→                  </div>
+  1620→                  <Skeleton className="h-48 rounded-xl" />
+  1621→                </div>
+  1622→              ) : replaceData ? (
+  1623→                <>
+  1624→                  {/* Summary Cards */}
+  1625→                  <div className="mb-4 grid gap-3 grid-cols-2 lg:grid-cols-2">
+  1626→                    <Card className="py-4 card-hover-glow border-l-4 border-l-violet-500">
+  1627→                      <CardContent className="flex items-center gap-3">
+  1628→                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-100 dark:bg-violet-900/30">
+  1629→                          <ArrowRightLeft className="h-5 w-5 text-violet-600" />
+  1630→                        </div>
+  1631→                        <div>
+  1632→                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Replaced</p>
+  1633→                          <p className="text-lg font-bold tabular-nums">{replaceData.totalReplaced}</p>
+  1634→                        </div>
+  1635→                      </CardContent>
+  1636→                    </Card>
+  1637→                    <Card className="py-4 card-hover-glow border-l-4 border-l-purple-500">
+  1638→                      <CardContent className="flex items-center gap-3">
+  1639→                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-100 dark:bg-purple-900/30">
+  1640→                          <IndianRupee className="h-5 w-5 text-purple-600" />
+  1641→                        </div>
+  1642→                        <div>
+  1643→                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Replaced Amount</p>
+  1644→                          <p className="text-lg font-bold tabular-nums">{formatCurrency(replaceData.totalReplacedAmount)}</p>
+  1645→                        </div>
+  1646→                      </CardContent>
+  1647→                    </Card>
+  1648→                  </div>
+  1649→
+  1650→                  {replaceData.replacements.length > 0 && (
+  1651→                    <div className="flex items-center justify-end mb-2">
+  1652→                      <Button
+  1653→                        size="sm"
+  1654→                        onClick={handleExportReplace}
+  1655→                        disabled={!canExport}
+  1656→                        className="bg-green-600 hover:bg-green-700 text-white gap-1.5 hover-glow-green"
+  1657→                      >
+  1658→                        <Download className="h-4 w-4" />
+  1659→                        Export CSV
+  1660→                      </Button>
+  1661→                    </div>
+  1662→                  )}
+  1663→
+  1664→                  {replaceData.replacements.length === 0 ? (
+  1665→                    <div className="border-2 border-dashed border-muted-foreground/15 bg-gradient-to-b from-muted/20 to-transparent rounded-2xl p-6">
+  1666→                      <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+  1667→                        <ArrowRightLeft className="h-12 w-12 mb-3 opacity-40 animate-float" />
+  1668→                        <p className="text-sm">No replacements found for the selected period.</p>
+  1669→                      </div>
+  1670→                    </div>
+  1671→                  ) : (
+  1672→                    <div className="rounded-lg border overflow-hidden">
+  1673→                      <Table>
+  1674→                        <TableHeader>
+  1675→                          <TableRow className="bg-muted/50">
+  1676→                            <TableHead>Invoice No</TableHead>
+  1677→                            <TableHead>Date</TableHead>
+  1678→                            <TableHead className="hidden sm:table-cell">Customer</TableHead>
+  1679→                            <TableHead className="text-right">Grand Total</TableHead>
+  1680→                            <TableHead className="text-right">Paid</TableHead>
+  1681→                            <TableHead className="hidden md:table-cell">Payment</TableHead>
+  1682→                            <TableHead className="hidden lg:table-cell">Order Type</TableHead>
+  1683→                          </TableRow>
+  1684→                        </TableHeader>
+  1685→                        <TableBody>
+  1686→                          {replaceData.replacements.map((r) => (
+  1687→                            <TableRow key={r.id} className="hover:bg-muted/30 transition-all duration-200">
+  1688→                              <TableCell className="font-mono font-medium text-xs">{r.invoiceNumber}</TableCell>
+  1689→                              <TableCell className="text-sm">{r.date}</TableCell>
+  1690→                              <TableCell className="hidden sm:table-cell">{r.customerName}</TableCell>
+  1691→                              <TableCell className="text-right font-mono">{formatCurrency(r.grandTotal)}</TableCell>
+  1692→                              <TableCell className="text-right font-mono">{formatCurrency(r.paidAmount)}</TableCell>
+  1693→                              <TableCell className="hidden md:table-cell">
+  1694→                                <Badge variant="outline" className="text-xs">{r.paymentMethod}</Badge>
+  1695→                              </TableCell>
+  1696→                              <TableCell className="hidden lg:table-cell">
+  1697→                                <Badge variant="secondary" className="text-xs">{r.orderType}</Badge>
+  1698→                              </TableCell>
+  1699→                            </TableRow>
+  1700→                          ))}
+  1701→                        </TableBody>
+  1702→                      </Table>
+  1703→                    </div>
+  1704→                  )}
+  1705→                </>
+  1706→              ) : null}
+  1707→            </TabsContent>
+  1708→
+  1709→            {/* ═══════════════════ ITEM SALES TAB ═══════════════════ */}
+  1710→            <TabsContent value="items">
+  1711→              {itemsLoading ? (
+  1712→                <div className="space-y-3">
+  1713→                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+  1714→                    {Array.from({ length: 3 }).map((_, i) => (
+  1715→                      <Skeleton key={i} className="h-24 rounded-xl" />
+  1716→                    ))}
+  1717→                  </div>
+  1718→                  <Skeleton className="h-64 rounded-xl" />
+  1719→                  <Skeleton className="h-48 rounded-xl" />
+  1720→                </div>
+  1721→              ) : itemsData ? (
+  1722→                <>
+  1723→                  {/* Summary Cards */}
+  1724→                  <div className="mb-4 grid gap-3 grid-cols-2 lg:grid-cols-3">
+  1725→                    <Card className="py-4 card-hover-glow border-l-4 border-l-green-500">
+  1726→                      <CardContent className="flex items-center gap-3">
+  1727→                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
+  1728→                          <ShoppingCart className="h-5 w-5 text-green-600" />
+  1729→                        </div>
+  1730→                        <div>
+  1731→                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Unique Items Sold</p>
+  1732→                          <p className="text-lg font-bold tabular-nums">{itemsData.totalItems}</p>
+  1733→                        </div>
+  1734→                      </CardContent>
+  1735→                    </Card>
+  1736→                    <Card className="py-4 card-hover-glow border-l-4 border-l-emerald-500">
+  1737→                      <CardContent className="flex items-center gap-3">
+  1738→                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30">
+  1739→                          <IndianRupee className="h-5 w-5 text-emerald-600" />
+  1740→                        </div>
+  1741→                        <div>
+  1742→                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Item Revenue</p>
+  1743→                          <p className="text-lg font-bold tabular-nums">{formatCurrency(itemsData.totalItemRevenue)}</p>
+  1744→                        </div>
+  1745→                      </CardContent>
+  1746→                    </Card>
+  1747→                    <Card className="py-4 card-hover-glow border-l-4 border-l-teal-500">
+  1748→                      <CardContent className="flex items-center gap-3">
+  1749→                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-teal-100 dark:bg-teal-900/30">
+  1750→                          <Package className="h-5 w-5 text-teal-600" />
+  1751→                        </div>
+  1752→                        <div>
+  1753→                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Qty Sold</p>
+  1754→                          <p className="text-lg font-bold tabular-nums">{itemsData.totalItemQty}</p>
+  1755→                        </div>
+  1756→                      </CardContent>
+  1757→                    </Card>
+  1758→                  </div>
+  1759→
+  1760→                  {/* Top Items Bar Chart */}
+  1761→                  {topItemsChartData.length > 0 && (
+  1762→                    <Card className="mb-4">
+  1763→                      <CardHeader className="pb-2 pt-4 px-5">
+  1764→                        <div className="flex items-center justify-between">
+  1765→                          <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
+  1766→                            <BarChart3 className="h-4 w-4 text-green-600" />
+  1767→                            Top Items by Revenue
+  1768→                          </CardTitle>
+  1769→                          <Button
+  1770→                            size="sm"
+  1771→                            variant="outline"
+  1772→                            onClick={handleExportItems}
+  1773→                            disabled={!canExport}
+  1774→                            className="gap-1.5 text-xs"
+  1775→                          >
+  1776→                            <Download className="h-3.5 w-3.5" />
+  1777→                            CSV
+  1778→                          </Button>
+  1779→                        </div>
+  1780→                      </CardHeader>
+  1781→                      <CardContent className="px-5 pb-4">
+  1782→                        <div className="h-72">
+  1783→                          <ResponsiveContainer width="100%" height="100%">
+  1784→                            <BarChart data={topItemsChartData} layout="vertical" margin={{ top: 8, right: 8, left: 8, bottom: 0 }}>
+  1785→                              <XAxis
+  1786→                                type="number"
+  1787→                                tick={{ fontSize: 11, fill: '#6b7280' }}
+  1788→                                axisLine={false}
+  1789→                                tickLine={false}
+  1790→                                tickFormatter={(v: number) => `₹${(v / 1000).toFixed(0)}k`}
+  1791→                              />
+  1792→                              <YAxis
+  1793→                                type="category"
+  1794→                                dataKey="name"
+  1795→                                tick={{ fontSize: 11, fill: '#6b7280' }}
+  1796→                                axisLine={false}
+  1797→                                tickLine={false}
+  1798→                                width={100}
+  1799→                              />
+  1800→                              <Tooltip
+  1801→                                contentStyle={tooltipStyle}
+  1802→                                formatter={(value: number, name: string) => [
+  1803→                                  name === 'revenue' ? formatCurrency(value) : value,
+  1804→                                  name === 'revenue' ? 'Revenue' : 'Qty'
+  1805→                                ]}
+  1806→                                cursor={{ fill: 'rgba(16,185,129,0.08)' }}
+  1807→                              />
+  1808→                              <Bar
+  1809→                                dataKey="revenue"
+  1810→                                fill="#10b981"
+  1811→                                radius={[0, 4, 4, 0]}
+  1812→                                animationDuration={800}
+  1813→                                animationEasing="ease-out"
+  1814→                              />
+  1815→                            </BarChart>
+  1816→                          </ResponsiveContainer>
+  1817→                        </div>
+  1818→                      </CardContent>
+  1819→                    </Card>
+  1820→                  )}
+  1821→
+  1822→                  {/* Items Table */}
+  1823→                  {itemsData.items.length === 0 ? (
+  1824→                    <div className="border-2 border-dashed border-muted-foreground/15 bg-gradient-to-b from-muted/20 to-transparent rounded-2xl p-6">
+  1825→                      <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+  1826→                        <ShoppingCart className="h-12 w-12 mb-3 opacity-40 animate-float" />
+  1827→                        <p className="text-sm">No item sales data found for the selected period.</p>
+  1828→                      </div>
+  1829→                    </div>
+  1830→                  ) : (
+  1831→                    <div className="rounded-lg border overflow-hidden max-h-96 overflow-y-auto">
+  1832→                      <Table>
+  1833→                        <TableHeader>
+  1834→                          <TableRow className="bg-muted/50 sticky top-0">
+  1835→                            <TableHead>#</TableHead>
+  1836→                            <TableHead>Item Name</TableHead>
+  1837→                            <TableHead className="text-center">Qty Sold</TableHead>
+  1838→                            <TableHead className="text-center">Times Sold</TableHead>
+  1839→                            <TableHead className="text-right">Revenue</TableHead>
+  1840→                          </TableRow>
+  1841→                        </TableHeader>
+  1842→                        <TableBody>
+  1843→                          {itemsData.items.map((item, idx) => (
+  1844→                            <TableRow key={idx} className="hover:bg-muted/30 transition-all duration-200">
+  1845→                              <TableCell className="text-muted-foreground tabular-nums">{idx + 1}</TableCell>
+  1846→                              <TableCell className="font-medium text-sm">{item.name}</TableCell>
+  1847→                              <TableCell className="text-center tabular-nums">{item.totalQty}</TableCell>
+  1848→                              <TableCell className="text-center tabular-nums">{item.count}</TableCell>
+  1849→                              <TableCell className="text-right font-mono">{formatCurrency(item.totalRevenue)}</TableCell>
+  1850→                            </TableRow>
+  1851→                          ))}
+  1852→                        </TableBody>
+  1853→                      </Table>
+  1854→                    </div>
+  1855→                  )}
+  1856→                </>
+  1857→              ) : null}
+  1858→            </TabsContent>
+  1859→
+  1860→            {/* ═══════════════════ INVENTORY TAB ═══════════════════ */}
+  1861→            <TabsContent value="inventory">
+  1862→              {inventoryLoading ? (
+  1863→                <div className="space-y-3">
+  1864→                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+  1865→                    {Array.from({ length: 5 }).map((_, i) => (
+  1866→                      <Skeleton key={i} className="h-24 rounded-xl" />
+  1867→                    ))}
+  1868→                  </div>
+  1869→                  <Skeleton className="h-64 rounded-xl" />
+  1870→                  <Skeleton className="h-48 rounded-xl" />
+  1871→                </div>
+  1872→              ) : inventoryData ? (
+  1873→                <>
+  1874→                  {/* Summary Cards */}
+  1875→                  <div className="mb-4 grid gap-3 grid-cols-2 lg:grid-cols-5">
+  1876→                    <Card className="py-4 card-hover-glow border-l-4 border-l-green-500">
+  1877→                      <CardContent className="flex items-center gap-3">
+  1878→                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
+  1879→                          <Package className="h-5 w-5 text-green-600" />
+  1880→                        </div>
+  1881→                        <div>
+  1882→                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Items</p>
+  1883→                          <p className="text-lg font-bold tabular-nums">{inventoryData.totalItems}</p>
+  1884→                        </div>
+  1885→                      </CardContent>
+  1886→                    </Card>
+  1887→                    <Card className="py-4 card-hover-glow border-l-4 border-l-emerald-500">
+  1888→                      <CardContent className="flex items-center gap-3">
+  1889→                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30">
+  1890→                          <IndianRupee className="h-5 w-5 text-emerald-600" />
+  1891→                        </div>
+  1892→                        <div>
+  1893→                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Value</p>
+  1894→                          <p className="text-lg font-bold tabular-nums">{formatCurrency(inventoryData.totalValue)}</p>
+  1895→                        </div>
+  1896→                      </CardContent>
+  1897→                    </Card>
+  1898→                    <Card className="py-4 card-hover-glow border-l-4 border-l-amber-500">
+  1899→                      <CardContent className="flex items-center gap-3">
+  1900→                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
+  1901→                          <AlertTriangle className="h-5 w-5 text-amber-600" />
+  1902→                        </div>
+  1903→                        <div>
+  1904→                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Low Stock</p>
+  1905→                          <p className="text-lg font-bold tabular-nums text-amber-600 dark:text-amber-400">{inventoryData.lowStockCount}</p>
+  1906→                        </div>
+  1907→                      </CardContent>
+  1908→                    </Card>
+  1909→                    <Card className="py-4 card-hover-glow border-l-4 border-l-red-500">
+  1910→                      <CardContent className="flex items-center gap-3">
+  1911→                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
+  1912→                          <PackageX className="h-5 w-5 text-red-600" />
+  1913→                        </div>
+  1914→                        <div>
+  1915→                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Out of Stock</p>
+  1916→                          <p className="text-lg font-bold tabular-nums text-red-600 dark:text-red-400">{inventoryData.outOfStockCount}</p>
+  1917→                        </div>
+  1918→                      </CardContent>
+  1919→                    </Card>
+  1920→                    <Card className="py-4 card-hover-glow border-l-4 border-l-teal-500">
+  1921→                      <CardContent className="flex items-center gap-3">
+  1922→                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-teal-100 dark:bg-teal-900/30">
+  1923→                          <UserCheck className="h-5 w-5 text-teal-600" />
+  1924→                        </div>
+  1925→                        <div>
+  1926→                          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Well Stocked</p>
+  1927→                          <p className="text-lg font-bold tabular-nums text-green-600 dark:text-green-400">{inventoryData.wellStockedCount}</p>
+  1928→                        </div>
+  1929→                      </CardContent>
+  1930→                    </Card>
+  1931→                  </div>
+  1932→
+  1933→                  {/* Category Breakdown Pie Chart */}
+  1934→                  {inventoryCategoryPie.length > 0 && (
+  1935→                    <Card className="mb-4">
+  1936→                      <CardHeader className="pb-2 pt-4 px-5">
+  1937→                        <div className="flex items-center justify-between">
+  1938→                          <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
+  1939→                            <PieChartIcon className="h-4 w-4 text-green-600" />
+  1940→                            Category Breakdown (by Value)
+  1941→                          </CardTitle>
+  1942→                          <Button
+  1943→                            size="sm"
+  1944→                            variant="outline"
+  1945→                            onClick={handleExportInventory}
+  1946→                            disabled={!canExport}
+  1947→                            className="gap-1.5 text-xs"
+  1948→                          >
+  1949→                            <Download className="h-3.5 w-3.5" />
+  1950→                            CSV
+  1951→                          </Button>
+  1952→                        </div>
+  1953→                      </CardHeader>
+  1954→                      <CardContent className="px-5 pb-4">
+  1955→                        <div className="h-64">
+  1956→                          <ResponsiveContainer width="100%" height="100%">
+  1957→                            <PieChart>
+  1958→                              <Pie
+  1959→                                data={inventoryCategoryPie}
+  1960→                                cx="50%"
+  1961→                                cy="50%"
+  1962→                                innerRadius={50}
+  1963→                                outerRadius={90}
+  1964→                                paddingAngle={3}
+  1965→                                dataKey="value"
+  1966→                                animationDuration={800}
+  1967→                                label={({ name, percent }: { name: string; percent: number }) =>
+  1968→                                  `${name} (${(percent * 100).toFixed(0)}%)`
+  1969→                                }
+  1970→                              >
+  1971→                                {inventoryCategoryPie.map((_, index) => (
+  1972→                                  <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+  1973→                                ))}
+  1974→                              </Pie>
+  1975→                              <Tooltip
+  1976→                                contentStyle={tooltipStyle}
+  1977→                                formatter={(value: number, name: string) => [formatCurrency(value), name]}
+  1978→                              />
+  1979→                              <Legend />
+  1980→                            </PieChart>
+  1981→                          </ResponsiveContainer>
+  1982→                        </div>
+  1983→
+  1984→                        {/* Category Table */}
+  1985→                        <div className="mt-4 rounded-lg border overflow-hidden">
+  1986→                          <Table>
+  1987→                            <TableHeader>
+  1988→                              <TableRow className="bg-muted/50">
+  1989→                                <TableHead>Category</TableHead>
+  1990→                                <TableHead className="text-center">Items</TableHead>
+  1991→                                <TableHead className="text-center">Total Qty</TableHead>
+  1992→                                <TableHead className="text-right">Value</TableHead>
+  1993→                              </TableRow>
+  1994→                            </TableHeader>
+  1995→                            <TableBody>
+  1996→                              {inventoryData.categoryBreakdown.map((cat, idx) => (
+  1997→                                <TableRow key={idx} className="hover:bg-muted/30 transition-all duration-200">
+  1998→                                  <TableCell>
+  1999→                                    <div className="flex items-center gap-2">
+  2000→                                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] }} />
+
+[showing lines 1-2000 of 2384; use offset=2001 with limit to continue reading]

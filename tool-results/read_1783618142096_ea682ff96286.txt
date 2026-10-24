@@ -1,0 +1,1609 @@
+     1→'use client';
+     2→
+     3→import React, { useState, useEffect, useCallback, useRef } from 'react';
+     4→import {
+     5→  Settings, Store, Printer, Database, Save, RotateCcw, Download, Upload,
+     6→  Loader2, AlertTriangle, Check, ChevronDown, ChevronUp, FileText, Receipt, Scissors, X,
+     7→  ImageIcon, Trash2, Users, Shield, Lock, Eye, EyeOff, RotateCw, Smartphone,
+     8→  AlertCircle, RefreshCw, Zap, Layout, Palette,
+     9→} from 'lucide-react';
+    10→import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+    11→import { Button } from '@/components/ui/button';
+    12→import { Input } from '@/components/ui/input';
+    13→import { Label } from '@/components/ui/label';
+    14→import { Textarea } from '@/components/ui/textarea';
+    15→import { Separator } from '@/components/ui/separator';
+    16→import { Switch } from '@/components/ui/switch';
+    17→import { Slider } from '@/components/ui/slider';
+    18→import { Badge } from '@/components/ui/badge';
+    19→import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+    20→import {
+    21→  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+    22→  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+    23→} from '@/components/ui/alert-dialog';
+    24→import { Skeleton } from '@/components/ui/skeleton';
+    25→import { notify } from '@/lib/notification-store';
+    26→import { useFeature } from '@/hooks/use-feature';
+    27→import { getCategoryLabel } from '@/lib/category-templates';
+    28→import { buildRichThermalHtml, type ThermalReceiptData } from '@/lib/thermal-settings';
+    29→import { useAuth } from '@/components/auth-provider';
+    30→import ReadOnlyBanner from '@/components/read-only-banner';
+    31→import UserManagementSection from '@/components/sections/user-management-section';
+    32→import { INVOICE_TEMPLATES, type InvoiceCustomizations } from '@/lib/invoice-templates';
+    33→// ── Types & Defaults ─────────────────────────────────────────────────────────
+    34→
+    35→interface ThermalPrinterSettings {
+    36→  paperWidth: '58mm' | '80mm';
+    37→  fontSize: number;            // px: 8-18
+    38→  lineHeight: number;          // 1.0-2.0
+    39→  textWeight: 'Bold' | 'Normal' | 'Light';
+    40→  printDpi: number;            // 203 | 300
+    41→  printQuality: 'Dark' | 'Light';
+    42→  dithering: 'None' | 'Floyd Steinberg' | 'Black & White';
+    43→  showLogo: boolean;
+    44→  logo: string;                // base64 data URL
+    45→}
+    46→
+    47→interface SettingsSectionProps { scrollToId?: string; dataVersion?: number; }
+    48→
+    49→const DEFAULT_THERMAL: ThermalPrinterSettings = {
+    50→  paperWidth: '80mm', fontSize: 11, lineHeight: 1.3,
+    51→  printDpi: 203,
+    52→  textWeight: 'Normal',
+    53→  printQuality: 'Dark',
+    54→  dithering: 'None',
+    55→  showLogo: false,
+    56→  logo: '',
+    57→};
+    58→
+    59→const WEIGHT_MAP: Record<string, number> = { Bold: 700, Normal: 400, Light: 300 };
+    60→const QUALITY_OPACITY: Record<string, number> = { Dark: 1, Light: 0.6 };
+    61→const INPUT_CLS = 'focus-visible:ring-green-500/20 focus-visible:border-green-500/50';
+    62→
+    63→const MODULE_COLORS: Record<string, string> = {
+    64→  inventory: 'text-emerald-600 border-emerald-200',
+    65→  billing: 'text-blue-600 border-blue-200',
+    66→  restaurant: 'text-amber-600 border-amber-200',
+    67→  manufacturing: 'text-purple-600 border-purple-200',
+    68→  service: 'text-teal-600 border-teal-200',
+    69→  general: 'text-gray-600 border-gray-200',
+    70→};
+    71→
+    72→// Map UI ThermalPrinterSettings → ThermalConfig for buildRichThermalHtml
+    73→function uiToConfig(t: ThermalPrinterSettings) {
+    74→  return {
+    75→    paperWidth: t.paperWidth,
+    76→    fontSize: `${t.fontSize}px`,
+    77→    textWeight: WEIGHT_MAP[t.textWeight] ?? 400,
+    78→    lineHeight: t.lineHeight,
+    79→    printDpi: t.printDpi,
+    80→    printQuality: QUALITY_OPACITY[t.printQuality] ?? 1,
+    81→    dithering: t.dithering,
+    82→    alignment: 'center' as const,
+    83→    showLogo: t.showLogo,
+    84→    logo: t.logo,
+    85→    paperPxWidth: t.paperWidth === '80mm' ? 302 : 224,
+    86→    autoCutLines: 2,
+    87→  };
+    88→}
+    89→
+    90→// ── Reusable: Collapsible Section ────────────────────────────────────────────
+    91→
+    92→function Section({
+    93→  id, icon, title, desc, children, open: defaultOpen = true, badge,
+    94→}: {
+    95→  id: string; icon: React.ReactNode; title: string; desc: string;
+    96→  children: React.ReactNode; open?: boolean; badge?: React.ReactNode;
+    97→}) {
+    98→  const [o, setO] = useState(defaultOpen);
+    99→  return (
+   100→    <Card className="overflow-hidden border-0 shadow-sm transition-all duration-200 hover:shadow-md">
+   101→      <button className="w-full text-left" onClick={() => setO(!o)}>
+   102→        <CardHeader className="cursor-pointer hover:bg-muted/30 transition-colors py-4">
+   103→          <div className="flex items-center justify-between">
+   104→            <div className="flex items-center gap-3">
+   105→              <div className="flex size-9 items-center justify-center rounded-lg bg-green-100 text-green-600 shrink-0">{icon}</div>
+   106→              <div className="min-w-0">
+   107→                <CardTitle className="text-base flex items-center gap-2">{title}{badge}</CardTitle>
+   108→                <CardDescription className="mt-0.5 truncate">{desc}</CardDescription>
+   109→              </div>
+   110→            </div>
+   111→            <div className="shrink-0 text-muted-foreground">{o ? <ChevronUp className="size-5" /> : <ChevronDown className="size-5" />}</div>
+   112→          </div>
+   113→        </CardHeader>
+   114→      </button>
+   115→      {o && <div className="px-6 pb-6">{children}</div>}
+   116→    </Card>
+   117→  );
+   118→}
+   119→
+   120→function Divider({ icon, label }: { icon: React.ReactNode; label: string }) {
+   121→  return (
+   122→    <div className="flex items-center gap-3 py-2">
+   123→      <Separator className="flex-1" />
+   124→      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">{icon}{label}</span>
+   125→      <Separator className="flex-1" />
+   126→    </div>
+   127→  );
+   128→}
+   129→
+   130→function SaveBtn({ section, label, onClick, saving, saved, disabled }: {
+   131→  section: string; label: string; onClick: () => void; saving: string | null; saved: string | null; disabled?: boolean;
+   132→}) {
+   133→  const s = saving === section, d = saved === section;
+   134→  return (
+   135→    <div className="flex justify-end">
+   136→      <Button onClick={onClick} disabled={s || disabled} className={`gap-1.5 transition-all duration-300 ${d ? 'bg-green-500 hover:bg-green-600' : 'bg-green-600 hover:bg-green-700'} text-white`}>
+   137→        {s ? <Loader2 className="h-4 w-4 animate-spin" /> : d ? <><Check className="h-4 w-4" />Saved!</> : <><Save className="h-4 w-4" />{label}</>}
+   138→      </Button>
+   139→    </div>
+   140→  );
+   141→}
+   142→
+   143→function SavedBadge({ section, saved }: { section: string; saved: string | null }) {
+   144→  if (saved !== section) return null;
+   145→  return <Badge className="bg-green-100 text-green-700 border-green-200 text-[10px] gap-0.5"><Check className="size-3" />Saved</Badge>;
+   146→}
+   147→
+   148→// ── Receipt Preview (iframe-based WYSIWYG) ──────────────────────────────────
+   149→
+   150→function ReceiptPreview({ shopName, shopAddress, shopPhone, gstNumber, showGst, t }: { shopName: string; shopAddress: string; shopPhone: string; gstNumber: string; showGst: boolean; t: ThermalPrinterSettings }) {
+   151→  const config = uiToConfig(t);
+   152→  const sampleData: ThermalReceiptData = {
+   153→    shopName: shopName || 'My Shop',
+   154→    shopAddress: shopAddress || '123, Main Road',
+   155→    shopPhone: shopPhone || '+91 98765 43210',
+   156→    shopGst: gstNumber,
+   157→    shopGstState: '',
+   158→    showGst: showGst,
+   159→    invoiceNumber: 'FP-001',
+   160→    date: new Date().toLocaleDateString('en-IN'),
+   161→    orderType: 'Dine-In',
+   162→    customerName: 'Walk-in',
+   163→    customerPhone: '',
+   164→    customerAddress: '',
+   165→    items: [
+   166→      { name: 'Item 1', qty: 1, rate: 150, total: 150 },
+   167→      { name: 'Item 2', qty: 2, rate: 100, total: 200 },
+   168→      { name: 'Item 3', qty: 1, rate: 75, total: 75 },
+   169→    ],
+   170→    subtotal: 425,
+   171→    cgst: 38.25,
+   172→    sgst: 38.25,
+   173→    gstRate: 18,
+   174→    deliveryCharge: 0,
+   175→    discountAmount: 0,
+   176→    grandTotal: 501.5,
+   177→    paidAmount: 501.5,
+   178→    balanceAmount: 0,
+   179→    paymentMethod: 'Cash',
+   180→    billStatus: 'Paid',
+   181→  };
+   182→  const html = buildRichThermalHtml(sampleData, config, 'Preview');
+   183→  const iframeMaxW = t.paperWidth === '58mm' ? 224 : 302;
+   184→
+   185→  return (
+   186→    <div className="bg-white border-2 border-dashed border-gray-300 rounded-lg p-2 mx-auto transition-all duration-200" style={{ maxWidth: `${iframeMaxW + 24}px` }}>
+   187→      <iframe
+   188→        srcDoc={html}
+   189→        title="Receipt Preview"
+   190→        style={{
+   191→          width: `${iframeMaxW}px`,
+   192→          height: 'auto',
+   193→          minHeight: '380px',
+   194→          border: 'none',
+   195→          overflow: 'hidden',
+   196→          display: 'block',
+   197→        }}
+   198→        sandbox="allow-same-origin"
+   199→      />
+   200→    </div>
+   201→  );
+   202→}
+   203→
+   204→// ── Radio Option Helper ──────────────────────────────────────────────────────
+   205→
+   206→function RadioOpt({ id, value, label, group }: { id: string; value: string; label: string; group: string }) {
+   207→  return (
+   208→    <div className="flex items-center gap-2">
+   209→      <RadioGroupItem value={value} id={id} />
+   210→      <Label htmlFor={id} className="cursor-pointer">{label}</Label>
+   211→    </div>
+   212→  );
+   213→}
+   214→
+   215→// ── Slider Field Helper ──────────────────────────────────────────────────────
+   216→
+   217→function SliderField({ label, value, min, max, unit, onChange, icon }: {
+   218→  label: string; value: number; min: number; max: number; unit: string;
+   219→  onChange: (v: number) => void; icon?: React.ReactNode;
+   220→}) {
+   221→  return (
+   222→    <div className="grid gap-2">
+   223→      <div className="flex items-center justify-between">
+   224→        <Label className={icon ? 'flex items-center gap-1.5' : ''}>{icon}{label}</Label>
+   225→        <Badge variant="outline" className="font-mono">{value}{unit}</Badge>
+   226→      </div>
+   227→      <Slider value={[value]} onValueChange={(v) => onChange(v[0])} min={min} max={max} step={1} />
+   228→      <div className="flex justify-between text-xs text-muted-foreground">
+   229→        <span>{min}{unit}</span><span>{max}{unit}</span>
+   230→      </div>
+   231→    </div>
+   232→  );
+   233→}
+   234→
+   235→// ── Main Component ───────────────────────────────────────────────────────────
+   236→
+   237→function ChangePasswordSection() {
+   238→  const { currentUser, token } = useAuth();
+   239→  const [currentPassword, setCurrentPassword] = useState('');
+   240→  const [newPassword, setNewPassword] = useState('');
+   241→  const [confirmPassword, setConfirmPassword] = useState('');
+   242→  const [showCurrent, setShowCurrent] = useState(false);
+   243→  const [showNew, setShowNew] = useState(false);
+   244→  const [showConfirm, setShowConfirm] = useState(false);
+   245→  const [loading, setLoading] = useState(false);
+   246→
+   247→  const handleChangePassword = async () => {
+   248→    if (!currentPassword || !newPassword || !confirmPassword) {
+   249→      notify({ type: 'error', title: 'Error', message: 'All fields are required' });
+   250→      return;
+   251→    }
+   252→    if (newPassword.length < 4) {
+   253→      notify({ type: 'error', title: 'Error', message: 'New password must be at least 4 characters' });
+   254→      return;
+   255→    }
+   256→    if (newPassword !== confirmPassword) {
+   257→      notify({ type: 'error', title: 'Error', message: 'New passwords do not match' });
+   258→      return;
+   259→    }
+   260→    setLoading(true);
+   261→    try {
+   262→      const res = await fetch(`/api/users/${currentUser?.userId}`, {
+   263→        method: 'PUT',
+   264→        headers: {
+   265→          'Content-Type': 'application/json',
+   266→          'Authorization': `Bearer ${token}`,
+   267→        },
+   268→        body: JSON.stringify({
+   269→          currentPassword,
+   270→          password: newPassword,
+   271→          _passwordOnly: true,
+   272→        }),
+   273→      });
+   274→      if (res.ok) {
+   275→        notify({ type: 'success', title: 'Password Updated', message: 'Password changed successfully' });
+   276→        setCurrentPassword('');
+   277→        setNewPassword('');
+   278→        setConfirmPassword('');
+   279→      } else {
+   280→        const data = await res.json().catch(() => null);
+   281→        notify({ type: 'error', title: 'Error', message: data?.error || 'Failed to change password' });
+   282→      }
+   283→    } catch {
+   284→      notify({ type: 'error', title: 'Error', message: 'Network error' });
+   285→    } finally {
+   286→      setLoading(false);
+   287→    }
+   288→  };
+   289→
+   290→  return (
+   291→    <Card className="overflow-hidden border-0 shadow-sm">
+   292→      <CardHeader className="pb-2">
+   293→        <div className="flex items-center gap-3">
+   294→          <div className="flex size-9 items-center justify-center rounded-lg bg-amber-100 text-amber-600 shrink-0">
+   295→            <Lock className="size-4" />
+   296→          </div>
+   297→          <div className="min-w-0">
+   298→            <CardTitle className="text-base">Change Password</CardTitle>
+   299→            <CardDescription className="mt-0.5">Update your account password</CardDescription>
+   300→          </div>
+   301→        </div>
+   302→      </CardHeader>
+   303→      <div className="px-6 pb-6 space-y-4">
+   304→        <div className="grid gap-2 border-l-2 border-l-amber-400 pl-3">
+   305→          <Label className="text-sm font-medium">Current Password</Label>
+   306→          <div className="relative">
+   307→            <Input
+   308→              type={showCurrent ? 'text' : 'password'}
+   309→              placeholder="Enter current password"
+   310→              value={currentPassword}
+   311→              onChange={(e) => setCurrentPassword(e.target.value)}
+   312→              className="pr-10"
+   313→            />
+   314→            <button type="button" onClick={() => setShowCurrent(!showCurrent)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+   315→              {showCurrent ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+   316→            </button>
+   317→          </div>
+   318→        </div>
+   319→        <div className="grid gap-2 border-l-2 border-l-amber-400 pl-3">
+   320→          <Label className="text-sm font-medium">New Password</Label>
+   321→          <div className="relative">
+   322→            <Input
+   323→              type={showNew ? 'text' : 'password'}
+   324→              placeholder="Enter new password (min 4 chars)"
+   325→              value={newPassword}
+   326→              onChange={(e) => setNewPassword(e.target.value)}
+   327→              className="pr-10"
+   328→            />
+   329→            <button type="button" onClick={() => setShowNew(!showNew)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+   330→              {showNew ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+   331→            </button>
+   332→          </div>
+   333→        </div>
+   334→        <div className="grid gap-2 border-l-2 border-l-amber-400 pl-3">
+   335→          <Label className="text-sm font-medium">Confirm New Password</Label>
+   336→          <div className="relative">
+   337→            <Input
+   338→              type={showConfirm ? 'text' : 'password'}
+   339→              placeholder="Confirm new password"
+   340→              value={confirmPassword}
+   341→              onChange={(e) => setConfirmPassword(e.target.value)}
+   342→              className="pr-10"
+   343→            />
+   344→            <button type="button" onClick={() => setShowConfirm(!showConfirm)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+   345→              {showConfirm ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+   346→            </button>
+   347→          </div>
+   348→        </div>
+   349→        <div className="flex justify-end">
+   350→          <Button onClick={handleChangePassword} disabled={loading} className="gap-1.5 bg-amber-600 hover:bg-amber-700 text-white">
+   351→            {loading ? <Loader2 className="size-4 animate-spin" /> : <><Lock className="size-4" />Update Password</>}
+   352→          </Button>
+   353→        </div>
+   354→      </div>
+   355→    </Card>
+   356→  );
+   357→}
+   358→
+   359→// ── Main Component ───────────────────────────────────────────────────────────
+   360→
+   361→export default function SettingsSection({ scrollToId, dataVersion }: SettingsSectionProps) {
+   362→  const { currentUser, hasPermission, token } = useAuth();
+   363→  const canAccess = hasPermission('settings', 'access');
+   364→  const canEdit = hasPermission('settings', 'edit');
+   365→  const noAccess = !canAccess;
+   366→  const isReadOnly = !canAccess || !canEdit;
+   367→  const hasFetchedOnce = useRef(false);
+   368→  const isDirtyRef = useRef(false); // Track if user has unsaved changes
+   369→  // Use ref for token so fetchSettings doesn't re-create on token change.
+   370→  // Token changes from session refresh were causing fetchSettings to get a new reference,
+   371→  // which triggered useEffect re-runs and re-fetches that overwrite user input.
+   372→  // The global fetch wrapper in page.tsx already adds auth headers to all requests.
+   373→  const tokenRef = useRef(token);
+   374→  useEffect(() => { tokenRef.current = token; }, [token]);
+   375→
+   376→  // Feature management
+   377→  const featureState = useFeature();
+   378→
+   379→  const handleToggleFeature = async (featureId: string, enabled: boolean) => {
+   380→    try {
+   381→      const res = await fetch('/api/features', {
+   382→        method: 'PUT',
+   383→        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+   384→        body: JSON.stringify({ featureId, enabled }),
+   385→      });
+   386→      if (res.ok) {
+   387→        notify({ type: 'success', title: enabled ? 'Feature Enabled' : 'Feature Disabled', message: `Feature has been ${enabled ? 'enabled' : 'disabled'}` });
+   388→        featureState.refresh();
+   389→      } else {
+   390→        notify({ type: 'error', title: 'Error', message: 'Failed to update feature' });
+   391→      }
+   392→    } catch {
+   393→      notify({ type: 'error', title: 'Error', message: 'Network error' });
+   394→    }
+   395→  };
+   396→
+   397→  useEffect(() => {
+   398→    if (!scrollToId) return;
+   399→    const t = setTimeout(() => {
+   400→      const el = document.getElementById(scrollToId);
+   401→      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+   402→    }, 300);
+   403→    return () => clearTimeout(t);
+   404→  }, [scrollToId]);
+   405→
+   406→  // NOTE: Removed refreshSession() on mount — it caused a cascade:
+   407→  // refreshSession → token changes → fetchSettings recreates → re-fetch → state overwrite
+   408→  // Session is already refreshed periodically by AuthProvider (every 30 min).
+   409→
+   410→  const [loading, setLoading] = useState(true);
+   411→  const [loadError, setLoadError] = useState(false);
+   412→  const [savingSection, setSavingSection] = useState<string | null>(null);
+   413→  const [savedSection, setSavedSection] = useState<string | null>(null);
+   414→  const saveTimer = useRef<NodeJS.Timeout | null>(null);
+   415→
+   416→  // Cleanup saveTimer on unmount to prevent memory leak
+   417→  useEffect(() => {
+   418→    return () => {
+   419→      if (saveTimer.current) clearTimeout(saveTimer.current);
+   420→    };
+   421→  }, []);
+   422→
+   423→  // Helper: mark form as dirty (user has unsaved changes)
+   424→  const markDirty = useCallback(() => { isDirtyRef.current = true; }, []);
+   425→
+   426→  // Business
+   427→  const [shopName, setShopNameRaw] = useState('');
+   428→  const [address, setAddressRaw] = useState('');
+   429→  const [email, setEmailRaw] = useState('');
+   430→  const [phone, setPhoneRaw] = useState('');
+   431→  const [signatory, setSignatoryRaw] = useState('');
+   432→  const [gstNumber, setGstNumberRaw] = useState('');
+   433→  const [shopLogo, setShopLogo] = useState('');
+   434→  const [invoiceTemplate, setInvoiceTemplateRaw] = useState('modern');
+   435→  const setInvoiceTemplate = useCallback((v: string) => { markDirty(); setInvoiceTemplateRaw(v); }, [markDirty]);
+   436→  const [invoiceCust, setInvoiceCust] = useState<InvoiceCustomizations>({});
+   437→  // Wrapped setters that mark dirty
+   438→  const setShopName = useCallback((v: string) => { markDirty(); setShopNameRaw(v); }, [markDirty]);
+   439→  const setAddress = useCallback((v: string) => { markDirty(); setAddressRaw(v); }, [markDirty]);
+   440→  const setEmail = useCallback((v: string) => { markDirty(); setEmailRaw(v); }, [markDirty]);
+   441→  const setPhone = useCallback((v: string) => { markDirty(); setPhoneRaw(v); }, [markDirty]);
+   442→  const setSignatory = useCallback((v: string) => { markDirty(); setSignatoryRaw(v); }, [markDirty]);
+   443→  const setGstNumber = useCallback((v: string) => { markDirty(); setGstNumberRaw(v); }, [markDirty]);
+   444→
+   445→  // Billing
+   446→  const [gstEnabled, setGstEnabledRaw] = useState(false);
+   447→  const [gstFullMode, setGstFullModeRaw] = useState(false);
+   448→  const [gstSimpleMode, setGstSimpleModeRaw] = useState(false);
+   449→  const [gstRate, setGstRateRaw] = useState(18);
+   450→  const [gstState, setGstStateRaw] = useState('');
+   451→  const [deliveryCharge, setDeliveryChargeRaw] = useState(0);
+   452→  const [enableDelivery, setEnableDeliveryRaw] = useState(false);
+   453→  const setGstEnabled = useCallback((v: boolean) => { markDirty(); setGstEnabledRaw(v); }, [markDirty]);
+   454→  const setGstFullMode = useCallback((v: boolean) => { markDirty(); setGstFullModeRaw(v); }, [markDirty]);
+   455→  const setGstSimpleMode = useCallback((v: boolean) => { markDirty(); setGstSimpleModeRaw(v); }, [markDirty]);
+   456→  const setGstRate = useCallback((v: number) => { markDirty(); setGstRateRaw(v); }, [markDirty]);
+   457→  const setGstState = useCallback((v: string) => { markDirty(); setGstStateRaw(v); }, [markDirty]);
+   458→  const setDeliveryCharge = useCallback((v: number) => { markDirty(); setDeliveryChargeRaw(v); }, [markDirty]);
+   459→  const setEnableDelivery = useCallback((v: boolean) => { markDirty(); setEnableDeliveryRaw(v); }, [markDirty]);
+   460→
+   461→  // Auto Rotate
+   462→  const [autoRotate, setAutoRotateRaw] = useState(false);
+   463→  const setAutoRotate = useCallback((v: boolean) => { markDirty(); setAutoRotateRaw(v); }, [markDirty]);
+   464→
+   465→  // Bill Number Generator
+   466→  const [billAutoGenerate, setBillAutoGenerateRaw] = useState(false);
+   467→  const [billPrefix, setBillPrefixRaw] = useState('');
+   468→  const [billStartNumber, setBillStartNumberRaw] = useState(1);
+   469→  const [billCurrentNumber, setBillCurrentNumberRaw] = useState(0);
+   470→  const setBillAutoGenerate = useCallback((v: boolean) => { markDirty(); setBillAutoGenerateRaw(v); }, [markDirty]);
+   471→  const setBillPrefix = useCallback((v: string) => { markDirty(); setBillPrefixRaw(v); }, [markDirty]);
+   472→  const setBillStartNumber = useCallback((v: number) => { markDirty(); setBillStartNumberRaw(v); }, [markDirty]);
+   473→  const setBillCurrentNumber = useCallback((v: number) => { markDirty(); setBillCurrentNumberRaw(v); }, [markDirty]);
+   474→
+   475→  // Thermal (localStorage)
+   476→  const [thermal, setThermal] = useState<ThermalPrinterSettings>(DEFAULT_THERMAL);
+   477→  const [thermalSaved, setThermalSaved] = useState(false);
+   478→  const logoInputRef = useRef<HTMLInputElement>(null);
+   479→
+   480→  // Data management
+   481→  const [resetOpen, setResetOpen] = useState(false);
+   482→  const [resetting, setResetting] = useState(false);
+   483→  const importRef = useRef<HTMLInputElement>(null);
+   484→
+   485→  // Load DB settings
+   486→  // NOTE: fetchSettings has NO dependency on token state — uses tokenRef instead.
+   487→  // This prevents fetchSettings from being re-created on every token change (session refresh),
+   488→  // which would cascade into useEffect re-runs and re-fetches that overwrite user input.
+   489→  const fetchSettings = useCallback(async (silent?: boolean) => {
+   490→    // If user has unsaved changes and this is a background sync, skip to avoid overwriting input
+   491→    if (silent && isDirtyRef.current) return;
+   492→    if (!silent) setLoading(true);
+   493→    try {
+   494→      const res = await fetch('/api/settings', {
+   495→        headers: tokenRef.current ? { 'Authorization': `Bearer ${tokenRef.current}` } : {},
+   496→      });
+   497→      if (res.ok) {
+   498→        const d = await res.json();
+   499→        // Use Raw setters to avoid marking dirty — these are server values
+   500→        setShopNameRaw(d.shopName || '');
+   501→        setAddressRaw(d.shopAddress || '');
+   502→        setEmailRaw(d.shopEmail || '');
+   503→        setPhoneRaw(d.shopPhone || '');
+   504→        setSignatoryRaw(d.authorizedSignatory || '');
+   505→        setShopLogo(d.shopLogo || '');
+   506→        setInvoiceTemplateRaw(d.invoiceTemplate || 'modern');
+   507→        try { setInvoiceCust(d.invoiceCustomizations ? JSON.parse(d.invoiceCustomizations) : {}) } catch { setInvoiceCust({}) }
+   508→        setGstNumberRaw(d.gstNumber || '');
+   509→        setGstEnabledRaw(d.enableGst ?? false);
+   510→        setGstFullModeRaw(d.gstFullMode ?? false);
+   511→        setGstSimpleModeRaw(d.gstSimpleMode ?? false);
+   512→        setGstRateRaw(d.gstRate ?? 18);
+   513→        setGstStateRaw(d.gstState || '');
+   514→        setDeliveryChargeRaw(d.deliveryCharge ?? 0);
+   515→        setEnableDeliveryRaw(d.enableDelivery ?? false);
+   516→        setAutoRotateRaw(d.autoRotate ?? false);
+   517→        try { localStorage.setItem('fp_auto_rotate', String(d.autoRotate ?? false)); } catch {}
+   518→        setBillAutoGenerateRaw(d.billAutoGenerate ?? false);
+   519→        setBillPrefixRaw(d.billPrefix || '');
+   520→        setBillStartNumberRaw(d.billStartNumber ?? 1);
+   521→        setBillCurrentNumberRaw(d.billCurrentNumber ?? 0);
+   522→        // Store full settings for thermal merge
+   523→        setDbSettings(d);
+   524→        setLoadError(false);
+   525→        // Mark as fetched and clear dirty flag after successful load
+   526→        hasFetchedOnce.current = true;
+   527→        isDirtyRef.current = false;
+   528→      } else {
+   529→        const errData = await res.json().catch(() => null);
+   530→        if (!silent) notify({ type: 'error', title: 'Error', message: errData?.error || `Failed to load settings` });
+   531→        setLoadError(true);
+   532→      }
+   533→    } catch {
+   534→      if (!silent) notify({ type: 'error', title: 'Error', message: 'Failed to load settings' });
+   535→    }
+   536→    finally { setLoading(false); }
+   537→  }, []); // No token dependency — uses tokenRef
+   538→
+   539→  // Track DB settings for thermal merging
+   540→  const [dbSettings, setDbSettings] = useState<Record<string, unknown> | null>(null);
+   541→
+   542→  // Load thermal from localStorage (initial fast load)
+   543→  useEffect(() => {
+   544→    try {
+   545→      const raw = localStorage.getItem('fp_thermal_settings');
+   546→      if (raw) setThermal({ ...DEFAULT_THERMAL, ...JSON.parse(raw) });
+   547→    } catch { /* use defaults */ }
+   548→  }, []);
+   549→
+   550→  // Merge thermal settings from DB — DB is the source of truth for cross-device sync
+   551→  useEffect(() => {
+   552→    if (!dbSettings) return;
+   553→    // Always use DB values as the authoritative source
+   554→    setThermal(prev => ({
+   555→      ...prev,
+   556→      paperWidth: (dbSettings.thermalPaperWidth || prev.paperWidth) as '58mm' | '80mm',
+   557→      fontSize: (typeof dbSettings.thermalFontSize === 'number' ? dbSettings.thermalFontSize : prev.fontSize) as number,
+   558→      lineHeight: (typeof dbSettings.thermalLineHeight === 'number' ? dbSettings.thermalLineHeight : prev.lineHeight) as number,
+   559→      textWeight: (dbSettings.thermalTextWeight || prev.textWeight) as ThermalPrinterSettings['textWeight'],
+   560→      printDpi: (dbSettings.thermalDpi ?? prev.printDpi) as number,
+   561→      printQuality: (dbSettings.thermalPrintQuality || prev.printQuality) as ThermalPrinterSettings['printQuality'],
+   562→      dithering: (dbSettings.thermalDithering || prev.dithering) as ThermalPrinterSettings['dithering'],
+   563→      showLogo: (dbSettings.thermalShowLogo ?? prev.showLogo) as boolean,
+   564→      logo: (dbSettings.thermalLogo || prev.logo) as string,
+   565→    }));
+   566→    // Sync DB values to localStorage for offline access
+   567→    try {
+   568→      const synced = {
+   569→        paperWidth: dbSettings.thermalPaperWidth || '80mm',
+   570→        fontSize: typeof dbSettings.thermalFontSize === 'number' ? dbSettings.thermalFontSize : 12,
+   571→        lineHeight: typeof dbSettings.thermalLineHeight === 'number' ? dbSettings.thermalLineHeight : 1.4,
+   572→        textWeight: dbSettings.thermalTextWeight || 'Normal',
+   573→        printDpi: dbSettings.thermalDpi ?? 203,
+   574→        printQuality: dbSettings.thermalPrintQuality || 'Dark',
+   575→        dithering: dbSettings.thermalDithering || 'None',
+   576→        showLogo: dbSettings.thermalShowLogo ?? false,
+   577→        logo: dbSettings.thermalLogo || '',
+   578→      };
+   579→      localStorage.setItem('fp_thermal_settings', JSON.stringify(synced));
+   580→    } catch { /* ignore */ }
+   581→  }, [dbSettings]);
+   582→
+   583→  // Initial fetch only — NOT dependent on fetchSettings to avoid re-fetch loops
+   584→  // when token changes (e.g., from AuthProvider rolling refresh)
+   585→  useEffect(() => {
+   586→    if (!hasFetchedOnce.current) {
+   587→      fetchSettings();
+   588→    }
+   589→  }, [fetchSettings]);
+   590→
+   591→  // Re-fetch on dataVersion change ONLY if user has no unsaved changes
+   592→  // This prevents the sync mechanism from overwriting user input in Settings
+   593→  const prevDataVersion = useRef(dataVersion);
+   594→  useEffect(() => {
+   595→    if (dataVersion !== undefined && dataVersion !== prevDataVersion.current && !isDirtyRef.current) {
+   596→      prevDataVersion.current = dataVersion;
+   597→      fetchSettings(true);  // silent=true for background sync
+   598→    } else if (dataVersion !== undefined && dataVersion !== prevDataVersion.current) {
+   599→      // Still update the ref even if we skip the fetch, so we don't accumulate stale refs
+   600→      prevDataVersion.current = dataVersion;
+   601→    }
+   602→  }, [dataVersion, fetchSettings]);
+   603→
+   604→  // API save helper
+   605→  const saveApi = async (section: string, data: Record<string, unknown>) => {
+   606→    setSavingSection(section);
+   607→    setSavedSection(null);
+   608→    if (saveTimer.current) clearTimeout(saveTimer.current);
+   609→    try {
+   610→      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+   611→      if (tokenRef.current) headers['Authorization'] = `Bearer ${tokenRef.current}`;
+   612→      const res = await fetch('/api/settings', {
+   613→        method: 'PUT', headers,
+   614→        body: JSON.stringify({ section, ...data }),
+   615→      });
+   616→      if (res.ok) {
+   617→        notify({ type: 'success', title: 'Saved', message: `${section} settings saved` });
+   618→        setSavedSection(section);
+   619→        // Clear dirty flag after successful save — data is now synced with server
+   620→        isDirtyRef.current = false;
+   621→        saveTimer.current = setTimeout(() => setSavedSection(null), 3000);
+   622→      } else {
+   623→        const errData = await res.json().catch(() => ({}));
+   624→        notify({ type: 'error', title: 'Error', message: `Failed to save ${section} settings — ${errData.error || `Status ${res.status}`}` });
+   625→      }
+   626→    } catch { notify({ type: 'error', title: 'Error', message: `Failed to save ${section} settings — Network error` }); }
+   627→    finally { setSavingSection(null); }
+   628→  };
+   629→
+   630→  const patch = (p: Partial<ThermalPrinterSettings>) => setThermal((prev) => {
+   631→    const updated = { ...prev, ...p };
+   632→    // Save to localStorage for fast local persistence
+   633→    try { localStorage.setItem('fp_thermal_settings', JSON.stringify(updated)); } catch { /* ignore */ }
+   634→    // Also sync to database so settings persist across devices
+   635→    // CRITICAL FIX: Only sync to DB after settings have been loaded from server.
+   636→    // Without this guard, a thermal patch could create a Settings row with only
+   637→    // thermal fields, causing shopName to fall back to Prisma default.
+   638→    if (tokenRef.current && dbSettings) {
+   639→      fetch('/api/settings', {
+   640→        method: 'PUT',
+   641→        headers: {
+   642→          'Content-Type': 'application/json',
+   643→          'Authorization': `Bearer ${tokenRef.current}`,
+   644→        },
+   645→        body: JSON.stringify({
+   646→          section: 'thermal',
+   647→          thermalPaperWidth: updated.paperWidth,
+   648→          thermalFontSize: updated.fontSize,
+   649→          thermalLineHeight: updated.lineHeight,
+   650→          thermalTextWeight: updated.textWeight,
+   651→          thermalDpi: updated.printDpi,
+   652→          thermalPrintQuality: updated.printQuality,
+   653→          thermalDithering: updated.dithering,
+   654→          thermalShowLogo: updated.showLogo,
+   655→          thermalLogo: updated.logo,
+   656→        }),
+   657→      }).catch(() => { /* background sync, ignore errors */ });
+   658→    }
+   659→    return updated;
+   660→  });
+   661→
+   662→  if (loading) {
+   663→    return (
+   664→      <div className="space-y-4">
+   665→        {[1, 2, 3].map((i) => (
+   666→          <Card key={i}><CardHeader><Skeleton className="h-6 w-48" /><Skeleton className="h-4 w-72" /></CardHeader>
+   667→            <div className="px-6 pb-6 space-y-4"><Skeleton className="h-9 w-full" /><Skeleton className="h-9 w-full" /></div>
+   668→          </Card>
+   669→        ))}
+   670→      </div>
+   671→    );
+   672→  }
+   673→
+   674→  if (loadError) {
+   675→    return (
+   676→      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
+   677→        <div className="flex size-16 items-center justify-center rounded-2xl bg-red-100 dark:bg-red-950/30">
+   678→          <AlertCircle className="size-8 text-red-500" />
+   679→        </div>
+   680→        <div className="text-center">
+   681→          <h3 className="text-lg font-semibold text-foreground">Failed to Load Settings</h3>
+   682→          <p className="text-sm text-muted-foreground mt-1">There was an error loading your settings. Please try again.</p>
+   683→        </div>
+   684→        <Button onClick={() => fetchSettings()} className="gap-2">
+   685→          <RefreshCw className="size-4" />
+   686→          Retry
+   687→        </Button>
+   688→      </div>
+   689→    );
+   690→  }
+   691→
+   692→  return (
+   693→    <div className="space-y-4">
+   694→      {/* Header */}
+   695→      {isReadOnly && <ReadOnlyBanner module="Settings" noAccess={noAccess} />}
+   696→      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 p-5 md:p-6 text-white shadow-lg shadow-green-600/20">
+   697→        <div className="pointer-events-none absolute -right-8 -top-8 size-36 rounded-full bg-white/10" />
+   698→        <div className="pointer-events-none absolute -bottom-6 -left-6 size-28 rounded-full bg-white/5" />
+   699→        <div className="relative z-10">
+   700→          <h2 className="text-xl md:text-2xl font-bold tracking-tight flex items-center gap-2"><Settings className="size-6" />Settings</h2>
+   701→          <p className="text-green-100 text-sm mt-1">Configure your business preferences and printer settings</p>
+   702→        </div>
+   703→      </div>
+   704→
+   705→      {/* ═══ Business Information ═══ */}
+   706→      <Section id="business" icon={<Store className="h-5 w-5" />} title="Business Information" desc="Your shop details and contact information" badge={<SavedBadge section="business" saved={savedSection} />}>
+   707→        <div className="space-y-4">
+   708→          <div className="grid gap-4 sm:grid-cols-2 border-l-2 border-l-green-400 pl-3">
+   709→            <div className="grid gap-2"><Label htmlFor="shop-name">Shop Name</Label>
+   710→              <Input id="shop-name" placeholder="Enter shop name" value={shopName} onChange={(e) => setShopName(e.target.value)} className={INPUT_CLS} /></div>
+   711→            <div className="grid gap-2"><Label htmlFor="auth-sig">Authorized Signatory</Label>
+   712→              <Input id="auth-sig" placeholder="Full name" value={signatory} onChange={(e) => setSignatory(e.target.value)} className={INPUT_CLS} /></div>
+   713→          </div>
+   714→          <div className="grid gap-4 sm:grid-cols-2 border-l-2 border-l-green-400 pl-3">
+   715→            <div className="grid gap-2"><Label htmlFor="email">Email</Label>
+   716→              <Input id="email" type="email" placeholder="shop@example.com" value={email} onChange={(e) => setEmail(e.target.value)} className={INPUT_CLS} /></div>
+   717→            <div className="grid gap-2"><Label htmlFor="phone">Phone Number</Label>
+   718→              <Input id="phone" type="tel" placeholder="+91 98765 43210" value={phone} onChange={(e) => setPhone(e.target.value)} className={INPUT_CLS} /></div>
+   719→          </div>
+   720→          <div className="grid gap-2 border-l-2 border-l-green-400 pl-3">
+   721→            <Label htmlFor="address">Address</Label>
+   722→            <Textarea id="address" placeholder="Full shop address" value={address} onChange={(e) => setAddress(e.target.value)} rows={3} className={INPUT_CLS} />
+   723→          </div>
+   724→          {/* Shop Logo Upload */}
+   725→          <div className="grid gap-2 border-l-2 border-l-green-400 pl-3">
+   726→            <Label>Shop Logo</Label>
+   727→            <div className="flex items-start gap-4">
+   728→              {shopLogo ? (
+   729→                <div className="relative group">
+   730→                  <img src={shopLogo} alt="Shop Logo" className="w-20 h-20 object-contain rounded-lg border border-muted bg-white" />
+   731→                  <button
+   732→                    type="button"
+   733→                    onClick={() => { markDirty(); setShopLogo(''); }}
+   734→                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+   735→                  >
+   736→                    <X className="size-3" />
+   737→                  </button>
+   738→                </div>
+   739→              ) : (
+   740→                <div className="w-20 h-20 rounded-lg border-2 border-dashed border-muted-foreground/30 flex items-center justify-center text-muted-foreground/50">
+   741→                  <ImageIcon className="size-6" />
+   742→                </div>
+   743→              )}
+   744→              <div className="flex-1 space-y-2">
+   745→                <label className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-input bg-background text-sm font-medium cursor-pointer hover:bg-accent hover:text-accent-foreground transition-colors">
+   746→                  <Upload className="size-4" />
+   747→                  Upload Logo
+   748→                  <input
+   749→                    type="file"
+   750→                    accept="image/*"
+   751→                    className="hidden"
+   752→                    onChange={(e) => {
+   753→                      const file = e.target.files?.[0];
+   754→                      if (!file) return;
+   755→                      if (file.size > 2 * 1024 * 1024) { alert('Logo must be under 2MB'); return; }
+   756→                      const reader = new FileReader();
+   757→                      reader.onload = () => { markDirty(); setShopLogo(reader.result as string); };
+   758→                      reader.readAsDataURL(file);
+   759→                    }}
+   760→                  />
+   761→                </label>
+   762→                <p className="text-xs text-muted-foreground">PNG, JPG or SVG. Max 2MB. Appears on all printed documents.</p>
+   763→              </div>
+   764→            </div>
+   765→          </div>
+   766→          <SaveBtn section="business" label="Save Business Info" onClick={() => saveApi('business', { shopName, shopAddress: address, shopEmail: email, shopPhone: phone, authorizedSignatory: signatory, shopLogo })} saving={savingSection} saved={savedSection} disabled={!canEdit} />
+   767→        </div>
+   768→      </Section>
+   769→
+   770→      {/* ═══ Feature Management ═══ */}
+   771→      <Divider icon={<Zap className="size-3" />} label="Modules" />
+   772→      <Section id="features" icon={<Zap className="h-5 w-5" />} title="Feature & Module Management" desc="Enable or disable category-specific features for your business">
+   773→        <div className="space-y-4">
+   774→          {/* Category badge */}
+   775→          {featureState.category && (
+   776→            <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 border">
+   777→              <Zap className="size-4 text-amber-500" />
+   778→              <span className="text-sm font-medium">Business Category:</span>
+   779→              <Badge className="bg-amber-100 text-amber-700 border-amber-200">{getCategoryLabel(featureState.category)}</Badge>
+   780→            </div>
+   781→          )}
+   782→
+   783→          {featureState.loading ? (
+   784→            <div className="flex items-center justify-center py-8">
+   785→              <Loader2 className="size-6 animate-spin text-muted-foreground" />
+   786→            </div>
+   787→          ) : Object.keys(featureState.grouped).length === 0 ? (
+   788→            <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+   789→              <Zap className="size-8 mb-2 opacity-40" />
+   790→              <p className="text-sm">No features configured for your business</p>
+   791→              <p className="text-xs mt-1">Contact your super admin to set up category features</p>
+   792→            </div>
+   793→          ) : (
+   794→            <div className="space-y-4">
+   795→              {Object.entries(featureState.grouped).map(([module, features]) => (
+   796→                <div key={module} className="space-y-2">
+   797→                  <h4 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+   798→                    <Badge variant="outline" className={MODULE_COLORS[module] || 'text-gray-600'}>{module}</Badge>
+   799→                    <span>{features.length} feature{features.length !== 1 ? 's' : ''}</span>
+   800→                  </h4>
+   801→                  <div className="grid gap-2">
+   802→                    {features.map((feature) => (
+   803→                      <div key={feature.id} className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-muted/30 transition-colors">
+   804→                        <div className="flex-1 min-w-0 mr-3">
+   805→                          <p className="text-sm font-medium">{feature.label}</p>
+   806→                          {feature.description && (
+   807→                            <p className="text-xs text-muted-foreground mt-0.5 truncate">{feature.description}</p>
+   808→                          )}
+   809→                        </div>
+   810→                        <Switch
+   811→                          checked={feature.enabled}
+   812→                          onCheckedChange={(enabled) => handleToggleFeature(feature.id, enabled)}
+   813→                          disabled={currentUser?.role !== 'Admin'}
+   814→                        />
+   815→                      </div>
+   816→                    ))}
+   817→                  </div>
+   818→                </div>
+   819→              ))}
+   820→            </div>
+   821→          )}
+   822→        </div>
+   823→      </Section>
+   824→
+   825→      {/* ═══ App Settings ═══ */}
+   826→      <Divider icon={<Smartphone className="size-3" />} label="App" />
+   827→
+   828→      {/* ═══ Auto Rotate ═══ */}
+   829→      <Section id="auto-rotate" icon={<RotateCw className="h-5 w-5" />} title="Auto Rotate" desc="Control screen auto-rotation on mobile devices" badge={<SavedBadge section="autoRotate" saved={savedSection} />}>
+   830→        <div className="space-y-4">
+   831→          <div className="flex items-center justify-between border-l-2 border-l-green-400 pl-3">
+   832→            <div className="flex items-start gap-3">
+   833→              <div className="flex size-9 items-center justify-center rounded-lg bg-green-100 text-green-600 shrink-0 mt-0.5">
+   834→                <Smartphone className="size-4" />
+   835→              </div>
+   836→              <div>
+   837→                <Label className="text-sm font-medium">Auto Rotate</Label>
+   838→                <p className="text-xs text-muted-foreground mt-0.5">
+   839→                  Enable screen auto-rotation while using the app on mobile. When off, the screen stays in portrait mode.
+   840→                </p>
+   841→              </div>
+   842→            </div>
+   843→            <Switch
+   844→              checked={autoRotate}
+   845→              onCheckedChange={setAutoRotate}
+   846→            />
+   847→          </div>
+   848→          <div className={`rounded-lg border-2 p-3 transition-all duration-200 ${
+   849→            autoRotate
+   850→              ? 'border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-950/20'
+   851→              : 'border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/20'
+   852→          }`}>
+   853→            <div className="flex items-center gap-2">
+   854→              <RotateCw className={`size-4 ${autoRotate ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'}`} />
+   855→              <p className="text-xs font-medium">
+   856→                {autoRotate
+   857→                  ? 'Screen will rotate automatically based on device orientation'
+   858→                  : 'Portrait mode preferred — screen stays upright'}
+   859→              </p>
+   860→            </div>
+   861→          </div>
+   862→          <SaveBtn section="autoRotate" label="Save Rotation Setting" onClick={() => { saveApi('autoRotate', { autoRotate }); try { localStorage.setItem('fp_auto_rotate', String(autoRotate)); } catch {} }} saving={savingSection} saved={savedSection} disabled={!canEdit} />
+   863→        </div>
+   864→      </Section>
+   865→
+   866→      {/* ═══ Billing Configuration ═══ */}
+   867→      <Divider icon={<FileText className="size-3" />} label="Billing" />
+   868→
+   869→      {/* GST */}
+   870→      <Section id="gst" icon={<FileText className="h-5 w-5" />} title="GST & Tax Configuration" desc="Configure GST modes, rates, and tax invoice settings" badge={<SavedBadge section="gst" saved={savedSection} />}>
+   871→        <div className="space-y-4">
+   872→          {/* ── Mode Selector ── */}
+   873→          <div className="grid gap-3 sm:grid-cols-2">
+   874→            {/* Full Mode Card */}
+   875→            <div
+   876→              role="button"
+   877→              tabIndex={0}
+   878→              onClick={() => { setGstFullMode(!gstFullMode); if (!gstFullMode) setGstSimpleMode(false); if (!gstFullMode) setGstEnabled(true); }}
+   879→              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setGstFullMode(!gstFullMode); if (!gstFullMode) setGstSimpleMode(false); if (!gstFullMode) setGstEnabled(true); } }}
+   880→              className={`relative text-left rounded-xl border-2 p-4 transition-all duration-200 cursor-pointer ${
+   881→                gstFullMode
+   882→                  ? 'border-green-400 bg-green-50/60 dark:border-green-600 dark:bg-green-950/30 shadow-md shadow-green-600/10'
+   883→                  : 'border-muted-foreground/20 hover:border-green-200 bg-muted/20'
+   884→              }`}
+   885→            >
+   886→              <div className="flex items-center justify-between mb-2">
+   887→                <div className="flex items-center gap-2">
+   888→                  <div className={`flex size-8 items-center justify-center rounded-lg ${gstFullMode ? 'bg-green-500 text-white' : 'bg-muted text-muted-foreground'}`}>
+   889→                    <FileText className="size-4" />
+   890→                  </div>
+   891→                  <div>
+   892→                    <p className="text-sm font-semibold">GST Details (Full Mode)</p>
+   893→                    <p className="text-[11px] text-muted-foreground">Tax Invoice with GSTIN</p>
+   894→                  </div>
+   895→                </div>
+   896→                <Switch checked={gstFullMode} onCheckedChange={(v) => { setGstFullMode(v); if (v) { setGstSimpleMode(false); setGstEnabled(true); } }} />
+   897→              </div>
+   898→              {gstFullMode && (
+   899→                <div className="mt-2 flex flex-wrap gap-1">
+   900→                  <Badge className="bg-green-100 text-green-700 border-green-200 text-[10px]">GSTIN on Invoice</Badge>
+   901→                  <Badge className="bg-green-100 text-green-700 border-green-200 text-[10px]">Business Address</Badge>
+   902→                  <Badge className="bg-green-100 text-green-700 border-green-200 text-[10px]">State</Badge>
+   903→                </div>
+   904→              )}
+   905→            </div>
+   906→
+   907→            {/* Simple Mode Card */}
+   908→            <div
+   909→              role="button"
+   910→              tabIndex={0}
+   911→              onClick={() => { setGstSimpleMode(!gstSimpleMode); if (!gstSimpleMode) setGstFullMode(false); if (!gstSimpleMode) setGstEnabled(true); }}
+   912→              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setGstSimpleMode(!gstSimpleMode); if (!gstSimpleMode) setGstFullMode(false); if (!gstSimpleMode) setGstEnabled(true); } }}
+   913→              className={`relative text-left rounded-xl border-2 p-4 transition-all duration-200 cursor-pointer ${
+   914→                gstSimpleMode
+   915→                  ? 'border-amber-400 bg-amber-50/60 dark:border-amber-600 dark:bg-amber-950/30 shadow-md shadow-amber-600/10'
+   916→                  : 'border-muted-foreground/20 hover:border-amber-200 bg-muted/20'
+   917→              }`}
+   918→            >
+   919→              <div className="flex items-center justify-between mb-2">
+   920→                <div className="flex items-center gap-2">
+   921→                  <div className={`flex size-8 items-center justify-center rounded-lg ${gstSimpleMode ? 'bg-amber-500 text-white' : 'bg-muted text-muted-foreground'}`}>
+   922→                    <Receipt className="size-4" />
+   923→                  </div>
+   924→                  <div>
+   925→                    <p className="text-sm font-semibold">GST Only (Simple Mode)</p>
+   926→                    <p className="text-[11px] text-muted-foreground">GST amount only, no details</p>
+   927→                  </div>
+   928→                </div>
+   929→                <Switch checked={gstSimpleMode} onCheckedChange={(v) => { setGstSimpleMode(v); if (v) { setGstFullMode(false); setGstEnabled(true); } }} />
+   930→              </div>
+   931→              {gstSimpleMode && (
+   932→                <div className="mt-2 flex flex-wrap gap-1">
+   933→                  <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-[10px]">GST Amount Shown</Badge>
+   934→                  <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-[10px]">No GSTIN</Badge>
+   935→                  <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-[10px]">No Address</Badge>
+   936→                </div>
+   937→              )}
+   938→            </div>
+   939→          </div>
+   940→
+   941→          {/* Info Banner when neither mode selected */}
+   942→          {!gstFullMode && !gstSimpleMode && (
+   943→            <div className="rounded-lg bg-gray-50 dark:bg-gray-900/30 border border-dashed border-muted-foreground/25 p-3 text-center">
+   944→              <p className="text-xs text-muted-foreground">⚠️ No GST mode selected — GST will not be applied to invoices</p>
+   945→            </div>
+   946→          )}
+   947→
+   948→          {/* ── GST Rate (shared by both modes) ── */}
+   949→          {(gstFullMode || gstSimpleMode) && (
+   950→            <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
+   951→              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">GST Rate</p>
+   952→              <div className="grid gap-4 sm:grid-cols-2">
+   953→                <div className="grid gap-2">
+   954→                  <Label htmlFor="gst-rate">GST Rate (%)</Label>
+   955→                  <Input id="gst-rate" type="number" min="0" max="100" step="0.5" value={gstRate} onChange={(e) => setGstRate(parseFloat(e.target.value) || 0)} className={INPUT_CLS} />
+   956→                </div>
+   957→                <div className="flex items-end">
+   958→                  <div className="rounded-lg border bg-white dark:bg-gray-900 p-3 w-full">
+   959→                    <p className="text-xs text-muted-foreground mb-1">Tax Split (CGST + SGST)</p>
+   960→                    <div className="flex items-center gap-2 text-sm font-medium">
+   961→                      <span className="text-green-600">CGST: {(gstRate / 2).toFixed(1)}%</span>
+   962→                      <span className="text-muted-foreground">+</span>
+   963→                      <span className="text-green-600">SGST: {(gstRate / 2).toFixed(1)}%</span>
+   964→                      <span className="text-muted-foreground">=</span>
+   965→                      <span className="font-bold text-green-700">{gstRate}%</span>
+   966→                    </div>
+   967→                  </div>
+   968→                </div>
+   969→              </div>
+   970→              <div className="flex flex-wrap gap-2">
+   971→                {[5, 12, 18, 28].map((rate) => (
+   972→                  <button key={rate} type="button" onClick={() => setGstRate(rate)}
+   973→                    className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-all ${
+   974→                      gstRate === rate
+   975→                        ? 'bg-green-600 text-white border-green-600'
+   976→                        : 'border-muted-foreground/20 text-muted-foreground hover:border-green-300 hover:bg-green-50'
+   977→                    }`}
+   978→                  >{rate}%</button>
+   979→                ))}
+   980→              </div>
+   981→            </div>
+   982→          )}
+   983→
+   984→          {/* ── Full Mode: GST Details Fields ── */}
+   985→          {gstFullMode && (
+   986→            <div className="space-y-3">
+   987→              <p className="text-xs font-semibold text-green-600 uppercase tracking-wider flex items-center gap-1.5">
+   988→                <FileText className="size-3" />Full Mode — GST Invoice Details
+   989→              </p>
+   990→              <p className="text-[11px] text-muted-foreground -mt-2">These details will appear on every tax invoice when Full Mode is active</p>
+   991→
+   992→              {/* GST Number */}
+   993→              <div className={`rounded-xl border-2 p-4 transition-all duration-200 ${gstNumber ? 'border-green-300 bg-green-50/50 dark:border-green-800 dark:bg-green-950/20' : 'border-dashed border-muted-foreground/30 hover:border-green-300 bg-muted/20'}`}>
+   994→                <div className="flex items-center justify-between mb-2">
+   995→                  <Label htmlFor="gst-number" className="text-sm font-semibold">GST Number (GSTIN)</Label>
+   996→                  {gstNumber && gstNumber.length === 15 && <Badge className="bg-green-100 text-green-700 border-green-200 gap-1 text-[10px]"><Check className="size-3" />Valid</Badge>}
+   997→                </div>
+   998→                <div className="flex gap-2">
+   999→                  <Input id="gst-number" placeholder="e.g. 22AAAAA0000A1Z5" value={gstNumber}
+  1000→                    onChange={(e) => { const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); setGstNumber(val); }}
+  1001→                    maxLength={15} className={`flex-1 font-mono tracking-wider text-sm ${INPUT_CLS}`} />
+  1002→                  {gstNumber && (
+  1003→                    <Button variant="outline" size="sm" onClick={() => { setGstNumber(''); notify({ type: 'info', title: 'Cleared', message: 'GST number cleared' }); }} className="text-xs shrink-0 gap-1"><X className="size-3" />Clear</Button>
+  1004→                  )}
+  1005→                </div>
+  1006→                {gstNumber.length > 0 && gstNumber.length < 15 && (
+  1007→                  <p className="text-xs text-amber-600 mt-2 flex items-center gap-1"><AlertTriangle className="size-3" />{gstNumber.length}/15 digits — {15 - gstNumber.length} more needed</p>
+  1008→                )}
+  1009→              </div>
+  1010→
+  1011→              {/* State */}
+  1012→              <div className="grid gap-2">
+  1013→                <Label htmlFor="gst-state" className="text-sm font-medium">State</Label>
+  1014→                <Input id="gst-state" placeholder="e.g. Maharashtra" value={gstState}
+  1015→                  onChange={(e) => setGstState(e.target.value)} className={INPUT_CLS} />
+  1016→                <p className="text-[11px] text-muted-foreground">Required for inter-state and intra-state GST classification</p>
+  1017→              </div>
+  1018→
+  1019→              {/* Info: Uses existing business info */}
+  1020→              <div className="rounded-lg border border-green-200 bg-green-50/50 dark:border-green-800 dark:bg-green-950/20 p-3">
+  1021→                <p className="text-xs font-medium text-green-700 dark:text-green-400 mb-1">ℹ️ Business Details on Invoice</p>
+  1022→                <p className="text-[11px] text-green-600 dark:text-green-500">
+  1023→                  Full Mode uses your <strong>Business Name</strong>, <strong>Address</strong>, and <strong>Phone</strong> from the Business Information section above. Make sure those are filled correctly.
+  1024→                </p>
+  1025→              </div>
+  1026→            </div>
+  1027→          )}
+  1028→
+  1029→          {/* ── Simple Mode Info ── */}
+  1030→          {gstSimpleMode && (
+  1031→            <div className="rounded-lg border border-amber-200 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/20 p-4">
+  1032→              <div className="flex items-start gap-3">
+  1033→                <div className="flex size-8 items-center justify-center rounded-lg bg-amber-100 dark:bg-amber-900/50 shrink-0 mt-0.5">
+  1034→                  <Receipt className="size-4 text-amber-600 dark:text-amber-400" />
+  1035→                </div>
+  1036→                <div>
+  1037→                  <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">Simple Mode Active</p>
+  1038→                  <p className="text-[11px] text-amber-600 dark:text-amber-500 mt-1">
+  1039→                    Only GST percentage and amount will be shown on invoices. <strong>No GSTIN, address, state, or business details</strong> will be displayed. Suitable for businesses that don't need a formal tax invoice.
+  1040→                  </p>
+  1041→                </div>
+  1042→              </div>
+  1043→            </div>
+  1044→          )}
+  1045→
+  1046→          <SaveBtn
+  1047→            section="gst"
+  1048→            label="Save GST Settings"
+  1049→            onClick={() => {
+  1050→              // Mutually exclusive: full mode overrides simple mode
+  1051→              const effectiveEnabled = gstFullMode || gstSimpleMode;
+  1052→              saveApi('gst', {
+  1053→                enableGst: effectiveEnabled,
+  1054→                gstFullMode,
+  1055→                gstSimpleMode,
+  1056→                gstRate,
+  1057→                gstNumber,
+  1058→                gstState,
+  1059→              });
+  1060→            }}
+  1061→            saving={savingSection}
+  1062→            saved={savedSection}
+  1063→            disabled={!canEdit}
+  1064→          />
+  1065→        </div>
+  1066→      </Section>
+  1067→
+  1068→      {/* Delivery */}
+  1069→      <Section id="delivery" icon={<Receipt className="h-5 w-5" />} title="Delivery Charge" desc="Enable or disable delivery charge and set the default amount" badge={<SavedBadge section="delivery" saved={savedSection} />}>
+  1070→        <div className="space-y-4">
+  1071→          {/* Enable/Disable Toggle */}
+  1072→          <div className="flex items-center justify-between border-l-2 border-l-green-400 pl-3">
+  1073→            <div>
+  1074→              <Label className="text-sm font-medium">Enable Delivery Charge</Label>
+  1075→              <p className="text-xs text-muted-foreground">Show delivery charge option on the Bill Generate page</p>
+  1076→            </div>
+  1077→            <Switch
+  1078→              checked={enableDelivery}
+  1079→              onCheckedChange={setEnableDelivery}
+  1080→            />
+  1081→          </div>
+  1082→
+  1083→          {enableDelivery && (
+  1084→            <div className="grid gap-2 sm:max-w-xs border-l-2 border-l-green-400 pl-3">
+  1085→              <Label htmlFor="delivery-amount">Default Delivery Charge (₹)</Label>
+  1086→              <Input id="delivery-amount" type="number" min="0" step="1" value={deliveryCharge} onChange={(e) => setDeliveryCharge(parseFloat(e.target.value) || 0)} className={INPUT_CLS} />
+  1087→              <p className="text-xs text-muted-foreground">Set to 0 for free delivery</p>
+  1088→            </div>
+  1089→          )}
+  1090→          <SaveBtn section="delivery" label="Save Delivery Charge" onClick={() => saveApi('delivery', { enableDelivery, deliveryCharge })} saving={savingSection} saved={savedSection} disabled={!canEdit} />
+  1091→        </div>
+  1092→      </Section>
+  1093→
+  1094→      {/* ═══ Bill Number Generator ═══ */}
+  1095→      <Divider icon={<Receipt className="size-3" />} label="Billing" />
+  1096→
+  1097→      <Section id="bill-number" icon={<FileText className="h-5 w-5" />} title="Bill Number Generator" desc="Auto-generate sequential bill numbers with optional prefix" badge={<SavedBadge section="billNumber" saved={savedSection} />}>
+  1098→        <div className="space-y-5">
+  1099→          {/* Toggle */}
+  1100→          <div className="flex items-center justify-between border-l-2 border-l-green-400 pl-3">
+  1101→            <div>
+  1102→              <Label className="text-sm font-medium">Auto-Generate Bill Numbers</Label>
+  1103→              <p className="text-xs text-muted-foreground">Automatically generate sequential numbers for new bills</p>
+  1104→            </div>
+  1105→            <Switch
+  1106→              checked={billAutoGenerate}
+  1107→              onCheckedChange={setBillAutoGenerate}
+  1108→            />
+  1109→          </div>
+  1110→
+  1111→          {billAutoGenerate && (
+  1112→            <div className="space-y-4">
+  1113→              {/* Prefix */}
+  1114→              <div className="grid gap-2 sm:max-w-xs border-l-2 border-l-green-400 pl-3">
+  1115→                <Label htmlFor="bill-prefix">Bill Number Prefix (optional)</Label>
+  1116→                <Input
+  1117→                  id="bill-prefix"
+  1118→                  placeholder="e.g. A, B, INV, FP"
+  1119→                  value={billPrefix}
+  1120→                  onChange={(e) => {
+  1121→                    // Only allow English letters
+  1122→                    const val = e.target.value.replace(/[^a-zA-Z]/g, '');
+  1123→                    setBillPrefix(val.toUpperCase());
+  1124→                  }}
+  1125→                  maxLength={6}
+  1126→                  className={INPUT_CLS}
+  1127→                />
+  1128→                <p className="text-xs text-muted-foreground">English letters only. Leave empty for no prefix.</p>
+  1129→              </div>
+  1130→
+  1131→              {/* Start Number */}
+  1132→              <div className="grid gap-2 sm:max-w-xs border-l-2 border-l-green-400 pl-3">
+  1133→                <Label htmlFor="bill-start-number">Starting Number</Label>
+  1134→                <Input
+  1135→                  id="bill-start-number"
+  1136→                  type="number"
+  1137→                  min={1}
+  1138→                  max={9999}
+  1139→                  value={billStartNumber}
+  1140→                  onChange={(e) => setBillStartNumber(Math.max(1, parseInt(e.target.value) || 1))}
+  1141→                  className={INPUT_CLS}
+  1142→                />
+  1143→                <p className="text-xs text-muted-foreground">Bills will start from this number</p>
+  1144→              </div>
+  1145→
+  1146→              {/* Preview */}
+  1147→              <div className="rounded-lg border bg-muted/30 p-4">
+  1148→                <p className="text-xs text-muted-foreground mb-2">Preview of bill number format:</p>
+  1149→                <div className="flex items-center gap-3">
+  1150→                  <span className="text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400">
+  1151→                    {billPrefix}{String(billCurrentNumber === 0 ? billStartNumber : billCurrentNumber + 1).padStart(4, '0')}
+  1152→                  </span>
+  1153→                  <span className="text-xs text-muted-foreground">→ next bill</span>
+  1154→                </div>
+  1155→                <div className="flex gap-2 mt-2">
+  1156→                  <span className="text-xs font-mono bg-muted px-2 py-1 rounded">{billPrefix}{String(billCurrentNumber === 0 ? billStartNumber : billCurrentNumber + 1).padStart(4, '0')}</span>
+  1157→                  <span className="text-xs font-mono bg-muted px-2 py-1 rounded">{billPrefix}{String(billCurrentNumber === 0 ? billStartNumber + 1 : billCurrentNumber + 2).padStart(4, '0')}</span>
+  1158→                  <span className="text-xs font-mono bg-muted px-2 py-1 rounded">{billPrefix}{String(billCurrentNumber === 0 ? billStartNumber + 2 : billCurrentNumber + 3).padStart(4, '0')}</span>
+  1159→                </div>
+  1160→              </div>
+  1161→
+  1162→              {/* Current Counter Info */}
+  1163→              {billCurrentNumber > 0 && (
+  1164→                <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+  1165→                  <div className="flex items-center gap-2">
+  1166→                    <FileText className="size-3" />
+  1167→                    <span>Last generated bill number: <strong className="font-mono">{billPrefix}{String(billCurrentNumber).padStart(4, '0')}</strong></span>
+  1168→                  </div>
+  1169→                  <Button
+  1170→                    variant="ghost"
+  1171→                    size="sm"
+  1172→                    className="h-7 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
+  1173→                    onClick={() => {
+  1174→                      if (confirm('Reset bill counter to 0? The next bill will start from the start number.')) {
+  1175→                        setBillCurrentNumberRaw(0);
+  1176→                        saveApi('billNumber', { billCurrentNumber: 0 });
+  1177→                      }
+  1178→                    }}
+  1179→                    disabled={!canEdit}
+  1180→                  >
+  1181→                    Reset Counter
+  1182→                  </Button>
+  1183→                </div>
+  1184→              )}
+  1185→            </div>
+  1186→          )}
+  1187→
+  1188→          <SaveBtn section="billNumber" label="Save Bill Number Settings" onClick={() => saveApi('billNumber', { billAutoGenerate, billPrefix, billStartNumber })} saving={savingSection} saved={savedSection} disabled={!canEdit} />
+  1189→        </div>
+  1190→      </Section>
+  1191→
+  1192→      {/* ═══ Thermal Printer Settings ═══ */}
+  1193→      <Divider icon={<Printer className="size-3" />} label="Printing" />
+  1194→
+  1195→      <Section id="printer" icon={<Printer className="h-5 w-5" />} title="Thermal Printer Settings" desc="Configure receipt printing — settings apply to all bill prints & reprints" open={true}
+  1196→        badge={thermalSaved ? <Badge className="bg-green-100 text-green-700 border-green-200 text-[10px] gap-0.5"><Check className="size-3" />Saved</Badge> : undefined}>
+  1197→        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+  1198→          <div className="space-y-5">
+  1199→            {/* ── Text Settings Card ── */}
+  1200→            <div className="rounded-xl border bg-card p-4 space-y-4">
+  1201→              <h4 className="text-sm font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-2">
+  1202→                <Printer className="size-4" />Text Settings
+  1203→              </h4>
+  1204→
+  1205→              {/* Font Size Slider */}
+  1206→              <div className="grid gap-2">
+  1207→                <div className="flex items-center justify-between">
+  1208→                  <Label className="text-sm">Font Size</Label>
+  1209→                  <Badge variant="outline" className="font-mono text-xs">{thermal.fontSize}px</Badge>
+  1210→                </div>
+  1211→                <input
+  1212→                  type="range" min="8" max="18" step="1" value={thermal.fontSize}
+  1213→                  onChange={(e) => patch({ fontSize: parseInt(e.target.value) })}
+  1214→                  className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-emerald-600 bg-muted"
+  1215→                />
+  1216→                <div className="flex justify-between text-[10px] text-muted-foreground"><span>8px</span><span>18px</span></div>
+  1217→              </div>
+  1218→
+  1219→              {/* Line Height Slider */}
+  1220→              <div className="grid gap-2">
+  1221→                <div className="flex items-center justify-between">
+  1222→                  <Label className="text-sm">Line Height</Label>
+  1223→                  <Badge variant="outline" className="font-mono text-xs">{thermal.lineHeight.toFixed(1)}x</Badge>
+  1224→                </div>
+  1225→                <input
+  1226→                  type="range" min="1.0" max="2.0" step="0.1" value={thermal.lineHeight}
+  1227→                  onChange={(e) => patch({ lineHeight: parseFloat(e.target.value) })}
+  1228→                  className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-emerald-600 bg-muted"
+  1229→                />
+  1230→                <div className="flex justify-between text-[10px] text-muted-foreground"><span>1.0</span><span>2.0</span></div>
+  1231→              </div>
+  1232→
+  1233→              {/* Text Weight */}
+  1234→              <div className="grid gap-2">
+  1235→                <Label className="text-sm">Text Weight</Label>
+  1236→                <div className="flex gap-3">
+  1237→                  {(['Light', 'Normal', 'Bold'] as const).map((w) => (
+  1238→                    <label key={w} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border cursor-pointer transition-all text-sm ${
+  1239→                      thermal.textWeight === w ? 'bg-emerald-600 text-white border-emerald-600 font-semibold' : 'border-muted hover:bg-muted/50'
+  1240→                    }`}>
+  1241→                      <input
+  1242→                        type="radio" name="textWeight" value={w}
+  1243→                        checked={thermal.textWeight === w}
+  1244→                        onChange={() => patch({ textWeight: w })}
+  1245→                        className="sr-only"
+  1246→                      />
+  1247→                      {w}
+  1248→                    </label>
+  1249→                  ))}
+  1250→                </div>
+  1251→              </div>
+  1252→
+  1253→              {/* DPI Resolution */}
+  1254→              <div className="grid gap-2">
+  1255→                <Label className="text-sm">DPI Resolution</Label>
+  1256→                <div className="flex gap-3">
+  1257→                  {([203, 300] as const).map((dpi) => (
+  1258→                    <label key={dpi} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border cursor-pointer transition-all text-sm ${
+  1259→                      thermal.printDpi === dpi ? 'bg-emerald-600 text-white border-emerald-600 font-semibold' : 'border-muted hover:bg-muted/50'
+  1260→                    }`}>
+  1261→                      <input
+  1262→                        type="radio" name="dpi" value={dpi}
+  1263→                        checked={thermal.printDpi === dpi}
+  1264→                        onChange={() => patch({ printDpi: dpi })}
+  1265→                        className="sr-only"
+  1266→                      />
+  1267→                      {dpi} DPI{dpi === 300 ? ' (High)' : ''}
+  1268→                    </label>
+  1269→                  ))}
+  1270→                </div>
+  1271→              </div>
+  1272→
+  1273→              {/* Paper Width */}
+  1274→              <div className="grid gap-2">
+  1275→                <Label className="text-sm">Paper Width</Label>
+  1276→                <div className="flex gap-3">
+  1277→                  {(['58mm', '80mm'] as const).map((pw) => (
+  1278→                    <label key={pw} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border cursor-pointer transition-all text-sm ${
+  1279→                      thermal.paperWidth === pw ? 'bg-emerald-600 text-white border-emerald-600 font-semibold' : 'border-muted hover:bg-muted/50'
+  1280→                    }`}>
+  1281→                      <input
+  1282→                        type="radio" name="paperWidth" value={pw}
+  1283→                        checked={thermal.paperWidth === pw}
+  1284→                        onChange={() => patch({ paperWidth: pw })}
+  1285→                        className="sr-only"
+  1286→                      />
+  1287→                      {pw}
+  1288→                    </label>
+  1289→                  ))}
+  1290→                </div>
+  1291→              </div>
+  1292→            </div>
+  1293→
+  1294→            {/* ── Squeeze Print Card ── */}
+  1295→            <div className="rounded-xl border bg-card p-4 space-y-4">
+  1296→              <h4 className="text-sm font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-2">
+  1297→                <Printer className="size-4" />Squeeze Print
+  1298→              </h4>
+  1299→
+  1300→              {/* Print Quality */}
+  1301→              <div className="grid gap-2">
+  1302→                <Label className="text-sm">Print Quality</Label>
+  1303→                <div className="flex gap-3">
+  1304→                  {(['Dark', 'Light'] as const).map((q) => (
+  1305→                    <label key={q} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border cursor-pointer transition-all text-sm ${
+  1306→                      thermal.printQuality === q ? 'bg-emerald-600 text-white border-emerald-600 font-semibold' : 'border-muted hover:bg-muted/50'
+  1307→                    }`}>
+  1308→                      <input
+  1309→                        type="radio" name="printQuality" value={q}
+  1310→                        checked={thermal.printQuality === q}
+  1311→                        onChange={() => patch({ printQuality: q })}
+  1312→                        className="sr-only"
+  1313→                      />
+  1314→                      {q}
+  1315→                    </label>
+  1316→                  ))}
+  1317→                </div>
+  1318→              </div>
+  1319→
+  1320→              {/* Dithering */}
+  1321→              <div className="grid gap-2">
+  1322→                <Label className="text-sm">Dithering</Label>
+  1323→                <div className="flex flex-col gap-2">
+  1324→                  {(['None', 'Black & White', 'Floyd Steinberg'] as const).map((d) => (
+  1325→                    <label key={d} className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-all text-sm ${
+  1326→                      thermal.dithering === d ? 'bg-emerald-600 text-white border-emerald-600 font-semibold' : 'border-muted hover:bg-muted/50'
+  1327→                    }`}>
+  1328→                      <input
+  1329→                        type="radio" name="dithering" value={d}
+  1330→                        checked={thermal.dithering === d}
+  1331→                        onChange={() => patch({ dithering: d })}
+  1332→                        className="sr-only"
+  1333→                      />
+  1334→                      {d}
+  1335→                    </label>
+  1336→                  ))}
+  1337→                </div>
+  1338→              </div>
+  1339→            </div>
+  1340→
+  1341→            {/* ── Logo Section ── */}
+  1342→            <div className="rounded-xl border bg-card p-4 space-y-3">
+  1343→              <h4 className="text-sm font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-2">
+  1344→                <ImageIcon className="size-4" />Receipt Logo
+  1345→              </h4>
+  1346→              <div className="flex items-center justify-between rounded-lg border p-3">
+  1347→                <div>
+  1348→                  <p className="text-sm font-medium">Show Logo on Receipt</p>
+  1349→                  <p className="text-[11px] text-muted-foreground">Logo displays at top with full width</p>
+  1350→                </div>
+  1351→                <Switch
+  1352→                  checked={thermal.showLogo}
+  1353→                  onCheckedChange={(checked) => patch({ showLogo: checked })}
+  1354→                  aria-label="Toggle receipt logo"
+  1355→                />
+  1356→              </div>
+  1357→              {thermal.showLogo && (
+  1358→                <div className="space-y-3">
+  1359→                  <input
+  1360→                    ref={logoInputRef}
+  1361→                    type="file"
+  1362→                    accept="image/*"
+  1363→                    className="hidden"
+  1364→                    onChange={(e) => {
+  1365→                      const file = e.target.files?.[0];
+  1366→                      if (!file) return;
+  1367→                      if (file.size > 200 * 1024) {
+  1368→                        notify({ type: 'error', title: 'Error', message: 'Logo too large — Maximum 200KB' });
+  1369→                        if (logoInputRef.current) logoInputRef.current.value = '';
+  1370→                        return;
+  1371→                      }
+  1372→                      const reader = new FileReader();
+  1373→                      reader.onload = (ev) => {
+  1374→                        const img = new Image();
+  1375→                        img.onload = () => {
+  1376→                          const canvas = document.createElement('canvas');
+  1377→                          const MAX_W = 280, MAX_H = 80;
+  1378→                          let w = img.width, h = img.height;
+  1379→                          if (w > MAX_W) { h = (h * MAX_W) / w; w = MAX_W; }
+  1380→                          if (h > MAX_H) { w = (w * MAX_H) / h; h = MAX_H; }
+  1381→                          canvas.width = w; canvas.height = h;
+  1382→                          canvas.getContext('2d')?.drawImage(img, 0, 0, w, h);
+  1383→                          patch({ logo: canvas.toDataURL('image/png', 0.7) });
+  1384→                          notify({ type: 'success', title: 'Uploaded', message: 'Logo uploaded' });
+  1385→                        };
+  1386→                        img.src = ev.target?.result as string;
+  1387→                      };
+  1388→                      reader.readAsDataURL(file);
+  1389→                    }}
+  1390→                  />
+  1391→                  <div className="flex items-center gap-2">
+  1392→                    <Button variant="outline" size="sm" onClick={() => logoInputRef.current?.click()} className="gap-1.5">
+  1393→                      <Upload className="size-3.5" />{thermal.logo ? 'Change' : 'Upload'}
+  1394→                    </Button>
+  1395→                    {thermal.logo && (
+  1396→                      <Button variant="ghost" size="sm" onClick={() => { patch({ logo: '' }); notify({ type: 'info', title: 'Removed', message: 'Logo removed' }); }}
+  1397→                        className="gap-1.5 text-red-500 hover:text-red-600 hover:bg-red-50">
+  1398→                        <Trash2 className="size-3.5" />Remove
+  1399→                      </Button>
+  1400→                    )}
+  1401→                  </div>
+  1402→                  {thermal.logo && (
+  1403→                    <div className="flex justify-center rounded-lg border border-dashed bg-white p-2">
+  1404→                      <img src={thermal.logo} alt="Logo" className="w-full max-w-[260px] max-h-[60px] object-contain" />
+  1405→                    </div>
+  1406→                  )}
+  1407→                </div>
+  1408→              )}
+  1409→            </div>
+  1410→
+  1411→            {/* Save / Reset */}
+  1412→            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end pt-2">
+  1413→              <Button variant="outline" onClick={() => { setThermal(DEFAULT_THERMAL); notify({ type: 'info', title: 'Reset', message: 'Thermal settings reset' }); }} className="gap-1.5">
+  1414→                <RotateCcw className="h-4 w-4" />Reset
+  1415→              </Button>
+  1416→              <Button
+  1417→                onClick={async () => {
+  1418→                  try {
+  1419→                    setSavingSection('thermal');
+  1420→                    const thermalHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+  1421→                    if (tokenRef.current) thermalHeaders['Authorization'] = `Bearer ${tokenRef.current}`;
+  1422→                    const res = await fetch('/api/settings', {
+  1423→                      method: 'PUT',
+  1424→                      headers: thermalHeaders,
+  1425→                      body: JSON.stringify({
+  1426→                        section: 'thermal',
+  1427→                        thermalPaperWidth: thermal.paperWidth,
+  1428→                        thermalFontSize: thermal.fontSize,
+  1429→                        thermalLineHeight: thermal.lineHeight,
+  1430→                        thermalTextWeight: thermal.textWeight,
+  1431→                        thermalDpi: thermal.printDpi,
+  1432→                        thermalPrintQuality: thermal.printQuality,
+  1433→                        thermalDithering: thermal.dithering,
+  1434→                        thermalShowLogo: thermal.showLogo,
+  1435→                        thermalLogo: thermal.logo,
+  1436→                      }),
+  1437→                    });
+  1438→                    if (res.ok) {
+  1439→                      localStorage.setItem('fp_thermal_settings', JSON.stringify(thermal));
+  1440→                      setThermalSaved(true);
+  1441→                      setSavedSection('thermal');
+  1442→                      notify({ type: 'success', title: 'Saved', message: 'Thermal settings saved' });
+  1443→                      setTimeout(() => { setThermalSaved(false); setSavedSection(null); }, 3000);
+  1444→                    } else {
+  1445→                      const err = await res.json().catch(() => ({}));
+  1446→                      notify({ type: 'error', title: 'Error', message: `Failed to save — ${err.error || 'Unknown error'}` });
+  1447→                    }
+  1448→                  } catch { notify({ type: 'error', title: 'Error', message: 'Network error' }); }
+  1449→                  finally { setSavingSection(null); }
+  1450→                }}
+  1451→                disabled={savingSection === 'thermal'}
+  1452→                className={`gap-1.5 transition-all ${thermalSaved ? 'bg-green-500 hover:bg-green-600' : 'bg-green-600 hover:bg-green-700'} text-white`}>
+  1453→                {savingSection === 'thermal' ? <><Loader2 className="h-4 w-4 animate-spin" />Saving...</>
+  1454→                  : thermalSaved ? <><Check className="h-4 w-4" />Saved!</>
+  1455→                  : <><Save className="h-4 w-4" />Save Settings</>}
+  1456→              </Button>
+  1457→            </div>
+  1458→          </div>
+  1459→          {/* Preview */}
+  1460→          <div className="flex flex-col items-center">
+  1461→            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
+  1462→              <Receipt className="size-3.5" />Live Receipt Preview
+  1463→            </p>
+  1464→            <div className="bg-gray-50 dark:bg-gray-900/50 rounded-xl p-4 w-full flex justify-center">
+  1465→              <ReceiptPreview shopName={shopName} shopAddress={address} shopPhone={phone} gstNumber={gstNumber} showGst={gstEnabled || gstFullMode || gstSimpleMode} t={thermal} />
+  1466→            </div>
+  1467→          </div>
+  1468→        </div>
+  1469→      </Section>
+  1470→
+  1471→      {/* ═══ Invoice Template ═══ */}
+  1472→      <Divider icon={<Palette className="size-3" />} label="Invoice" />
+  1473→      <Section id="invoice-template" icon={<Layout className="h-5 w-5" />} title="Invoice Template" desc="Choose and customize the look of your printed invoices" open={false}
+  1474→        badge={thermalSaved ? <Badge className="bg-green-100 text-green-700 border-green-200 text-[10px] gap-0.5"><Check className="size-3" />Saved</Badge> : undefined}>
+  1475→        <div className="space-y-4">
+  1476→          <p className="text-xs text-muted-foreground">Select a template for all A4 printed invoices (Tax Invoice, Proforma, Folio Bill, History Invoice). Changes apply to new prints only.</p>
+  1477→          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+  1478→            {INVOICE_TEMPLATES.map(tpl => (
+  1479→              <button
+  1480→                key={tpl.id}
+  1481→                onClick={() => setInvoiceTemplate(tpl.id)}
+  1482→                className={`relative rounded-xl border-2 p-4 text-left transition-all hover:shadow-md ${
+  1483→                  invoiceTemplate === tpl.id
+  1484→                    ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/20 shadow-sm shadow-emerald-500/10'
+  1485→                    : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+  1486→                }`}
+  1487→              >
+  1488→                {invoiceTemplate === tpl.id && (
+  1489→                  <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center">
+  1490→                    <Check className="size-3 text-white" />
+  1491→                  </div>
+  1492→                )}
+  1493→                <div className="text-2xl mb-2">{tpl.preview}</div>
+  1494→                <div className="text-xs font-bold text-slate-800 dark:text-slate-100">{tpl.name}</div>
+  1495→                <div className="text-[10px] text-muted-foreground mt-1 leading-tight">{tpl.description}</div>
+  1496→              </button>
+  1497→            ))}
+  1498→          </div>
+  1499→          {/* P7: Template Customization Controls */}
+  1500→          <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-4 space-y-4 bg-slate-50/50 dark:bg-slate-900/30">
+  1501→            <h4 className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">Customize Template</h4>
+  1502→            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+  1503→              <div>
+  1504→                <Label className="text-[11px]">Logo Position</Label>
+  1505→                <select className="mt-1 w-full h-8 text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2" value={invoiceCust.logoPosition || 'left'} onChange={e => { const v = e.target.value as InvoiceCustomizations['logoPosition']; setInvoiceCust(p => ({ ...p, logoPosition: v })) }}>
+  1506→                  <option value="left">Left</option>
+  1507→                  <option value="center">Center</option>
+  1508→                  <option value="right">Right</option>
+  1509→                </select>
+  1510→              </div>
+  1511→              <div>
+  1512→                <Label className="text-[11px]">Accent Color</Label>
+  1513→                <input type="color" className="mt-1 w-full h-8 rounded-md border border-slate-200 dark:border-slate-700 cursor-pointer" value={invoiceCust.accentColor || '#16a34a'} onChange={e => setInvoiceCust(p => ({ ...p, accentColor: e.target.value }))} />
+  1514→              </div>
+  1515→              <div>
+  1516→                <Label className="text-[11px]">Font Family</Label>
+  1517→                <select className="mt-1 w-full h-8 text-xs rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2" value={invoiceCust.fontFamily || ''} onChange={e => setInvoiceCust(p => ({ ...p, fontFamily: e.target.value }))}>
+  1518→                  <option value="">Default (System)</option>
+  1519→                  <option value="'Georgia', 'Times New Roman', serif">Georgia / Serif</option>
+  1520→                  <option value="'Courier New', Courier, monospace">Courier / Monospace</option>
+  1521→                  <option value="'Trebuchet MS', sans-serif">Trebuchet</option>
+  1522→                </select>
+  1523→              </div>
+  1524→              <div>
+  1525→                <Label className="text-[11px]">Border Width ({invoiceCust.borderWidth ?? 1.5}px)</Label>
+  1526→                <input type="range" min="0" max="4" step="0.5" className="mt-1 w-full" value={invoiceCust.borderWidth ?? 1.5} onChange={e => setInvoiceCust(p => ({ ...p, borderWidth: parseFloat(e.target.value) }))} />
+  1527→              </div>
+  1528→              <div>
+  1529→                <Label className="text-[11px]">Border Color</Label>
+  1530→                <input type="color" className="mt-1 w-full h-8 rounded-md border border-slate-200 dark:border-slate-700 cursor-pointer" value={invoiceCust.borderColor || '#d1d5db'} onChange={e => setInvoiceCust(p => ({ ...p, borderColor: e.target.value }))} />
+  1531→              </div>
+  1532→              <div>
+  1533→                <Label className="text-[11px]">Border Radius ({invoiceCust.borderRadius ?? 0}px)</Label>
+  1534→                <input type="range" min="0" max="16" step="1" className="mt-1 w-full" value={invoiceCust.borderRadius ?? 0} onChange={e => setInvoiceCust(p => ({ ...p, borderRadius: parseInt(e.target.value) }))} />
+  1535→              </div>
+  1536→            </div>
+  1537→            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+  1538→              <div>
+  1539→                <Label className="text-[11px]">Footer Text</Label>
+  1540→                <Input className="h-8 text-xs mt-0.5" placeholder="e.g. Powered by Eservices" value={invoiceCust.footerText || ''} onChange={e => setInvoiceCust(p => ({ ...p, footerText: e.target.value }))} />
+  1541→              </div>
+  1542→              <div>
+  1543→                <Label className="text-[11px]">Document Title Override</Label>
+  1544→                <Input className="h-8 text-xs mt-0.5" placeholder="e.g. TAX INVOICE (leave blank for default)" value={invoiceCust.titleStyle || ''} onChange={e => setInvoiceCust(p => ({ ...p, titleStyle: e.target.value }))} />
+  1545→              </div>
+  1546→            </div>
+  1547→            <div className="flex flex-wrap gap-4">
+  1548→              <label className="flex items-center gap-2 text-xs cursor-pointer">
+  1549→                <input type="checkbox" className="rounded" checked={invoiceCust.showAmountInWords !== false} onChange={e => setInvoiceCust(p => ({ ...p, showAmountInWords: e.target.checked }))} />
+  1550→                Show Amount in Words
+  1551→              </label>
+  1552→              <label className="flex items-center gap-2 text-xs cursor-pointer">
+  1553→                <input type="checkbox" className="rounded" checked={invoiceCust.showDeclaration !== false} onChange={e => setInvoiceCust(p => ({ ...p, showDeclaration: e.target.checked }))} />
+  1554→                Show Declaration
+  1555→              </label>
+  1556→            </div>
+  1557→          </div>
+  1558→          <SaveBtn section="invoiceTemplate" label="Save Template" onClick={() => saveApi('invoiceTemplate', { invoiceTemplate, invoiceCustomizations: JSON.stringify(invoiceCust) })} saving={savingSection} saved={savedSection} disabled={!canEdit} />
+  1559→        </div>
+  1560→      </Section>
+  1561→
+  1562→      {/* ═══ User Management ═══ */}
+  1563→      {hasPermission('settings', 'userManagement') && (
+  1564→        <>
+  1565→          <Divider icon={<Users className="size-3" />} label="User Management" />
+  1566→          <UserManagementSection />
+  1567→        </>
+  1568→      )}
+  1569→
+  1570→      {/* ═══ Change Password ═══ */}
+  1571→      <Divider icon={<Shield className="size-3" />} label="Account" />
+  1572→      <ChangePasswordSection />
+  1573→
+  1574→      {/* ═══ Data Management ═══ */}
+  1575→      <Divider icon={<Database className="size-3" />} label="Data" />
+  1576→      <div id="data-management">
+  1577→        <Section id="data" icon={<Database className="h-5 w-5" />} title="Data Management" desc="Export, import, or reset all your business data" open={false}>
+  1578→          <div className="space-y-4">
+  1579→            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-lg border p-4">
+  1580→              <div><p className="text-sm font-medium flex items-center gap-2"><Download className="h-4 w-4 text-green-600" />Export All Data</p><p className="text-xs text-muted-foreground mt-0.5">Download a complete backup as JSON</p></div>
+  1581→              <Button variant="outline" onClick={async () => { try { const r = await fetch('/api/data/export', { headers: tokenRef.current ? { 'Authorization': `Bearer ${tokenRef.current}` } : {} }); if (r.ok) { const b = new Blob([JSON.stringify(await r.json(), null, 2)], { type: 'application/json' }); const u = URL.createObjectURL(b); const a = document.createElement('a'); a.href = u; a.download = `eservices-data-${new Date().toISOString().split('T')[0]}.json`; a.click(); URL.revokeObjectURL(u); notify({ type: 'success', title: 'Exported', message: 'Data exported successfully' }); } else notify({ type: 'error', title: 'Error', message: 'Failed to export data' }); } catch { notify({ type: 'error', title: 'Error', message: 'Failed to export data' }); } }} className="w-full sm:w-auto gap-1.5"><Download className="h-4 w-4" />Export</Button>
+  1582→            </div>
+  1583→            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-lg border p-4">
+  1584→              <div><p className="text-sm font-medium flex items-center gap-2"><Upload className="h-4 w-4 text-green-600" />Import Data</p><p className="text-xs text-muted-foreground mt-0.5">Restore from a previously exported JSON file</p></div>
+  1585→              <Button variant="outline" onClick={() => importRef.current?.click()} className="w-full sm:w-auto gap-1.5"><Upload className="h-4 w-4" />Import</Button>
+  1586→              <input ref={importRef} type="file" accept=".json" onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; try { const d = JSON.parse(await f.text()); const r = await fetch('/api/data/import', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(tokenRef.current ? { 'Authorization': `Bearer ${tokenRef.current}` } : {}) }, body: JSON.stringify(d) }); if (r.ok) { notify({ type: 'success', title: 'Imported', message: 'Data imported successfully' }); await fetchSettings(); } else notify({ type: 'error', title: 'Error', message: 'Failed to import data' }); } catch { notify({ type: 'error', title: 'Error', message: 'Invalid JSON file' }); } if (importRef.current) importRef.current.value = ''; }} className="hidden" />
+  1587→            </div>
+  1588→            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-lg border border-red-200 dark:border-red-900/50 p-4">
+  1589→              <div><p className="text-sm font-medium flex items-center gap-2 text-red-600 dark:text-red-400"><AlertTriangle className="h-4 w-4" />Reset System</p><p className="text-xs text-muted-foreground mt-0.5">Permanently delete all data — this cannot be undone</p></div>
+  1590→              <AlertDialog open={resetOpen} onOpenChange={setResetOpen}>
+  1591→                <AlertDialogTrigger asChild><Button variant="destructive" className="w-full sm:w-auto gap-1.5"><AlertTriangle className="h-4 w-4" />Reset</Button></AlertDialogTrigger>
+  1592→                <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Are you sure?</AlertDialogTitle>
+  1593→                  <AlertDialogDescription>This will permanently delete all your business data, bills, items, and settings. This action cannot be undone.</AlertDialogDescription></AlertDialogHeader>
+  1594→                  <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel>
+  1595→                    <AlertDialogAction onClick={async () => { setResetting(true); try { const r = await fetch('/api/data/reset', { method: 'POST' }); if (r.ok) { localStorage.removeItem('fp_thermal_settings'); setThermal(DEFAULT_THERMAL); notify({ type: 'success', title: 'Reset', message: 'System reset successfully' }); setResetOpen(false); await fetchSettings(); } else notify({ type: 'error', title: 'Error', message: 'Failed to reset system' }); } catch { notify({ type: 'error', title: 'Error', message: 'Failed to reset system' }); } finally { setResetting(false); } }} disabled={resetting} className="bg-destructive text-white hover:bg-destructive/90">
+  1596→                      {resetting ? <><Loader2 className="h-4 w-4 animate-spin mr-1.5" />Resetting…</> : 'Yes, reset everything'}
+  1597→                    </AlertDialogAction></AlertDialogFooter>
+  1598→                </AlertDialogContent>
+  1599→              </AlertDialog>
+  1600→            </div>
+  1601→          </div>
+  1602→        </Section>
+  1603→      </div>
+  1604→
+  1605→      {/* ═══ END ═══ */}
+  1606→    </div>
+  1607→  );
+  1608→}
+  1609→

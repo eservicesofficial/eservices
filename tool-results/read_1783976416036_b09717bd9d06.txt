@@ -1,0 +1,1194 @@
+     1→// ─── Customer Folio Print Functions ───
+     2→// Unified print system with professional headers, TXN IDs, and payment summaries
+     3→
+     4→import { fmtDate, fmtDateTime, fmtINR, stripInternalDescriptions, fmtFolioNum, roundBal } from './customer-folio-helpers'
+     5→import type { LedgerEntry, CustomerDetail } from './customer-folio-types'
+     6→import type { RefObject } from 'react'
+     7→import { notify } from '@/lib/notification-store'
+     8→import { fetchThermalSettings, buildRichThermalHtml, type ThermalReceiptData } from '@/lib/thermal-settings'
+     9→import { getTemplateCSS, type InvoiceCustomizations } from '@/lib/invoice-templates'
+    10→
+    11→// ─── Helper: Convert number to Indian Rupee words ───
+    12→function numberToIndianWords(num: number): string {
+    13→  if (num === 0) return 'ZERO'
+    14→  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen']
+    15→  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety']
+    16→  if (num < 0) return 'MINUS ' + numberToIndianWords(-num)
+    17→  let words = ''
+    18→  function convertBelowThousand(n: number): string {
+    19→    let w = ''
+    20→    if (n >= 100) { w += ones[Math.floor(n / 100)] + ' Hundred'; n %= 100; if (n > 0) w += ' and ' }
+    21→    if (n >= 20) { w += tens[Math.floor(n / 10)]; n %= 10; if (n > 0) w += ' ' + ones[n] }
+    22→    else if (n > 0) { w += ones[n] }
+    23→    return w
+    24→  }
+    25→  if (num >= 10000000) { words += convertBelowThousand(Math.floor(num / 10000000)) + ' Crore '; num %= 10000000 }
+    26→  if (num >= 100000) { words += convertBelowThousand(Math.floor(num / 100000)) + ' Lakh '; num %= 100000 }
+    27→  if (num >= 1000) { words += convertBelowThousand(Math.floor(num / 1000)) + ' Thousand '; num %= 1000 }
+    28→  if (num > 0) { words += convertBelowThousand(num) }
+    29→  return words.trim().toUpperCase() + ' ONLY'
+    30→}
+    31→
+    32→// Professional CSS for receipt/bill
+    33→const PRINT_CSS = `
+    34→body{font-family:system-ui,-apple-system,sans-serif;padding:20px;max-width:210mm;margin:0 auto;color:#1a1a1a}
+    35→/* --- Legacy .bill-header (kept for backward compat) --- */
+    36→.bill-header{text-align:center;margin-bottom:20px;padding-bottom:16px;border-bottom:2px solid #16a34a}
+    37→.bill-header h1{margin:0 0 2px 0;font-size:22px;font-weight:800;color:#16a34a;letter-spacing:0.5px}
+    38→.bill-header .biz-address{font-size:11px;color:#555;margin:2px 0}
+    39→.bill-header .gst-line{font-size:10px;color:#888;margin-top:6px;font-weight:600}
+    40→/* --- New unified print header --- */
+    41→.print-header{display:flex;gap:16px;align-items:flex-start;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #16a34a}
+    42→.print-header .logo-area{flex-shrink:0}
+    43→.print-header .logo-area img{max-width:80px;max-height:60px;object-fit:contain;border-radius:4px}
+    44→.print-header .info-area{flex:1;min-width:0}
+    45→.print-header .info-area h1{margin:0 0 2px;font-size:22px;font-weight:800;color:#16a34a;letter-spacing:0.5px}
+    46→.print-header .info-area .biz-address{font-size:11px;color:#555;margin:1px 0}
+    47→.print-header .info-area .gst-line{font-size:10px;color:#888;margin-top:4px;font-weight:600}
+    48→.doc-title{text-align:center;font-size:16px;font-weight:800;color:#1a1a1a;letter-spacing:2px;text-transform:uppercase;margin:12px 0 4px;padding:6px 0;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb}
+    49→.txn-meta{display:flex;justify-content:space-between;align-items:center;margin:8px 0 12px;font-size:10px;color:#888}
+    50→.txn-meta .txn-id{font-family:monospace;background:#f3f4f6;padding:2px 8px;border-radius:4px;font-weight:600;color:#374151}
+    51→.payment-summary{margin-top:16px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden}
+    52→.payment-summary .ps-title{background:#f9fafb;padding:6px 12px;font-size:10px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid #e5e7eb}
+    53→.payment-summary table{margin:0}
+    54→.payment-summary th{background:#f9fafb !important;font-size:9px !important;padding:6px 10px !important}
+    55→.payment-summary td{font-size:11px !important;padding:6px 10px !important}
+    56→.payment-summary .ps-total{background:#f0fdf4 !important;font-weight:700 !important}
+    57→.divider{border:none;border-top:1px dashed #ccc;margin:12px 0}
+    58→.customer-info{display:flex;justify-content:space-between;margin:12px 0;font-size:12px}
+    59→.customer-info .label{color:#888;font-size:10px;text-transform:uppercase;letter-spacing:0.5px}
+    60→.customer-info .value{font-weight:700;color:#222;font-size:13px}
+    61→.customer-block{margin:12px 0 8px 0;padding:14px 16px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04)}
+    62→.customer-block .cb-title{font-size:9px;font-weight:800;color:#16a34a;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #16a34a}
+    63→.customer-block table{margin:0;border-collapse:collapse}
+    64→.customer-block td{padding:3px 8px;font-size:11px;border:none;vertical-align:top;text-align:left}
+    65→.customer-block td.lbl{color:#6b7280;font-size:9.5px;text-transform:uppercase;letter-spacing:0.5px;width:85px;white-space:nowrap;padding-top:4px}
+    66→.customer-block td.val{font-weight:600;color:#111;font-size:12px}
+    67→table{width:100%;border-collapse:collapse;margin-top:10px}
+    68→th{background:#16a34a;color:#fff;padding:8px 10px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;font-weight:600;text-align:left}
+    69→th:last-child,th:nth-child(n+3){text-align:right}
+    70→td{font-size:11px;padding:7px 10px;border-bottom:1px solid #f0f0f0}
+    71→td:last-child,td:nth-child(n+3){text-align:right}
+    72→tr:nth-child(even){background:#f8faf8}
+    73→tr.totals{background:#f0fdf4 !important;font-weight:700;border-top:2px solid #16a34a}
+    74→.totals td{padding:10px;font-size:12px}
+    75→.summary-box{display:flex;gap:12px;margin-top:16px}
+    76→.summary-item{flex:1;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px;text-align:center}
+    77→.summary-item .s-label{font-size:9px;color:#888;text-transform:uppercase;letter-spacing:0.5px}
+    78→.summary-item .s-value{font-size:16px;font-weight:800;margin-top:2px;color:#111}
+    79→.tax-summary{margin-top:12px;display:flex;gap:12px}
+    80→.tax-summary .tax-item{flex:1;text-align:right;font-size:11px}
+    81→.tax-summary .tax-label{color:#666}
+    82→.tax-summary .tax-val{font-weight:700;color:#111}
+    83→.footer{text-align:center;margin-top:24px;padding-top:12px;border-top:1px solid #e5e7eb;color:#999;font-size:10px;line-height:1.6}
+    84→.footer .thanks{font-size:12px;font-weight:600;color:#555;margin-bottom:2px}
+    85→.datetime{text-align:right;font-size:10px;color:#999;margin-bottom:12px}
+    86→.invoice-meta{display:flex;justify-content:space-between;align-items:flex-start;margin:12px 0 8px 0;padding:10px 14px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px}
+    87→.invoice-meta .inv-label{font-size:9px;color:#888;text-transform:uppercase;letter-spacing:0.5px}
+    88→.invoice-meta .inv-value{font-size:13px;font-weight:700;color:#222;margin-top:2px}
+    89→.signature-section{display:flex;justify-content:space-between;margin-top:40px;padding:0 20px}
+    90→.signature-box{width:45%;text-align:center}
+    91→.signature-line{border-top:1px solid #333;margin-top:50px;padding-top:6px}
+    92→.signature-line .sig-label{font-size:11px;font-weight:600;color:#333}
+    93→.signature-line .sig-sub{font-size:9px;color:#888;margin-top:2px}
+    94→`
+    95→
+    96→// ═══════════════════════════════════════════════════════════════════
+    97→// HOTEL-STYLE TAX INVOICE CSS (Redesigned to match professional hotel invoice)
+    98→// ═══════════════════════════════════════════════════════════════════
+    99→export const INVOICE_CSS = `
+   100→@page{size:A4;margin:8mm 10mm}
+   101→*{margin:0;padding:0;box-sizing:border-box}
+   102→body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;padding:0;max-width:210mm;margin:0 auto;color:#1a1a1a;font-size:10px;line-height:1.5;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+   103→
+   104→/* ── Outer container with subtle border ── */
+   105→.inv-wrap{border:1.5px solid #d1d5db;border-radius:0;padding:0;margin:0;min-height:100vh;box-shadow:0 0 0 4px #fff;overflow:hidden}
+   106→
+   107→/* ── Header Section — white background, flex layout ── */
+   108→.inv-header{padding:16px 20px 14px;display:flex;align-items:center;gap:16px;background:#fff;position:relative}
+   109→.inv-header::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2.5px;background:#16a34a}
+   110→.inv-header .header-logo{flex-shrink:0}
+   111→.inv-header .header-logo img{max-width:80px;max-height:60px;object-fit:contain;border-radius:4px}
+   112→.inv-header .header-info{flex:1;min-width:0;text-align:left}
+   113→.inv-header .biz-name{font-size:20px;font-weight:800;color:#16a34a;letter-spacing:0.5px;margin-bottom:2px}
+   114→.inv-header .biz-subtitle{font-size:11px;color:#555;margin-bottom:4px;font-weight:400}
+   115→.inv-header .biz-address{font-size:10px;color:#555;line-height:1.5}
+   116→.inv-header .biz-contact{font-size:10px;color:#555;margin-top:2px}
+   117→.inv-header .biz-gstin{font-size:10px;color:#16a34a;font-weight:700;margin-top:4px;background:#f0fdf4;display:inline-block;padding:2px 10px;border-radius:4px}
+   118→
+   119→/* ── Title Bar ── */
+   120→.inv-title-section{border-bottom:1.5px solid #d1d5db;padding:12px 20px 10px;text-align:center;background:#f0fdf4}
+   121→.inv-title-section .doc-title{font-size:15px;font-weight:800;color:#065f46;letter-spacing:4px;text-transform:uppercase;display:inline-block}
+   122→.inv-title-section .title-underline{border:none;height:2px;background:linear-gradient(90deg,transparent,#059669,transparent);width:280px;margin:6px auto 8px}
+   123→.inv-title-section .meta-row{display:flex;justify-content:space-between;font-size:10px;color:#374151}
+   124→.inv-title-section .meta-row span{min-width:0}
+   125→.inv-title-section .meta-row strong{font-weight:700;color:#111}
+   126→
+   127→/* ── Customer Info Table ── */
+   128→.inv-cust-section{padding:0;border-bottom:1.5px solid #d1d5db}
+   129→.inv-cust-section table{width:100%;border-collapse:collapse}
+   130→.inv-cust-section td{padding:4px 10px;font-size:10px;border:1px solid #e5e7eb;vertical-align:middle;color:#1f2937}
+   131→.inv-cust-section .lbl{background:#f9fafb;font-weight:700;color:#374151;text-transform:uppercase;font-size:8.5px;letter-spacing:0.5px;white-space:nowrap}
+   132→.inv-cust-section .val{font-weight:400;font-size:10px}
+   133→.inv-cust-section .name-val{font-weight:700;font-size:11px;color:#111}
+   134→
+   135→/* ── Transaction Table ── */
+   136→.inv-txn-section{padding:0}
+   137→.inv-txn-table{width:100%;border-collapse:collapse}
+   138→.inv-txn-table th{background:linear-gradient(180deg,#059669,#047857);color:#fff;padding:6px 7px;font-size:8.5px;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;border:1px solid #065f46;text-align:left}
+   139→.inv-txn-table th.r{text-align:right}
+   140→.inv-txn-table td{padding:3px 7px;font-size:10px;border:1px solid #e5e7eb;color:#1f2937}
+   141→.inv-txn-table td.r{text-align:right}
+   142→.inv-txn-table tr:nth-child(even) td{background:#f0fdf4}
+   143→.inv-txn-table .txn-no{font-family:'Courier New',Courier,monospace;font-size:8px;color:#6b7280}
+   144→
+   145→/* ── Subtotal / Tax / Grand Total Section ── */
+   146→.inv-calcs{padding:10px 20px 6px;background:#fff}
+   147→.inv-calc-row{display:flex;justify-content:flex-end;align-items:center;padding:2px 0;font-size:10px}
+   148→.inv-calc-row .calc-label{flex:1;text-align:right;padding-right:14px;color:#374151}
+   149→.inv-calc-row .calc-value{width:130px;text-align:right;font-weight:600}
+   150→.inv-calc-divider{border:none;border-top:1px dashed #d1d5db;margin:4px 0}
+   151→.inv-calc-divider-thick{border:none;border-top:3px double #059669;margin:6px 0}
+   152→.inv-grand-row .calc-label{font-size:12px;font-weight:800;color:#065f46;text-transform:uppercase;letter-spacing:0.5px}
+   153→.inv-grand-row .calc-value{font-size:14px;font-weight:800;color:#065f46}
+   154→.inv-gst-include-note{display:flex;justify-content:flex-end;padding:3px 0;font-size:9px;color:#6b7280;font-style:italic}
+   155→.inv-gst-include-note span{width:130px;text-align:right}
+   156→
+   157→/* ── Payment Info ── */
+   158→.inv-payment-info{padding:6px 20px;border-top:1.5px solid #d1d5db;font-size:10px;color:#374151;background:#f9fafb}
+   159→.inv-payment-info strong{font-weight:700}
+   160→
+   161→/* ── GST/HSN Summary Table ── */
+   162→.inv-gst-section{padding:0;border-top:1.5px solid #d1d5db}
+   163→.inv-gst-table{width:100%;border-collapse:collapse}
+   164→.inv-gst-table th{background:#f9fafb;color:#374151;padding:4px 6px;font-size:8px;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;border:1px solid #e5e7eb;text-align:left}
+   165→.inv-gst-table th.r{text-align:right}
+   166→.inv-gst-table td{padding:3px 6px;font-size:9px;border:1px solid #e5e7eb;color:#374151}
+   167→.inv-gst-table td.r{text-align:right}
+   168→
+   169→/* ── Footer Section (2-column) ── */
+   170→.inv-footer-section{border-top:1.5px solid #d1d5db;padding:10px 20px;font-size:9px;line-height:1.5;color:#374151;background:#fff}
+   171→.inv-footer-section .amount-words{font-weight:700;color:#111;font-size:10px;margin-bottom:8px;padding:6px 10px;background:#f0fdf4;border-left:3px solid #059669;border-radius:0 6px 6px 0}
+   172→.inv-footer-section .footer-grid{display:flex;justify-content:space-between;margin-top:4px;gap:16px}
+   173→.inv-footer-section .footer-col{flex:1}
+   174→.inv-footer-section .footer-col h4{font-size:9px;font-weight:700;color:#065f46;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;padding-bottom:3px;border-bottom:2px solid #059669}
+   175→.inv-footer-section .footer-col p{margin:2px 0;font-size:8.5px;color:#4b5563}
+   176→
+   177→/* ── Bottom Bar ── */
+   178→.inv-bottom-bar{display:flex;justify-content:space-between;align-items:flex-end;border-top:1.5px solid #d1d5db;padding:12px 20px;background:#f9fafb}
+   179→.inv-bottom-bar .state-info{font-size:8.5px;color:#4b5563;line-height:1.6;max-width:52%}
+   180→.inv-bottom-bar .state-info strong{font-weight:700}
+   181→.inv-bottom-bar .state-info .declaration{font-style:italic;margin-top:4px;color:#6b7280}
+   182→.inv-bottom-bar .signatures{display:flex;gap:50px}
+   183→.inv-bottom-bar .sig-block{text-align:center;min-width:120px}
+   184→.inv-bottom-bar .sig-line{border-top:1.5px solid #374151;margin-top:45px;padding-top:5px;font-size:9px;font-weight:600;color:#111}
+   185→
+   186→/* ── Legal Line ── */
+   187→.inv-legal{padding:6px 20px;border-top:1.5px solid #d1d5db;font-size:8px;color:#6b7280;font-style:italic;background:#f9fafb}
+   188→
+   189→/* ── Multi-Page Support (P8) ── */
+   190→.inv-txn-table thead{display:table-header-group}
+   191→.inv-txn-table tr{page-break-inside:avoid;page-break-after:auto}
+   192→.inv-txn-section{page-break-inside:auto}
+   193→.inv-cust-section,.inv-calcs,.inv-gst-section,.inv-footer-section,.inv-bottom-bar,.inv-legal{page-break-inside:avoid;page-break-before:auto}
+   194→.inv-header,.inv-title-section,.inv-cust-section{page-break-after:avoid}
+   195→.inv-wrap{min-height:auto}
+   196→/* P8: CSS page counter — shown in title bar */
+   197→body{counter-reset:page}
+   198→.page-counter::after{content:'Page: ' counter(page)}
+   199→
+   200→@media print{
+   201→  body{-webkit-print-color-adjust:exact;print-color-adjust:exact;counter-reset:page}
+   202→  .inv-wrap{border:1.5px solid #999;box-shadow:none;min-height:auto}
+   203→  @page{size:A4;margin:8mm 10mm}
+   204→  /* P8: Repeat table header on each printed page */
+   205→  thead{display:table-header-group}
+   206→  .inv-txn-table tr{page-break-inside:avoid;page-break-after:auto}
+   207→}
+   208→`
+   209→
+   210→// ─── Helper: Compute the most-used payment mode from credit entries ───
+   211→function computeMostUsedPaymentMode(entries: { credit?: number; paymentMode?: string }[]): string {
+   212→  const creditEntries = entries.filter(e => (e.credit || 0) > 0)
+   213→  if (creditEntries.length === 0) return 'N/A'
+   214→  const modeCounts: Record<string, number> = {}
+   215→  for (const e of creditEntries) {
+   216→    const mode = e.paymentMode || 'Cash'
+   217→    modeCounts[mode] = (modeCounts[mode] || 0) + (e.credit || 0)
+   218→  }
+   219→  let bestMode = 'Cash'
+   220→  let bestAmount = 0
+   221→  for (const [mode, amount] of Object.entries(modeCounts)) {
+   222→    if (amount > bestAmount) {
+   223→      bestAmount = amount
+   224→      bestMode = mode
+   225→    }
+   226→  }
+   227→  return bestMode
+   228→}
+   229→
+   230→// ─── Helper: Build payment summary HTML ───
+   231→function buildPaymentSummary(entries: { credit?: number; paymentMode?: string }[]): string {
+   232→  const creditEntries = entries.filter(e => (e.credit || 0) > 0)
+   233→  if (creditEntries.length === 0) {
+   234→    return `<div class="payment-summary"><div class="ps-title">Payment Summary</div><div style="padding:10px 12px;font-size:11px;color:#888">No payments recorded</div></div>`
+   235→  }
+   236→
+   237→  const modeTotals: Record<string, number> = {}
+   238→  for (const e of creditEntries) {
+   239→    const mode = e.paymentMode || 'Cash'
+   240→    modeTotals[mode] = (modeTotals[mode] || 0) + (e.credit || 0)
+   241→  }
+   242→
+   243→  const modes = Object.entries(modeTotals)
+   244→  const grandTotal = modes.reduce((s, [, amt]) => s + amt, 0)
+   245→
+   246→  if (modes.length === 1) {
+   247→    const [mode, amount] = modes[0]
+   248→    return `<div class="payment-summary"><div class="ps-title">Payment Summary</div><div style="padding:10px 12px;font-size:12px;font-weight:600;color:#374151">Payment Mode: <span style="color:#16a34a">${mode}</span> — ${fmtINR(amount)}</div></div>`
+   249→  }
+   250→
+   251→  const rows = modes.map(([mode, amount]) => {
+   252→    return `<tr><td style="text-align:left">${mode}</td><td style="text-align:right;font-weight:600;color:#374151">${fmtINR(amount)}</td></tr>`
+   253→  }).join('')
+   254→
+   255→  return `<div class="payment-summary"><div class="ps-title">Payment Summary</div><table><tr><th style="text-align:left">Mode</th><th style="text-align:right">Amount</th></tr>${rows}<tr class="ps-total"><td style="text-align:left">Total</td><td style="text-align:right">${fmtINR(grandTotal)}</td></tr></table></div>`
+   256→}
+   257→
+   258→// ─── Helper: Get stable document number from entries (never regenerate) ───
+   259→// Searches ALL entries for the first non-empty docNo to avoid N/A
+   260→function getStableDocId(entries: { docNo?: string; invoiceNo?: string; id?: string; createdAt?: string }[]): string {
+   261→  if (entries.length === 0) return `DOC-${Date.now()}`
+   262→  for (const e of entries) {
+   263→    if (e.docNo && e.docNo.trim() !== '' && e.docNo !== 'N/A') return e.docNo
+   264→  }
+   265→  for (const e of entries) {
+   266→    if (e.invoiceNo && e.invoiceNo.trim() !== '' && e.invoiceNo !== 'N/A') return e.invoiceNo
+   267→  }
+   268→  // Fallback: use entry ID truncated or timestamp — never show N/A
+   269→  const fallback = entries[0].id ? `DOC-${entries[0].id.slice(0, 8).toUpperCase()}` : `DOC-${Date.now()}`
+   270→  return fallback
+   271→}
+   272→
+   273→// ─── Build Unified Professional Header ───
+   274→function buildUnifiedHeader(
+   275→  settings: Record<string, string>,
+   276→  documentTitle: string,
+   277→  txnId: string
+   278→): string {
+   279→  const bizName = settings.shopName || 'Eservices'
+   280→  const bizAddress = settings.shopAddress || ''
+   281→  const bizPhone = settings.shopPhone || ''
+   282→  const bizEmail = settings.shopEmail || ''
+   283→  const gstNumber = settings.gstNumber || settings.gstin || ''
+   284→  const shopLogo = settings.shopLogo || settings.logo || settings.thermalLogo || ''
+   285→
+   286→  const logoHtml = shopLogo
+   287→    ? `<div class="logo-area"><img src="${shopLogo}" alt="Logo" /></div>`
+   288→    : ''
+   289→
+   290→  const infoHtml = `
+   291→    <h1>${bizName}</h1>
+   292→    ${bizAddress ? `<div class="biz-address">${bizAddress}</div>` : ''}
+   293→    ${bizPhone ? `<div class="biz-address">${bizPhone}${bizEmail ? ` | ${bizEmail}` : ''}</div>` : ''}
+   294→    ${gstNumber ? `<div class="gst-line">GSTIN: ${gstNumber}</div>` : ''}
+   295→  `
+   296→
+   297→  const docTitleHtml = `<div class="doc-title">${documentTitle}</div>`
+   298→  const txnIdHtml = `<div class="txn-meta"><span class="txn-id">Doc No: ${txnId}</span><span>Generated: ${fmtDateTime(new Date().toISOString())}</span></div>`
+   299→
+   300→  return `<div class="print-header">${logoHtml}<div class="info-area">${infoHtml}</div></div>${docTitleHtml}${txnIdHtml}`
+   301→}
+   302→
+   303→// Build entry rows HTML (shared across print templates)
+   304→function buildEntryRows(entries: { date: string; description?: string; type?: string; debit: number; credit: number; balance: number; tax?: number }[]): string {
+   305→  return entries.map((e, i) => {
+   306→    const desc = stripInternalDescriptions(e.description || e.type || '—')
+   307→    return `<tr><td>${i + 1}</td><td>${fmtDate(e.date)}</td><td>${desc}</td><td style="text-align:right;color:#dc2626;font-weight:600">${e.debit > 0 ? fmtINR(e.debit) : '—'}</td><td style="text-align:right;color:#16a34a;font-weight:600">${e.credit > 0 ? fmtINR(e.credit) : '—'}</td><td style="font-weight:700;color:${e.balance > 0 ? '#dc2626' : e.balance < 0 ? '#16a34a' : '#666'}">${fmtINR(e.balance)}</td></tr>`
+   308→  }).join('')
+   309→}
+   310→
+   311→function openPrintWindow(title: string): Window | null {
+   312→  const w = window.open('', '_blank')
+   313→  if (!w) {
+   314→    notify({ type: 'error', title: 'Error', message: 'Please allow popups to print' })
+   315→  }
+   316→  return w
+   317→}
+   318→
+   319→async function fetchSettingsForPrint(hdrRef: RefObject<Record<string, string>>): Promise<Record<string, string>> {
+   320→  try {
+   321→    const res = await fetch('/api/settings', { headers: hdrRef.current })
+   322→    if (res.ok) return await res.json()
+   323→  } catch { /* ignore */ }
+   324→  return {}
+   325→}
+   326→
+   327→// Build template-specific CSS from settings
+   328→function buildTemplateCSSFromSettings(settings: Record<string, string>): string {
+   329→  const templateId = settings.invoiceTemplate || 'modern'
+   330→  let customizations: InvoiceCustomizations = {}
+   331→  try {
+   332→    if (settings.invoiceCustomizations) {
+   333→      customizations = JSON.parse(settings.invoiceCustomizations)
+   334→    }
+   335→  } catch { /* ignore */ }
+   336→  return getTemplateCSS(templateId, customizations)
+   337→}
+   338→
+   339→// Backward-compatible header: delegates to buildUnifiedHeader
+   340→function buildHeader(settings: Record<string, string>, title: string): string {
+   341→  return buildUnifiedHeader(settings, title, 'N/A')
+   342→}
+   343→
+   344→// Build professional customer info block for invoices
+   345→function buildCustomerInfoBlock(detail: CustomerDetail): string {
+   346→  const d = detail as any
+   347→  const addr = d.address || ''
+   348→  const mobile = d.mobile || ''
+   349→  const whatsapp = d.whatsapp || ''
+   350→  const email = d.email || ''
+   351→  const gstNo = d.gstNumber || ''
+   352→  const gstAddr = d.gstAddress || ''
+   353→  const custId = d.customerId || ''
+   354→
+   355→  // Left column: Name, ID, Phone, Email, Address
+   356→  let leftRows = ''
+   357→  leftRows += `<tr><td class="lbl">Name</td><td class="val" style="font-size:13px">${d.fullName}</td></tr>`
+   358→  if (custId) leftRows += `<tr><td class="lbl">Customer ID</td><td class="val" style="font-family:monospace;font-size:11px">${custId}</td></tr>`
+   359→  if (mobile) leftRows += `<tr><td class="lbl">Phone</td><td class="val">${mobile}${whatsapp && whatsapp !== mobile ? ` <span style="color:#888;font-weight:400;font-size:10px">| W: ${whatsapp}</span>` : ''}</td></tr>`
+   360→  if (email) leftRows += `<tr><td class="lbl">Email</td><td class="val" style="font-size:11px">${email}</td></tr>`
+   361→  if (addr) leftRows += `<tr><td class="lbl">Address</td><td class="val" style="font-size:11px;line-height:1.4">${addr}</td></tr>`
+   362→
+   363→  // Right column: GST Number, GST Address
+   364→  let rightRows = ''
+   365→  if (gstNo) rightRows += `<tr><td class="lbl">GST No.</td><td class="val" style="font-family:monospace;font-size:11px">${gstNo}</td></tr>`
+   366→  if (gstAddr) rightRows += `<tr><td class="lbl">GST Address</td><td class="val" style="font-size:11px;line-height:1.4">${gstAddr}</td></tr>`
+   367→
+   368→  if (!rightRows) {
+   369→    return `<div class="customer-block"><div class="cb-title">Bill To</div><table>${leftRows}</table></div>`
+   370→  }
+   371→
+   372→  return `<div class="customer-block"><div class="cb-title">Bill To</div>
+   373→    <table style="width:100%"><tr>
+   374→      <td style="width:55%;vertical-align:top;padding-right:16px;border-right:1px solid #e5e7eb"><table>${leftRows}</table></td>
+   375→      <td style="width:45%;vertical-align:top;padding-left:16px"><table>${rightRows}</table></td>
+   376→    </tr></table></div>`
+   377→}
+   378→
+   379→function buildFooter(): string {
+   380→  return `<div class="footer"><div class="thanks">Thank you for your business!</div><div>Powered by Eservices</div><div>This is a computer-generated document.</div></div>`
+   381→}
+   382→
+   383→// ═══════════════════════════════════════════════════════════════════
+   384→// BUILD HOTEL-STYLE TAX INVOICE (Redesigned professional layout)
+   385→// Supports: P4 specific folio, P8 multi-page, P10a GST inclusive, P11 amount in words
+   386→// ═══════════════════════════════════════════════════════════════════
+   387→export function buildHotelStyleInvoice(
+   388→  settings: Record<string, string>,
+   389→  detail: CustomerDetail,
+   390→  entries: any[],
+   391→  invoiceNo: string,
+   392→  invoiceDate: string,
+   393→  docTitle: string,
+   394→  extraMeta?: { openingBalance?: number; closingBalance?: number; periodFrom?: string; periodTo?: string; specificFolioNumber?: string | number },
+   395→  printedBy?: string
+   396→): string {
+   397→  const d = detail as any
+   398→  const bizName = settings.shopName || 'Eservices'
+   399→  const bizAddress = settings.shopAddress || ''
+   400→  const bizPhone = settings.shopPhone || ''
+   401→  const bizEmail = settings.shopEmail || ''
+   402→  const gstNumber = settings.gstNumber || settings.gstin || ''
+   403→  const panNumber = settings.panNumber || d.panNumber || ''
+   404→  const gstState = settings.gstState || settings.gstStateCode || ''
+   405→  const stateCode = gstState ? gstState.split('-')[0] || gstState : ''
+   406→  const shopLogo = settings.shopLogo || settings.logo || settings.thermalLogo || ''
+   407→
+   408→  // P10a: GST settings
+   409→  const gstEnabled = settings.enableGst === 'true'
+   410→  const gstRate = parseFloat(settings.gstRate) || 0
+   411→
+   412→  // Customer info
+   413→  const custName = d.fullName || ''
+   414→  const custId = d.customerId || ''
+   415→  const custMobile = d.mobile || ''
+   416→  const custEmail = d.email || ''
+   417→  const custAddr = d.address || ''
+   418→  const custGst = d.gstNumber || ''
+   419→  const custType = d.customerType || ''
+   420→  const custPan = d.panNumber || ''
+   421→  const custCompany = d.companyName || d.company || ''
+   422→
+   423→  // Calculate totals
+   424→  const chargeEntries = entries.filter((e: any) => (e.debit || 0) > 0 && e.type !== 'Refund')
+   425→  const paymentEntries = entries.filter((e: any) => (e.credit || 0) > 0)
+   426→  const refundEntries = entries.filter((e: any) => e.type === 'Refund')
+   427→  const totalDebits = chargeEntries.reduce((s: number, e: any) => s + (e.debit || 0), 0)
+   428→  const totalCredits = paymentEntries.reduce((s: number, e: any) => s + (e.credit || 0), 0)
+   429→  const totalRefunds = refundEntries.reduce((s: number, e: any) => s + (e.debit || 0), 0)
+   430→
+   431→  // P10a: GST Inclusive calculation
+   432→  // If GST is enabled in settings, compute GST from charge amounts even if individual entries have tax=0
+   433→  let totalTax = 0
+   434→  let computedTaxFromSettings = false
+   435→  if (gstEnabled && gstRate > 0) {
+   436→    // Check if any charge has explicit tax > 0
+   437→    const hasExplicitTax = chargeEntries.some((e: any) => (e.tax || 0) > 0)
+   438→    if (hasExplicitTax) {
+   439→      // Use the explicit tax values from entries
+   440→      totalTax = entries.reduce((s: number, e: any) => s + (e.tax || 0), 0)
+   441→    } else {
+   442→      // P10a: No explicit GST on charges — compute from inclusive amounts using settings GST rate
+   443→      // For inclusive GST: GST = Amount × Rate / (100 + Rate), Taxable = Amount - GST
+   444→      totalTax = Math.round((totalDebits * gstRate / (100 + gstRate)) * 100) / 100
+   445→      computedTaxFromSettings = true
+   446→    }
+   447→  } else {
+   448→    // GST not enabled — use whatever tax is on entries (usually 0)
+   449→    totalTax = entries.reduce((s: number, e: any) => s + (e.tax || 0), 0)
+   450→  }
+   451→
+   452→  const totalDiscount = entries.reduce((s: number, e: any) => s + (e.discount || 0), 0)
+   453→  const closingBal = roundBal(extraMeta?.closingBalance ?? (entries.length > 0 ? entries[entries.length - 1].balance : 0))
+   454→  const openingBal = roundBal(extraMeta?.openingBalance ?? 0)
+   455→
+   456→  // Tax calculation (CGST/SGST split from total tax)
+   457→  const cgstAmount = Math.round(totalTax / 2 * 100) / 100
+   458→  const sgstAmount = Math.round((totalTax - cgstAmount) * 100) / 100
+   459→  const netAmount = totalDebits - totalDiscount
+   460→  const effectiveGstRate = netAmount > 0 ? ((totalTax / netAmount) * 100) : 0
+   461→  const halfRate = effectiveGstRate > 0 ? +(effectiveGstRate / 2).toFixed(2) : 0
+   462→  // Grand total = debits (tax-inclusive) - discount - credits + refunds
+   463→  const grandTotal = roundBal(totalDebits - totalDiscount - totalCredits + totalRefunds)
+   464→
+   465→  // Payment mode info
+   466→  const mostUsedMode = computeMostUsedPaymentMode(entries)
+   467→  const lastPayment = paymentEntries.length > 0 ? paymentEntries[paymentEntries.length - 1] : null
+   468→  const paymentDate = lastPayment ? fmtDate(lastPayment.date) : invoiceDate
+   469→
+   470→  // Arrival / departure from entries
+   471→  const firstEntry = entries.length > 0 ? entries[0] : null
+   472→  const lastEntry = entries.length > 0 ? entries[entries.length - 1] : null
+   473→  const arrivalDate = firstEntry ? fmtDate(firstEntry.date) : '—'
+   474→  const departureDate = lastEntry ? fmtDate(lastEntry.date) : '—'
+   475→
+   476→  // ── Build HTML ──
+   477→  // P4: Use specificFolioNumber if provided (for proforma/single folio printing)
+   478→  const specificFolioNo = extraMeta?.specificFolioNumber
+   479→  let folioNo: string
+   480→  if (specificFolioNo != null) {
+   481→    folioNo = typeof specificFolioNo === 'number' ? fmtFolioNum(specificFolioNo) : String(specificFolioNo)
+   482→  } else {
+   483→    const rawFolioNo = d.folioNumber || (d.folios && d.folios[0] ? d.folios[0].folioNumber : null) || d.folioNo || null
+   484→    folioNo = rawFolioNo != null ? (typeof rawFolioNo === 'number' ? fmtFolioNum(rawFolioNo) : String(rawFolioNo)) : 'Master Folio'
+   485→  }
+   486→
+   487→  const visitNo = d.visitNumber || (d.activeFolio && d.activeFolio.visitNumber) || (d.folios && d.folios[0] && d.folios[0].visitNumber) || d.totalVisits || d.visitNo || '—'
+   488→
+   489→  // P8: Determine invoice number label based on docTitle
+   490→  const invoiceLabel = docTitle.toUpperCase().includes('PROFORMA') ? 'Proforma No' : 'Invoice No'
+   491→
+   492→  let html = `<div class="inv-wrap">`
+   493→
+   494→  // 1) HEADER — white background, flex layout with logo
+   495→  html += `<div class="inv-header">`
+   496→  if (shopLogo) {
+   497→    html += `<div class="header-logo"><img src="${shopLogo}" alt="Logo" /></div>`
+   498→  }
+   499→  html += `<div class="header-info">`
+   500→  html += `<div class="biz-name">${bizName}</div>`
+   501→  if (settings.shopTagline || settings.shopSubtitle) html += `<div class="biz-subtitle">${settings.shopTagline || settings.shopSubtitle}</div>`
+   502→  if (bizAddress) html += `<div class="biz-address">${bizAddress}</div>`
+   503→  if (bizPhone || bizEmail) html += `<div class="biz-contact">${bizPhone}${bizPhone && bizEmail ? ' | ' : ''}${bizEmail}</div>`
+   504→  if (gstNumber && gstEnabled) html += `<div class="biz-gstin">GSTIN: ${gstNumber}</div>`
+   505→  html += `</div>`
+   506→  html += `</div>`
+   507→
+   508→  // 2) TITLE BAR
+   509→  html += `<div class="inv-title-section">`
+   510→  html += `<div class="doc-title">${docTitle}</div>`
+   511→  html += `<hr class="title-underline">`
+   512→  html += `<div class="meta-row">`
+   513→  html += `<span>${invoiceLabel}: <strong>${invoiceNo}</strong></span>`
+   514→  html += `<span>Date: <strong>${invoiceDate}</strong></span>`
+   515→  // P8: Use CSS counter for page numbers
+   516→  html += `<span class="page-counter"></span>`
+   517→  html += `</div>`
+   518→  html += `</div>`
+   519→
+   520→  // 3) CUSTOMER INFO TABLE
+   521→  html += `<div class="inv-cust-section"><table>`
+   522→  html += `<tr>
+   523→    <td class="lbl">Customer Id</td><td class="val">${custId || '—'}</td>
+   524→    <td class="lbl">Type</td><td class="val">${custType || '—'}</td>
+   525→  </tr>`
+   526→  html += `<tr>
+   527→    <td class="lbl">Folio No</td><td class="val">${folioNo}</td>
+   528→    <td class="lbl">Visit No</td><td class="val">${visitNo}</td>
+   529→  </tr>`
+   530→  html += `<tr>
+   531→    <td class="lbl">Name</td>
+   532→    <td class="val name-val" colspan="3">${custName}${custCompany ? ` <span style="font-weight:400;font-size:9px;color:#6b7280">( ${custCompany} )</span>` : ''}</td>
+   533→  </tr>`
+   534→  html += `<tr>
+   535→    <td class="lbl">Mobile</td><td class="val">${custMobile || '—'}</td>
+   536→    <td class="lbl">Email</td><td class="val">${custEmail || '—'}</td>
+   537→  </tr>`
+   538→  if (gstEnabled) {
+   539→  html += `<tr>
+   540→    <td class="lbl">GST No</td><td class="val" style="font-family:'Courier New',monospace;font-size:9px">${custGst || '—'}</td>
+   541→    <td class="lbl">PAN</td><td class="val" style="font-family:'Courier New',monospace;font-size:9px">${custPan || '—'}</td>
+   542→  </tr>`
+   543→  }
+   544→  html += `<tr>
+   545→    <td class="lbl">Arrival</td><td class="val">${arrivalDate}</td>
+   546→    <td class="lbl">Departure</td><td class="val">${departureDate}</td>
+   547→  </tr>`
+   548→  if (custAddr) {
+   549→    html += `<tr>
+   550→      <td class="lbl">Address</td>
+   551→      <td class="val" colspan="3">${custAddr}</td>
+   552→    </tr>`
+   553→  }
+   554→  html += `</table></div>`
+   555→
+   556→  // 4) TRANSACTION TABLE
+   557→  html += `<div class="inv-txn-section"><table class="inv-txn-table">`
+   558→  html += `<tr>
+   559→    <th style="width:28px">#</th>
+   560→    <th style="width:72px">Date</th>
+   561→    <th>Description</th>
+   562→    <th class="r" style="width:85px">Transaction No</th>
+   563→    <th class="r" style="width:78px">Debit</th>
+   564→    <th class="r" style="width:78px">Credit</th>
+   565→    <th class="r" style="width:88px">Balance</th>
+   566→  </tr>`
+   567→
+   568→  for (let i = 0; i < entries.length; i++) {
+   569→    const e = entries[i]
+   570→    const desc = stripInternalDescriptions(e.description || e.type || '—')
+   571→    const debitVal = (e.debit || 0) > 0 ? e.debit : 0
+   572→    const creditVal = (e.credit || 0) > 0 ? e.credit : 0
+   573→    const balColor = e.balance > 0 ? 'color:#dc2626' : e.balance < 0 ? 'color:#059669' : 'color:#6b7280'
+   574→    html += `<tr>
+   575→      <td style="text-align:center">${i + 1}</td>
+   576→      <td>${fmtDate(e.date)}</td>
+   577→      <td>${desc}</td>
+   578→      <td class="r txn-no">${e.docNo || ''}</td>
+   579→      <td class="r" style="color:#dc2626;font-weight:600">${debitVal > 0 ? fmtINR(debitVal) : ''}</td>
+   580→      <td class="r" style="color:#059669;font-weight:600">${creditVal > 0 ? fmtINR(creditVal) : ''}</td>
+   581→      <td class="r" style="${balColor};font-weight:600">${fmtINR(e.balance)}</td>
+   582→    </tr>`
+   583→  }
+   584→  html += `</table></div>`
+   585→
+   586→  // 5) CALCULATIONS SECTION
+   587→  html += `<div class="inv-calcs">`
+   588→  html += `<hr class="inv-calc-divider">`
+   589→  html += `<div class="inv-calc-row"><span class="calc-label">Sub-Total</span><span class="calc-value">${fmtINR(totalDebits)}</span></div>`
+   590→
+   591→  if (totalDiscount > 0) {
+   592→    html += `<div class="inv-calc-row"><span class="calc-label">Discount</span><span class="calc-value" style="color:#059669">- ${fmtINR(totalDiscount)}</span></div>`
+   593→  }
+   594→
+   595→  html += `<hr class="inv-calc-divider">`
+   596→  html += `<div class="inv-calc-row"><span class="calc-label">Net Amount</span><span class="calc-value">${fmtINR(netAmount)}</span></div>`
+   597→
+   598→  // GST breakdown — only show when GST enabled AND tax > 0
+   599→  if (gstEnabled && totalTax > 0) {
+   600→    const gstNote = computedTaxFromSettings
+   601→      ? `Amount is inclusive of GST @ ${gstRate}%`
+   602→      : `Amount includes GST of ${fmtINR(totalTax)} (CGST ${fmtINR(cgstAmount)} + SGST ${fmtINR(sgstAmount)})`
+   603→    html += `<div class="inv-gst-include-note"><span>${gstNote}</span></div>`
+   604→  }
+   605→
+   606→
+   607→
+   608→  // Payments offset
+   609→  if (totalCredits > 0) {
+   610→    html += `<hr class="inv-calc-divider">`
+   611→    html += `<div class="inv-calc-row"><span class="calc-label">Total Payments Received</span><span class="calc-value" style="color:#059669">- ${fmtINR(totalCredits)}</span></div>`
+   612→  }
+   613→
+   614→  if (totalRefunds > 0) {
+   615→    html += `<div class="inv-calc-row"><span class="calc-label">Refunds</span><span class="calc-value">+ ${fmtINR(totalRefunds)}</span></div>`
+   616→  }
+   617→
+   618→  html += `<hr class="inv-calc-divider-thick">`
+   619→  html += `<div class="inv-calc-row inv-grand-row"><span class="calc-label">Grand Total</span><span class="calc-value">${fmtINR(grandTotal)}</span></div>`
+   620→  html += `</div>`
+   621→
+   622→  // 6) PAYMENT INFO
+   623→  if (paymentEntries.length > 0) {
+   624→    html += `<div class="inv-payment-info">`
+   625→    html += `<strong>Payment Date:</strong> ${paymentDate} &nbsp;&nbsp;|&nbsp;&nbsp; <strong>Mode:</strong> ${mostUsedMode}`
+   626→    html += `</div>`
+   627→  }
+   628→
+   629→  // 7) GST/HSN SUMMARY TABLE — only show when GST enabled AND tax > 0
+   630→  if (gstEnabled && totalTax > 0) {
+   631→    html += `<div class="inv-gst-section"><table class="inv-gst-table">`
+   632→    html += `<tr>
+   633→      <th>HSN/SAC</th>
+   634→      <th class="r">Taxable Amt</th>
+   635→      <th class="r">SGST Rate</th>
+   636→      <th class="r">SGST</th>
+   637→      <th class="r">CGST Rate</th>
+   638→      <th class="r">CGST</th>
+   639→      <th class="r">Total GST</th>
+   640→      <th class="r">Total (Incl. GST)</th>
+   641→    </tr>`
+   642→    const baseAmount = Math.max(0, netAmount - totalTax)
+   643→    html += `<tr>
+   644→      <td>996311</td>
+   645→      <td class="r">${fmtINR(baseAmount)}</td>
+   646→      <td class="r">${halfRate > 0 ? halfRate + '%' : '—'}</td>
+   647→      <td class="r">${fmtINR(sgstAmount)}</td>
+   648→      <td class="r">${halfRate > 0 ? halfRate + '%' : '—'}</td>
+   649→      <td class="r">${fmtINR(cgstAmount)}</td>
+   650→      <td class="r" style="font-weight:700">${fmtINR(totalTax)}</td>
+   651→      <td class="r" style="font-weight:700">${fmtINR(netAmount)}</td>
+   652→    </tr>`
+   653→    html += `</table></div>`
+   654→  }
+   655→
+   656→  // 8) FOOTER SECTION
+   657→  html += `<div class="inv-footer-section">`
+   658→  // P11: Amount in Words shows Total Payments Received
+   659→  if (totalCredits > 0) {
+   660→    html += `<div class="amount-words">Total Payments Received in Words: ${numberToIndianWords(totalCredits)}</div>`
+   661→  }
+   662→  // Also show Grand Total in words
+   663→  html += `<div class="amount-words" style="margin-top:4px;background:#fef9c3;border-left-color:#ca8a04">Grand Total in Words: ${numberToIndianWords(Math.abs(grandTotal))}</div>`
+   664→
+   665→  html += `<div class="footer-grid">`
+   666→  html += `<div class="footer-col"><h4>${bizName}</h4>`
+   667→  if (bizAddress) html += `<p>${bizAddress}</p>`
+   668→  if (gstEnabled) {
+   669→  if (stateCode) html += `<p>State Code: ${stateCode}</p>`
+   670→  if (gstNumber) html += `<p>GSTIN: ${gstNumber}</p>`
+   671→  if (panNumber) html += `<p>PAN: ${panNumber}</p>`
+   672→  }
+   673→  html += `</div>`
+   674→
+   675→  if (custCompany || (gstEnabled && custGst)) {
+   676→    html += `<div class="footer-col"><h4>Billing Party</h4>`
+   677→    if (custCompany) html += `<p>${custCompany}</p>`
+   678→    if (custAddr) html += `<p>${custAddr}</p>`
+   679→    if (gstEnabled && custGst) html += `<p>GSTIN: ${custGst}</p>`
+   680→    if (gstEnabled && custPan) html += `<p>PAN: ${custPan}</p>`
+   681→    html += `</div>`
+   682→  } else {
+   683→    html += `<div class="footer-col"></div>`
+   684→  }
+   685→  html += `</div>`
+   686→  html += `</div>`
+   687→
+   688→  // 9) BOTTOM BAR
+   689→  html += `<div class="inv-bottom-bar">`
+   690→  html += `<div class="state-info">`
+   691→  if (gstEnabled && stateCode) html += `<div><strong>State Code:</strong> ${stateCode}</div>`
+   692→  html += `<div class="declaration">We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.</div>`
+   693→  html += `</div>`
+   694→  html += `<div class="signatures">`
+   695→  html += `<div class="sig-block"><div class="sig-line">Customer Signature</div></div>`
+   696→  html += `<div class="sig-block"><div class="sig-line">Authorized Signature</div></div>`
+   697→  html += `</div>`
+   698→  html += `</div>`
+   699→
+   700→  // 10) LEGAL LINE
+   701→  const now = new Date()
+   702→  html += `<div class="inv-legal">Powered by Eservices &nbsp;|&nbsp; Date: ${fmtDateTime(now.toISOString())}${printedBy ? ` &nbsp;|&nbsp; Printed by: ${printedBy}` : ''}</div>`
+   703→
+   704→  html += `</div>`
+   705→  return html
+   706→}
+   707→
+   708→// ─── Print Folio Invoice (formerly "Receipt") ───
+   709→// Uses stable doc IDs from existing entries — NEVER regenerates numbers on reprint
+   710→// Accepts optional invoiceNumber for permanent invoice numbers from checkout records
+   711→export async function printReceipt(
+   712→  detail: CustomerDetail,
+   713→  entries: LedgerEntry[],
+   714→  hdrRef: RefObject<Record<string, string>>,
+   715→  printedBy?: string,
+   716→  invoiceNumber?: string
+   717→) {
+   718→  if (!detail) return
+   719→  const activeEntries = entries.length > 0 ? entries : detail.ledgerEntries
+   720→  if (activeEntries.length === 0) { notify({ type: 'warning', title: 'No Entries', message: 'No entries to print' }); return }
+   721→  const shopSettings = await fetchSettingsForPrint(hdrRef)
+   722→  const docId = invoiceNumber || getStableDocId(activeEntries)
+   723→  const now = new Date()
+   724→
+   725→  const w = openPrintWindow(`Folio Invoice - ${detail.fullName}`)
+   726→  if (!w) return
+   727→
+   728→  w.document.write(
+   729→    `<!DOCTYPE html><html><head><title>Folio Invoice</title><style>${INVOICE_CSS}</style><style>${buildTemplateCSSFromSettings(shopSettings)}</style></head><body>` +
+   730→    buildHotelStyleInvoice(shopSettings, detail, activeEntries as any[], docId, fmtDate(now.toISOString()), 'TAX INVOICE', undefined, printedBy) +
+   731→    `</body></html>`
+   732→  )
+   733→  w.document.close()
+   734→  w.print()
+   735→}
+   736→
+   737→// ─── Print Invoice (Professional Hotel-Style) ───
+   738→export async function printInvoice(
+   739→  detail: CustomerDetail,
+   740→  invoiceData: { entries?: any[]; closingBalance?: number; openingBalance?: number },
+   741→  invoiceFrom: string,
+   742→  invoiceTo: string,
+   743→  hdrRef: RefObject<Record<string, string>>,
+   744→  printedBy?: string,
+   745→  invoiceNumber?: string
+   746→) {
+   747→  if (!detail || !invoiceData) return
+   748→  const entries = invoiceData.entries || []
+   749→  if (entries.length === 0) return
+   750→  const shopSettings = await fetchSettingsForPrint(hdrRef)
+   751→  // Point 1: Use permanent invoice number if provided, otherwise derive from entries
+   752→  const docId = invoiceNumber || getStableDocId(entries)
+   753→  const now = new Date()
+   754→
+   755→  const w = openPrintWindow(`Tax Invoice - ${detail.fullName}`)
+   756→  if (!w) return
+   757→
+   758→  w.document.write(
+   759→    `<!DOCTYPE html><html><head><title>Tax Invoice</title><style>${INVOICE_CSS}</style><style>${buildTemplateCSSFromSettings(shopSettings)}</style></head><body>` +
+   760→    buildHotelStyleInvoice(shopSettings, detail, entries, docId, fmtDate(now.toISOString()), 'TAX INVOICE', {
+   761→      openingBalance: invoiceData.openingBalance ?? 0,
+   762→      closingBalance: invoiceData.closingBalance ?? 0,
+   763→      periodFrom: invoiceFrom,
+   764→      periodTo: invoiceTo,
+   765→    }, printedBy) +
+   766→    `</body></html>`
+   767→  )
+   768→  w.document.close()
+   769→  w.print()
+   770→}
+   771→
+   772→// ─── Print Single Folio Statement (Proforma) ───
+   773→// P4: Passes specificFolioNumber so the correct folio is shown (not always master)
+   774→export async function printSingleFolio(
+   775→  detail: CustomerDetail,
+   776→  folioStatementData: { entries?: any[]; folioId?: string; openingBalance?: number; closingBalance?: number; folioNumber?: number },
+   777→  hdrRef: RefObject<Record<string, string>>,
+   778→  printedBy?: string
+   779→) {
+   780→  if (!detail || !folioStatementData) return
+   781→  const entries = folioStatementData.entries || []
+   782→  if (entries.length === 0) return
+   783→  const shopSettings = await fetchSettingsForPrint(hdrRef)
+   784→  // P4: Use "N/A" as proforma number — proforma is not a real invoice
+   785→  const docId = 'N/A'
+   786→  const now = new Date()
+   787→
+   788→  // P4: Find the specific folio number from the detail's folios list
+   789→  let specificFolioNumber: number | undefined
+   790→  if (folioStatementData.folioId && (detail as any).folios) {
+   791→    const matchFolio = (detail as any).folios.find((f: any) => f.id === folioStatementData.folioId)
+   792→    if (matchFolio) specificFolioNumber = matchFolio.folioNumber
+   793→  }
+   794→  if (folioStatementData.folioNumber) specificFolioNumber = folioStatementData.folioNumber
+   795→
+   796→  const w = openPrintWindow(`Proforma - ${detail.fullName}`)
+   797→  if (!w) return
+   798→
+   799→  w.document.write(
+   800→    `<!DOCTYPE html><html><head><title>Proforma</title><style>${INVOICE_CSS}</style><style>${buildTemplateCSSFromSettings(shopSettings)}</style></head><body>` +
+   801→    buildHotelStyleInvoice(shopSettings, detail, entries, docId, fmtDate(now.toISOString()), 'PROFORMA INVOICE', {
+   802→      openingBalance: folioStatementData.openingBalance ?? 0,
+   803→      closingBalance: folioStatementData.closingBalance ?? 0,
+   804→      specificFolioNumber,
+   805→    }, printedBy) +
+   806→    `</body></html>`
+   807→  )
+   808→  w.document.close()
+   809→  w.print()
+   810→}
+   811→
+   812→// ─── Print Voucher / Payment History ───
+   813→// P5: Uses invoiceNo from payment entries (VOU-xxxx) as permanent voucher number
+   814→export async function printVoucherHistory(
+   815→  detail: CustomerDetail,
+   816→  paymentEntries: LedgerEntry[],
+   817→  hdrRef: RefObject<Record<string, string>>,
+   818→  printedBy?: string
+   819→) {
+   820→  if (!detail) return
+   821→  if (paymentEntries.length === 0) { notify({ type: 'warning', title: 'No Entries', message: 'No payment entries to print' }); return }
+   822→  const shopSettings = await fetchSettingsForPrint(hdrRef)
+   823→  const now = new Date()
+   824→
+   825→  const sorted = [...paymentEntries].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+   826→  const totalAmount = sorted.reduce((s, e) => s + (e.credit || 0), 0)
+   827→
+   828→  // P5: Use first payment's invoiceNo (VOU-xxxx) as permanent voucher number
+   829→  // Fallback to docNo if invoiceNo is empty (for entries created before this fix)
+   830→  const voucherNo = sorted[0]?.invoiceNo || sorted[0]?.docNo || getStableDocId(sorted)
+   831→
+   832→  // Build entries in the format expected by buildHotelStyleInvoice
+   833→  const voucherEntries = sorted.map(e => ({
+   834→    ...e,
+   835→    debit: 0,
+   836→    credit: e.credit || 0,
+   837→    balance: 0,
+   838→    type: 'Payment',
+   839→    description: e.description || `Payment via ${e.paymentMode || 'Cash'}`,
+   840→  }))
+   841→
+   842→  // Compute running balance for display
+   843→  let runBal = 0
+   844→  for (const e of voucherEntries) {
+   845→    runBal -= (e.credit || 0)
+   846→    e.balance = Math.round(runBal * 100) / 100
+   847→  }
+   848→
+   849→  const w = openPrintWindow(`Payment Voucher - ${detail.fullName}`)
+   850→  if (!w) return
+   851→
+   852→  w.document.write(
+   853→    `<!DOCTYPE html><html><head><title>Payment Voucher</title><style>${INVOICE_CSS}</style><style>${buildTemplateCSSFromSettings(shopSettings)}</style></head><body>` +
+   854→    buildHotelStyleInvoice(shopSettings, detail, voucherEntries, voucherNo, fmtDate(now.toISOString()), 'PAYMENT VOUCHER', {
+   855→      openingBalance: 0,
+   856→      closingBalance: -totalAmount,
+   857→    }, printedBy) +
+   858→    `</body></html>`
+   859→  )
+   860→  w.document.close()
+   861→  w.print()
+   862→}
+   863→
+   864→// ─── Thermal Print Helpers ───
+   865→
+   866→interface ShopSettings {
+   867→  shopName: string
+   868→  shopAddress: string
+   869→  shopPhone: string
+   870→  shopGst: string
+   871→  shopGstState: string
+   872→  shopLogo: string
+   873→}
+   874→
+   875→async function fetchShopSettings(hdrRef?: RefObject<Record<string, string>>): Promise<ShopSettings> {
+   876→  try {
+   877→    const headers = hdrRef?.current || undefined
+   878→    const res = await fetch('/api/settings', headers ? { headers } : undefined)
+   879→    if (res.ok) {
+   880→      const db = (await res.json()) as Record<string, string>
+   881→      return {
+   882→        shopName: db.shopName || 'Eservices',
+   883→        shopAddress: db.shopAddress || '',
+   884→        shopPhone: db.shopPhone || '',
+   885→        shopGst: db.gstNumber || db.gstin || '',
+   886→        shopGstState: db.gstState || '',
+   887→        shopLogo: db.shopLogo || db.logo || '',
+   888→      }
+   889→    }
+   890→  } catch { /* ignore */ }
+   891→  return { shopName: 'Eservices', shopAddress: '', shopPhone: '', shopGst: '', shopGstState: '', shopLogo: '' }
+   892→}
+   893→
+   894→function openThermalPrintWindow(thermalHtml: string, title: string): Window | null {
+   895→  const w = window.open('', '_blank', 'width=350,height=700')
+   896→  if (!w) {
+   897→    notify({ type: 'error', title: 'Error', message: 'Please allow pop-ups to print thermal receipts' })
+   898→    return null
+   899→  }
+   900→  w.document.write(thermalHtml)
+   901→  w.document.close()
+   902→  setTimeout(() => {
+   903→    try { if (!w.closed) w.print() } catch { /* window closed */ }
+   904→  }, 600)
+   905→  return w
+   906→}
+   907→
+   908→// ─── Thermal Print Receipt ───
+   909→export async function thermalPrintReceipt(
+   910→  detail: CustomerDetail,
+   911→  entries: LedgerEntry[],
+   912→  hdrRef: RefObject<Record<string, string>>,
+   913→  invoiceNumber?: string
+   914→) {
+   915→  if (!detail) return
+   916→  const activeEntries = entries.length > 0 ? entries : detail.ledgerEntries
+   917→  if (activeEntries.length === 0) { notify({ type: 'warning', title: 'No Entries', message: 'No entries to print' }); return }
+   918→
+   919→  const [tConfig, shop] = await Promise.all([
+   920→    fetchThermalSettings(),
+   921→    fetchShopSettings(hdrRef),
+   922→  ])
+   923→  // Point 3: Fallback to shopLogo if thermal logo is not set
+   924→  if (!tConfig.logo && shop.shopLogo) { tConfig.logo = shop.shopLogo; tConfig.showLogo = true }
+   925→
+   926→  const totalDebits = activeEntries.reduce((s, e) => s + (e.debit || 0), 0)
+   927→  const totalCredits = activeEntries.reduce((s, e) => s + (e.credit || 0), 0)
+   928→  const finalBal = activeEntries[activeEntries.length - 1].balance
+   929→
+   930→  const items: ThermalReceiptData['items'] = activeEntries.map(e => ({
+   931→    name: stripInternalDescriptions(e.description || e.type || '—'),
+   932→    qty: 1,
+   933→    rate: e.debit > 0 ? e.debit : e.credit,
+   934→    total: e.debit > 0 ? e.debit : e.credit,
+   935→  }))
+   936→
+   937→  const actualPaymentMethod = computeMostUsedPaymentMode(activeEntries)
+   938→  const docId = invoiceNumber || getStableDocId(activeEntries)
+   939→
+   940→  const receiptData: ThermalReceiptData = {
+   941→    shopName: shop.shopName,
+   942→    shopAddress: shop.shopAddress,
+   943→    shopPhone: shop.shopPhone,
+   944→    shopGst: shop.shopGst,
+   945→    shopGstState: shop.shopGstState,
+   946→    showGst: false,
+   947→    invoiceNumber: docId,
+   948→    date: fmtDate(new Date().toISOString()),
+   949→    orderType: 'PAYMENT RECEIPT',
+   950→    customerName: detail.fullName,
+   951→    customerPhone: detail.mobile,
+   952→    customerAddress: (detail as any).address || '',
+   953→    items,
+   954→    subtotal: totalDebits,
+   955→    cgst: 0,
+   956→    sgst: 0,
+   957→    gstRate: 0,
+   958→    deliveryCharge: 0,
+   959→    discountAmount: 0,
+   960→    grandTotal: totalDebits - totalCredits,
+   961→    paidAmount: totalCredits,
+   962→    balanceAmount: finalBal,
+   963→    paymentMethod: actualPaymentMethod,
+   964→    billStatus: finalBal <= 0 ? 'Paid' : 'Balance',
+   965→  }
+   966→
+   967→  const thermalHtml = buildRichThermalHtml(receiptData, tConfig, `Receipt - ${detail.fullName}`)
+   968→  openThermalPrintWindow(thermalHtml, `Receipt - ${detail.fullName}`)
+   969→}
+   970→
+   971→// ─── Thermal Print Invoice ───
+   972→export async function thermalPrintInvoice(
+   973→  detail: CustomerDetail,
+   974→  invoiceData: { entries?: any[]; closingBalance?: number; openingBalance?: number },
+   975→  invoiceFrom: string,
+   976→  invoiceTo: string,
+   977→  invoiceNumber?: string
+   978→) {
+   979→  if (!detail || !invoiceData) return
+   980→  const entries = invoiceData.entries || []
+   981→  if (entries.length === 0) return
+   982→
+   983→  const [tConfig, shop] = await Promise.all([
+   984→    fetchThermalSettings(),
+   985→    fetchShopSettings(),
+   986→  ])
+   987→  // Point 3: Fallback to shopLogo if thermal logo is not set
+   988→  if (!tConfig.logo && shop.shopLogo) { tConfig.logo = shop.shopLogo; tConfig.showLogo = true }
+   989→
+   990→  const totalDebits = entries.reduce((s: number, e: any) => s + (e.debit || 0), 0)
+   991→  const totalCredits = entries.reduce((s: number, e: any) => s + (e.credit || 0), 0)
+   992→  const closingBal = invoiceData.closingBalance ?? 0
+   993→
+   994→  const items: ThermalReceiptData['items'] = entries.map((e: any) => ({
+   995→    name: stripInternalDescriptions(e.description || e.type || '—'),
+   996→    qty: 1,
+   997→    rate: e.debit > 0 ? e.debit : e.credit,
+   998→    total: e.debit > 0 ? e.debit : e.credit,
+   999→  }))
+  1000→
+  1001→  const actualPaymentMethod = computeMostUsedPaymentMode(entries)
+  1002→  const docId = invoiceNumber || getStableDocId(entries)
+  1003→
+  1004→  const title = 'TAX INVOICE'
+  1005→
+  1006→  const receiptData: ThermalReceiptData = {
+  1007→    shopName: shop.shopName,
+  1008→    shopAddress: shop.shopAddress,
+  1009→    shopPhone: shop.shopPhone,
+  1010→    shopGst: shop.shopGst,
+  1011→    shopGstState: shop.shopGstState,
+  1012→    showGst: !!shop.shopGst,
+  1013→    invoiceNumber: docId,
+  1014→    date: `${invoiceFrom || ''} to ${invoiceTo || fmtDate(new Date().toISOString())}`,
+  1015→    orderType: title,
+  1016→    customerName: detail.fullName,
+  1017→    customerPhone: detail.mobile,
+  1018→    customerAddress: (detail as any).address || '',
+  1019→    items,
+  1020→    subtotal: totalDebits,
+  1021→    cgst: 0,
+  1022→    sgst: 0,
+  1023→    gstRate: 0,
+  1024→    deliveryCharge: 0,
+  1025→    discountAmount: 0,
+  1026→    grandTotal: totalDebits - totalCredits,
+  1027→    paidAmount: totalCredits,
+  1028→    balanceAmount: closingBal,
+  1029→    paymentMethod: actualPaymentMethod,
+  1030→    billStatus: closingBal <= 0 ? 'Paid' : 'Balance',
+  1031→  }
+  1032→
+  1033→  const thermalHtml = buildRichThermalHtml(receiptData, tConfig, `${title} - ${detail.fullName}`)
+  1034→  openThermalPrintWindow(thermalHtml, `${title} - ${detail.fullName}`)
+  1035→}
+  1036→
+  1037→// ─── Thermal Print Folio Statement ───
+  1038→export async function thermalPrintFolioStatement(
+  1039→  detail: CustomerDetail,
+  1040→  folioStatementData: { entries?: any[]; folioId?: string; openingBalance?: number; closingBalance?: number }
+  1041→) {
+  1042→  if (!detail || !folioStatementData) return
+  1043→  const entries = folioStatementData.entries || []
+  1044→  if (entries.length === 0) return
+  1045→
+  1046→  const [tConfig, shop] = await Promise.all([
+  1047→    fetchThermalSettings(),
+  1048→    fetchShopSettings(),
+  1049→  ])
+  1050→  // Point 3: Fallback to shopLogo if thermal logo is not set
+  1051→  if (!tConfig.logo && shop.shopLogo) { tConfig.logo = shop.shopLogo; tConfig.showLogo = true }
+  1052→
+  1053→  const totalDebits = entries.reduce((s: number, e: any) => s + (e.debit || 0), 0)
+  1054→  const totalCredits = entries.reduce((s: number, e: any) => s + (e.credit || 0), 0)
+  1055→  const closingBal = folioStatementData.closingBalance || 0
+  1056→
+  1057→  const items: ThermalReceiptData['items'] = entries.map((e: any) => ({
+  1058→    name: stripInternalDescriptions(e.description || '—'),
+  1059→    qty: 1,
+  1060→    rate: e.debit > 0 ? e.debit : e.credit,
+  1061→    total: e.debit > 0 ? e.debit : e.credit,
+  1062→  }))
+  1063→
+  1064→  const actualPaymentMethod = computeMostUsedPaymentMode(entries)
+  1065→
+  1066→  const receiptData: ThermalReceiptData = {
+  1067→    shopName: shop.shopName,
+  1068→    shopAddress: shop.shopAddress,
+  1069→    shopPhone: shop.shopPhone,
+  1070→    shopGst: shop.shopGst,
+  1071→    shopGstState: shop.shopGstState,
+  1072→    showGst: false,
+  1073→    invoiceNumber: folioStatementData.folioId || detail.customerId,
+  1074→    date: fmtDate(new Date().toISOString()),
+  1075→    orderType: 'PROFORMA',
+  1076→    customerName: detail.fullName,
+  1077→    customerPhone: detail.mobile,
+  1078→    customerAddress: (detail as any).address || '',
+  1079→    items,
+  1080→    subtotal: totalDebits,
+  1081→    cgst: 0,
+  1082→    sgst: 0,
+  1083→    gstRate: 0,
+  1084→    deliveryCharge: 0,
+  1085→    discountAmount: 0,
+  1086→    grandTotal: totalDebits - totalCredits,
+  1087→    paidAmount: totalCredits,
+  1088→    balanceAmount: closingBal,
+  1089→    paymentMethod: actualPaymentMethod,
+  1090→    billStatus: closingBal <= 0 ? 'Paid' : 'Balance',
+  1091→  }
+  1092→
+  1093→  const thermalHtml = buildRichThermalHtml(receiptData, tConfig, `Proforma - ${detail.fullName}`)
+  1094→  openThermalPrintWindow(thermalHtml, `Proforma - ${detail.fullName}`)
+  1095→}
+  1096→
+  1097→// ─── Thermal Print Voucher / Payment History ───
+  1098→export async function thermalPrintVoucherHistory(
+  1099→  detail: CustomerDetail,
+  1100→  paymentEntries: LedgerEntry[],
+  1101→  hdrRef: RefObject<Record<string, string>>
+  1102→) {
+  1103→  if (!detail) return
+  1104→  if (paymentEntries.length === 0) { notify({ type: 'warning', title: 'No Entries', message: 'No payment entries to print' }); return }
+  1105→
+  1106→  const [tConfig, shop] = await Promise.all([
+  1107→    fetchThermalSettings(),
+  1108→    fetchShopSettings(hdrRef),
+  1109→  ])
+  1110→  // Point 3: Fallback to shopLogo if thermal logo is not set
+  1111→  if (!tConfig.logo && shop.shopLogo) { tConfig.logo = shop.shopLogo; tConfig.showLogo = true }
+  1112→
+  1113→  const sorted = [...paymentEntries].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+  1114→  const totalAmount = sorted.reduce((s, e) => s + (e.credit || 0), 0)
+  1115→
+  1116→  // P5: Use first payment's invoiceNo (VOU-xxxx) as permanent voucher number
+  1117→  const voucherDocNo = sorted[0]?.invoiceNo || sorted[0]?.docNo || detail.customerId
+  1118→
+  1119→  const items: ThermalReceiptData['items'] = sorted.map(e => ({
+  1120→    name: stripInternalDescriptions(e.description || '—'),
+  1121→    qty: 1,
+  1122→    rate: e.credit || 0,
+  1123→    total: e.credit || 0,
+  1124→  }))
+  1125→
+  1126→  const actualPaymentMethod = computeMostUsedPaymentMode(sorted)
+  1127→
+  1128→  const receiptData: ThermalReceiptData = {
+  1129→    shopName: shop.shopName,
+  1130→    shopAddress: shop.shopAddress,
+  1131→    shopPhone: shop.shopPhone,
+  1132→    shopGst: shop.shopGst,
+  1133→    shopGstState: shop.shopGstState,
+  1134→    showGst: false,
+  1135→    invoiceNumber: voucherDocNo,
+  1136→    date: fmtDate(new Date().toISOString()),
+  1137→    orderType: 'PAYMENT VOUCHER',
+  1138→    customerName: detail.fullName,
+  1139→    customerPhone: detail.mobile,
+  1140→    customerAddress: (detail as any).address || '',
+  1141→    items,
+  1142→    subtotal: totalAmount,
+  1143→    cgst: 0,
+  1144→    sgst: 0,
+  1145→    gstRate: 0,
+  1146→    deliveryCharge: 0,
+  1147→    discountAmount: 0,
+  1148→    grandTotal: totalAmount,
+  1149→    paidAmount: totalAmount,
+  1150→    balanceAmount: 0,
+  1151→    paymentMethod: actualPaymentMethod,
+  1152→    billStatus: 'Paid',
+  1153→  }
+  1154→
+  1155→  const thermalHtml = buildRichThermalHtml(receiptData, tConfig, `Voucher History - ${detail.fullName}`)
+  1156→  openThermalPrintWindow(thermalHtml, `Voucher History - ${detail.fullName}`)
+  1157→}
+  1158→
+  1159→// ─── Print History Invoice (Professional invoice for historical folios) ───
+  1160→export async function printHistoryInvoice(
+  1161→  detail: CustomerDetail,
+  1162→  entries: any[],
+  1163→  openingBalance: number,
+  1164→  closingBalance: number,
+  1165→  invoiceFrom: string,
+  1166→  invoiceTo: string,
+  1167→  hdrRef: RefObject<Record<string, string>>,
+  1168→  printedBy?: string,
+  1169→  invoiceNumber?: string
+  1170→) {
+  1171→  if (!detail || !entries?.length) return
+  1172→
+  1173→  const shopSettings = await fetchSettingsForPrint(hdrRef)
+  1174→  // Point 1: Use permanent invoice number if provided, otherwise derive from entries
+  1175→  const docId = invoiceNumber || getStableDocId(entries)
+  1176→  const now = new Date()
+  1177→
+  1178→  const w = openPrintWindow(`Invoice - ${detail.fullName}`)
+  1179→  if (!w) return
+  1180→
+  1181→  w.document.write(
+  1182→    `<!DOCTYPE html><html><head><title>Tax Invoice</title><style>${INVOICE_CSS}</style><style>${buildTemplateCSSFromSettings(shopSettings)}</style></head><body>` +
+  1183→    buildHotelStyleInvoice(shopSettings, detail, entries, docId, fmtDate(now.toISOString()), 'Tax Invoice', {
+  1184→      openingBalance,
+  1185→      closingBalance,
+  1186→      periodFrom: invoiceFrom,
+  1187→      periodTo: invoiceTo,
+  1188→    }, printedBy) +
+  1189→    `</body></html>`
+  1190→  )
+  1191→  w.document.close()
+  1192→  w.print()
+  1193→}
+  1194→

@@ -1,0 +1,2002 @@
+     1→'use client';
+     2→
+     3→import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+     4→import { format, parseISO } from 'date-fns';
+     5→import {
+     6→  Search,
+     7→  Eye,
+     8→  Pencil,
+     9→  Trash2,
+    10→  Printer,
+    11→  FileText,
+    12→  Receipt,
+    13→  CalendarCheck,
+    14→  X,
+    15→  CheckCircle,
+    16→  Clock,
+    17→  PrinterIcon,
+    18→  RotateCcw,
+    19→  Wallet,
+    20→  IndianRupee,
+    21→  CreditCard,
+    22→  Smartphone,
+    23→  Building2,
+    24→  AlertCircle,
+    25→  RefreshCw,
+    26→  CircleDollarSign,
+    27→  CircleCheckBig,
+    28→  Ban,
+    29→  ArrowRightLeft,
+    30→  UtensilsCrossed,
+    31→  ShoppingBag,
+    32→  Truck,
+    33→} from 'lucide-react';
+    34→import { notify } from '@/lib/notification-store';
+    35→
+    36→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+    37→import { Button } from '@/components/ui/button';
+    38→import { Input } from '@/components/ui/input';
+    39→import { Label } from '@/components/ui/label';
+    40→import { Textarea } from '@/components/ui/textarea';
+    41→import { Checkbox } from '@/components/ui/checkbox';
+    42→import {
+    43→  Dialog,
+    44→  DialogContent,
+    45→  DialogHeader,
+    46→  DialogTitle,
+    47→  DialogDescription,
+    48→  DialogFooter,
+    49→} from '@/components/ui/dialog';
+    50→import {
+    51→  AlertDialog,
+    52→  AlertDialogAction,
+    53→  AlertDialogCancel,
+    54→  AlertDialogContent,
+    55→  AlertDialogDescription,
+    56→  AlertDialogFooter,
+    57→  AlertDialogHeader,
+    58→  AlertDialogTitle,
+    59→} from '@/components/ui/alert-dialog';
+    60→import {
+    61→  Select,
+    62→  SelectContent,
+    63→  SelectItem,
+    64→  SelectTrigger,
+    65→  SelectValue,
+    66→} from '@/components/ui/select';
+    67→import { Badge } from '@/components/ui/badge';
+    68→import { Separator } from '@/components/ui/separator';
+    69→import { Skeleton } from '@/components/ui/skeleton';
+    70→import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
+    71→import {
+    72→  Table,
+    73→  TableBody,
+    74→  TableCell,
+    75→  TableHead,
+    76→  TableHeader,
+    77→  TableRow,
+    78→} from '@/components/ui/table';
+    79→import { fetchThermalSettings, buildRichThermalHtml, type ThermalReceiptData } from '@/lib/thermal-settings';
+    80→import { useAuth } from '@/components/auth-provider';
+    81→import ReadOnlyBanner from '@/components/read-only-banner';
+    82→
+    83→// ── Interfaces ──────────────────────────────────────────────
+    84→interface InvoiceItem {
+    85→  id: string;
+    86→  name: string;
+    87→  description?: string;
+    88→  qty: number;
+    89→  rate: number;
+    90→  total: number;
+    91→}
+    92→
+    93→interface RefundItem {
+    94→  name: string;
+    95→  qty: number;
+    96→  rate: number;
+    97→  total: number;
+    98→}
+    99→
+   100→interface Refund {
+   101→  id: string;
+   102→  refundNumber: string;
+   103→  originalInvoiceId: string;
+   104→  date: string;
+   105→  items: string;
+   106→  refundAmount: number;
+   107→  reason: string;
+   108→  status: string;
+   109→}
+   110→
+   111→interface Invoice {
+   112→  id: string;
+   113→  invoiceNumber: string;
+   114→  date: string;
+   115→  customerName: string;
+   116→  customerAddress?: string;
+   117→  customerPhone: string;
+   118→  paymentMethod: string;
+   119→  status: string;
+   120→  orderType: string;
+   121→  subtotal: number;
+   122→  cgst: number;
+   123→  sgst: number;
+   124→  deliveryCharge: number;
+   125→  discountAmount: number;
+   126→  grandTotal: number;
+   127→  paidAmount: number;
+   128→  balanceAmount: number;
+   129→  isCompleted?: boolean;
+   130→  invoiceItems: InvoiceItem[];
+   131→  refunds?: Refund[];
+   132→  createdAt: string;
+   133→}
+   134→
+   135→interface ShopSettings {
+   136→  shopName: string;
+   137→  shopAddress: string;
+   138→  shopPhone: string;
+   139→  shopEmail?: string;
+   140→  authorizedSignatory?: string;
+   141→  enableGst?: boolean;
+   142→  gstRate?: number;
+   143→  gstNumber?: string;
+   144→  gstState?: string;
+   145→  gstFullMode?: boolean;
+   146→  gstSimpleMode?: boolean;
+   147→}
+   148→
+   149→interface BillHistorySectionProps {
+   150→  onNavigate: (page: string) => void;
+   151→  onEditInvoice: (invoice: any) => void;
+   152→  onRefreshData: () => void;
+   153→  dataVersion?: number;
+   154→}
+   155→
+   156→// ── Helpers ─────────────────────────────────────────────────
+   157→function formatCurrency(amount: number): string {
+   158→  return `₹${amount.toLocaleString('en-IN', {
+   159→    minimumFractionDigits: 2,
+   160→    maximumFractionDigits: 2,
+   161→  })}`;
+   162→}
+   163→
+   164→function formatDate(dateStr: string): string {
+   165→  try {
+   166→    return format(parseISO(dateStr), 'dd MMM yyyy');
+   167→  } catch {
+   168→    return dateStr;
+   169→  }
+   170→}
+   171→
+   172→function formatDateFull(dateStr: string): string {
+   173→  try {
+   174→    return format(parseISO(dateStr), 'dd/MM/yyyy');
+   175→  } catch {
+   176→    return dateStr;
+   177→  }
+   178→}
+   179→
+   180→// ── Status System ──────────────────────────────────────────
+   181→type InvoiceStatus = 'Pending' | 'Paid' | 'Balance' | 'Refunded' | 'Replaced';
+   182→
+   183→function getStatusColor(status: string): string {
+   184→  const s = (status || '').toLowerCase();
+   185→  switch (s) {
+   186→    case 'paid':
+   187→    case 'completed':
+   188→      return 'bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/40 dark:text-emerald-400 dark:border-emerald-700';
+   189→    case 'balance':
+   190→      return 'bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-900/40 dark:text-orange-400 dark:border-orange-700';
+   191→    case 'refunded':
+   192→      return 'bg-red-100 text-red-700 border-red-300 dark:bg-red-900/40 dark:text-red-400 dark:border-red-700';
+   193→    case 'replaced':
+   194→      return 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/40 dark:text-blue-400 dark:border-blue-700';
+   195→    case 'cancelled':
+   196→      return 'bg-red-100 text-red-700 border-red-300 dark:bg-red-900/40 dark:text-red-400 dark:border-red-700';
+   197→    case 'pending':
+   198→    default:
+   199→      return 'bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-900/40 dark:text-amber-400 dark:border-amber-700';
+   200→  }
+   201→}
+   202→
+   203→function getStatusIcon(status: string) {
+   204→  const s = (status || '').toLowerCase();
+   205→  switch (s) {
+   206→    case 'paid':
+   207→    case 'completed':
+   208→      return <CheckCircle className="h-3 w-3" />;
+   209→    case 'balance':
+   210→      return <CircleDollarSign className="h-3 w-3" />;
+   211→    case 'refunded':
+   212→      return <RotateCcw className="h-3 w-3" />;
+   213→    case 'replaced':
+   214→      return <ArrowRightLeft className="h-3 w-3" />;
+   215→    case 'cancelled':
+   216→      return <Ban className="h-3 w-3" />;
+   217→    case 'pending':
+   218→    default:
+   219→      return <Clock className="h-3 w-3" />;
+   220→  }
+   221→}
+   222→
+   223→function getStatusLabel(status: string): string {
+   224→  const s = (status || '').toLowerCase();
+   225→  switch (s) {
+   226→    case 'paid':
+   227→    case 'completed':
+   228→      return 'Paid';
+   229→    case 'balance':
+   230→      return 'Balance';
+   231→    case 'refunded':
+   232→      return 'Refunded';
+   233→    case 'replaced':
+   234→      return 'Replaced';
+   235→    case 'cancelled':
+   236→      return 'Cancelled';
+   237→    case 'pending':
+   238→    default:
+   239→      return 'Pending';
+   240→  }
+   241→}
+   242→
+   243→function getPaymentIcon(method: string) {
+   244→  const m = (method || '').toLowerCase();
+   245→  switch (m) {
+   246→    case 'cash':
+   247→      return <IndianRupee className="h-3.5 w-3.5" />;
+   248→    case 'upi':
+   249→      return <Smartphone className="h-3.5 w-3.5" />;
+   250→    case 'card':
+   251→    case 'credit card':
+   252→    case 'debit card':
+   253→      return <CreditCard className="h-3.5 w-3.5" />;
+   254→    case 'net banking':
+   255→    case 'netbanking':
+   256→      return <Building2 className="h-3.5 w-3.5" />;
+   257→    default:
+   258→      return <Wallet className="h-3.5 w-3.5" />;
+   259→  }
+   260→}
+   261→
+   262→function getBalanceColorClass(invoice: Invoice): string {
+   263→  const s = (invoice.status || '').toLowerCase();
+   264→  if (s === 'paid' || s === 'completed') return 'text-emerald-600 dark:text-emerald-400';
+   265→  if (s === 'balance') {
+   266→    if (invoice.balanceAmount > 0) return 'text-orange-600 dark:text-orange-400';
+   267→  }
+   268→  if (s === 'refunded' || s === 'cancelled') return 'text-red-600 dark:text-red-400';
+   269→  return 'text-amber-600 dark:text-amber-400';
+   270→}
+   271→
+   272→// ── Order Type System ───────────────────────────────────────
+   273→function getOrderTypeLabel(orderType: string): string {
+   274→  const t = (orderType || '').toLowerCase();
+   275→  switch (t) {
+   276→    case 'dine-in':
+   277→      return 'Dine-In';
+   278→    case 'takeaway':
+   279→      return 'Takeaway';
+   280→    case 'delivery':
+   281→      return 'Delivery';
+   282→    default:
+   283→      return orderType || 'Dine-In';
+   284→  }
+   285→}
+   286→
+   287→function getOrderTypeIcon(orderType: string) {
+   288→  const t = (orderType || '').toLowerCase();
+   289→  switch (t) {
+   290→    case 'dine-in':
+   291→      return <UtensilsCrossed className="h-3 w-3" />;
+   292→    case 'takeaway':
+   293→      return <ShoppingBag className="h-3 w-3" />;
+   294→    case 'delivery':
+   295→      return <Truck className="h-3 w-3" />;
+   296→    default:
+   297→      return <UtensilsCrossed className="h-3 w-3" />;
+   298→  }
+   299→}
+   300→
+   301→function getOrderTypeBadgeClass(orderType: string): string {
+   302→  const t = (orderType || '').toLowerCase();
+   303→  switch (t) {
+   304→    case 'dine-in':
+   305→      return 'bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-900/40 dark:text-emerald-400 dark:border-emerald-700';
+   306→    case 'takeaway':
+   307→      return 'bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-900/40 dark:text-amber-400 dark:border-amber-700';
+   308→    case 'delivery':
+   309→      return 'bg-violet-100 text-violet-700 border-violet-300 dark:bg-violet-900/40 dark:text-violet-400 dark:border-violet-700';
+   310→    default:
+   311→      return 'bg-muted text-muted-foreground border-muted-foreground/20';
+   312→  }
+   313→}
+   314→
+   315→// ── Component ───────────────────────────────────────────────
+   316→export default function BillHistorySection({
+   317→  onNavigate,
+   318→  onEditInvoice,
+   319→  onRefreshData,
+   320→  dataVersion,
+   321→}: BillHistorySectionProps) {
+   322→  const { token, hasPermission } = useAuth();
+   323→  const authHeaders: Record<string, string> = token ? { 'Authorization': `Bearer ${token}` } : {};
+   324→  const canAccess = hasPermission('billing', 'access');
+   325→  const canEdit = hasPermission('billing', 'edit');
+   326→  const canDelete = hasPermission('billing', 'delete');
+   327→  const isReadOnly = !canAccess || (!canEdit && !canDelete);
+   328→  const noAccess = !canAccess;
+   329→
+   330→  // Data state
+   331→  const [invoices, setInvoices] = useState<Invoice[]>([]);
+   332→  const [settings, setSettings] = useState<ShopSettings | null>(null);
+   333→  const [loading, setLoading] = useState(true);
+   334→  const [searchQuery, setSearchQuery] = useState('');
+   335→  const [statusFilter, setStatusFilter] = useState('all');
+   336→  const [todayFilter, setTodayFilter] = useState(false);
+   337→
+   338→  // View dialog state
+   339→  const [viewInvoice, setViewInvoice] = useState<Invoice | null>(null);
+   340→  const [viewLoading, setViewLoading] = useState(false);
+   341→  const invoicePreviewRef = useRef<HTMLDivElement>(null);
+   342→
+   343→  // Delete dialog state
+   344→  const [deleteTarget, setDeleteTarget] = useState<Invoice | null>(null);
+   345→  const [deleting, setDeleting] = useState(false);
+   346→
+   347→  // Update dialog state (for Pending/Balance bills)
+   348→  const [updateTarget, setUpdateTarget] = useState<Invoice | null>(null);
+   349→  const [updatePaymentMethod, setUpdatePaymentMethod] = useState('Cash');
+   350→  const [updateStatus, setUpdateStatus] = useState<string>('Pending');
+   351→  const [updateAmountPaid, setUpdateAmountPaid] = useState<string>('');
+   352→  const [updating, setUpdating] = useState(false);
+   353→
+   354→  // Pay Balance dialog state
+   355→  const [payBalanceTarget, setPayBalanceTarget] = useState<Invoice | null>(null);
+   356→  const [payBalanceAmount, setPayBalanceAmount] = useState<string>('');
+   357→  const [payBalanceMethod, setPayBalanceMethod] = useState('Cash');
+   358→  const [payingBalance, setPayingBalance] = useState(false);
+   359→
+   360→  // Refund dialog state
+   361→  const [refundTarget, setRefundTarget] = useState<Invoice | null>(null);
+   362→  const [refundSelectedItems, setRefundSelectedItems] = useState<Set<number>>(new Set());
+   363→  const [refundReason, setRefundReason] = useState('');
+   364→  const [processingRefund, setProcessingRefund] = useState(false);
+   365→
+   366→  // Replace dialog state
+   367→  const [replaceTarget, setReplaceTarget] = useState<Invoice | null>(null);
+   368→  const [replaceSelectedItems, setReplaceSelectedItems] = useState<Set<number>>(new Set());
+   369→  const [replaceReason, setReplaceReason] = useState('');
+   370→  const [processingReplace, setProcessingReplace] = useState(false);
+   371→
+   372→  // ── Data Fetching ──────────────────────────────────────────
+   373→  const fetchInvoices = useCallback(async (silent?: boolean) => {
+   374→    try {
+   375→      if (!silent) setLoading(true);
+   376→      const res = await fetch('/api/invoices', { headers: authHeaders });
+   377→      if (!res.ok) throw new Error('Failed to fetch');
+   378→      const data = await res.json();
+   379→      setInvoices(Array.isArray(data) ? data : []);
+   380→    } catch {
+   381→      notify({ type: 'error', title: 'Error', message: 'Failed to load invoices' });
+   382→    } finally {
+   383→      setLoading(false);
+   384→    }
+   385→  }, []);
+   386→
+   387→  const fetchSettings = useCallback(async () => {
+   388→    try {
+   389→      const res = await fetch('/api/settings', { headers: authHeaders });
+   390→      if (res.ok) {
+   391→        const data = await res.json();
+   392→        setSettings(data);
+   393→      }
+   394→    } catch {
+   395→      // silently fail
+   396→    }
+   397→  }, []);
+   398→
+   399→  useEffect(() => {
+   400→    fetchInvoices();
+   401→    fetchSettings();
+   402→  }, [fetchInvoices, fetchSettings]);
+   403→
+   404→  // Re-fetch data when dataVersion changes (sync from other tabs/devices)
+   405→  const prevDataVersion = useRef(dataVersion);
+   406→  useEffect(() => {
+   407→    if (dataVersion !== undefined && dataVersion !== prevDataVersion.current) {
+   408→      prevDataVersion.current = dataVersion;
+   409→      fetchInvoices(true);  // silent=true for background sync
+   410→    }
+   411→  }, [dataVersion, fetchInvoices]);
+   412→
+   413→  // ── Filtering ──────────────────────────────────────────────
+   414→  const filteredInvoices = useMemo(() => {
+   415→    const todayStr = format(new Date(), 'yyyy-MM-dd');
+   416→    return invoices
+   417→      .filter((inv) => {
+   418→        if (searchQuery.trim()) {
+   419→          const q = searchQuery.toLowerCase();
+   420→          if (
+   421→            !(inv.invoiceNumber || '').toLowerCase().includes(q) &&
+   422→            !(inv.customerName || '').toLowerCase().includes(q) &&
+   423→            !(inv.customerPhone || '').toLowerCase().includes(q)
+   424→          ) {
+   425→            return false;
+   426→          }
+   427→        }
+   428→        if (statusFilter !== 'all') {
+   429→          const s = (inv.status || '').toLowerCase();
+   430→          if (statusFilter === 'paid' && s !== 'paid' && s !== 'completed') return false;
+   431→          if (statusFilter === 'pending' && s !== 'pending') return false;
+   432→          if (statusFilter === 'balance' && s !== 'balance') return false;
+   433→          if (statusFilter === 'refunded' && s !== 'refunded') return false;
+   434→          if (statusFilter === 'replaced' && s !== 'replaced') return false;
+   435→          if (statusFilter === 'cancelled' && s !== 'cancelled') return false;
+   436→        }
+   437→        if (todayFilter) {
+   438→          const invDateStr = (inv.createdAt || inv.date || '').substring(0, 10);
+   439→          if (invDateStr !== todayStr) return false;
+   440→        }
+   441→        return true;
+   442→      })
+   443→      .sort((a, b) => {
+   444→        const dateA = new Date(a.createdAt || a.date).getTime();
+   445→        const dateB = new Date(b.createdAt || b.date).getTime();
+   446→        return dateB - dateA;
+   447→      });
+   448→  }, [invoices, searchQuery, statusFilter, todayFilter]);
+   449→
+   450→  // ── Delete ──────────────────────────────────────────────────
+   451→  const handleDelete = async () => {
+   452→    if (!deleteTarget) return;
+   453→    try {
+   454→      setDeleting(true);
+   455→      const res = await fetch(`/api/invoices/${deleteTarget.id}`, {
+   456→        method: 'DELETE',
+   457→        headers: authHeaders,
+   458→      });
+   459→      if (!res.ok) throw new Error('Delete failed');
+   460→      notify({ type: 'success', title: 'Deleted', message: `Invoice ${deleteTarget.invoiceNumber} deleted successfully` });
+   461→      setInvoices((prev) => prev.filter((inv) => inv.id !== deleteTarget.id));
+   462→      setDeleteTarget(null);
+   463→      onRefreshData();
+   464→    } catch {
+   465→      notify({ type: 'error', title: 'Error', message: 'Failed to delete invoice' });
+   466→    } finally {
+   467→      setDeleting(false);
+   468→    }
+   469→  };
+   470→
+   471→  // ── Edit (fetch full invoice before passing) ──────────────
+   472→  const handleEdit = async (invoice: Invoice) => {
+   473→    try {
+   474→      notify({ type: 'info', title: 'Editing', message: `Loading ${invoice.invoiceNumber} for editing...` });
+   475→      const res = await fetch(`/api/invoices/${invoice.id}`, { headers: authHeaders });
+   476→      if (res.ok) {
+   477→        const fullInvoice = await res.json();
+   478→        onEditInvoice(fullInvoice);
+   479→        return;
+   480→      }
+   481→    } catch {
+   482→      // fall through to pass list invoice as fallback
+   483→    }
+   484→    onEditInvoice(invoice);
+   485→  };
+   486→
+   487→  // ── View (fetch full invoice) ──────────────────────────────
+   488→  const handleView = async (invoice: Invoice) => {
+   489→    try {
+   490→      setViewLoading(true);
+   491→      const res = await fetch(`/api/invoices/${invoice.id}`, { headers: authHeaders });
+   492→      if (res.ok) {
+   493→        const data = await res.json();
+   494→        setViewInvoice(data);
+   495→      } else {
+   496→        setViewInvoice(invoice);
+   497→      }
+   498→    } catch {
+   499→      setViewInvoice(invoice);
+   500→    } finally {
+   501→      setViewLoading(false);
+   502→    }
+   503→  };
+   504→
+   505→  // ── Update Dialog Handlers ─────────────────────────────────
+   506→  const openUpdateDialog = (invoice: Invoice) => {
+   507→    setUpdateTarget(invoice);
+   508→    setUpdatePaymentMethod(invoice.paymentMethod || 'Cash');
+   509→    setUpdateStatus(invoice.status || 'Pending');
+   510→    setUpdateAmountPaid(String(invoice.paidAmount || 0));
+   511→  };
+   512→
+   513→  const handleUpdate = async () => {
+   514→    if (!updateTarget) return;
+   515→    try {
+   516→      setUpdating(true);
+   517→      const payload: Record<string, any> = {
+   518→        paymentMethod: updatePaymentMethod,
+   519→        status: updateStatus,
+   520→      };
+   521→
+   522→      if (updateStatus.toLowerCase() === 'balance') {
+   523→        const amtPaid = parseFloat(updateAmountPaid) || 0;
+   524→        const balance = updateTarget.grandTotal - amtPaid;
+   525→        payload.paidAmount = amtPaid;
+   526→        payload.balanceAmount = Math.max(balance, 0);
+   527→      } else if (updateStatus.toLowerCase() === 'paid') {
+   528→        payload.paidAmount = updateTarget.grandTotal;
+   529→        payload.balanceAmount = 0;
+   530→      }
+   531→
+   532→      const res = await fetch(`/api/invoices/${updateTarget.id}`, {
+   533→        method: 'PUT',
+   534→        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+   535→        body: JSON.stringify(payload),
+   536→      });
+   537→
+   538→      if (!res.ok) throw new Error('Update failed');
+   539→      const updated = await res.json();
+   540→      notify({ type: 'success', title: 'Updated', message: `Invoice ${updateTarget.invoiceNumber} updated to ${getStatusLabel(updateStatus)}` });
+   541→
+   542→      setInvoices((prev) =>
+   543→        prev.map((inv) => (inv.id === updateTarget.id ? { ...inv, ...updated } : inv))
+   544→      );
+   545→      setUpdateTarget(null);
+   546→      onRefreshData();
+   547→    } catch {
+   548→      notify({ type: 'error', title: 'Error', message: 'Failed to update invoice' });
+   549→    } finally {
+   550→      setUpdating(false);
+   551→    }
+   552→  };
+   553→
+   554→  // ── Pay Balance Dialog Handlers ────────────────────────────
+   555→  const openPayBalanceDialog = (invoice: Invoice) => {
+   556→    setPayBalanceTarget(invoice);
+   557→    setPayBalanceAmount(String(invoice.balanceAmount || 0));
+   558→    setPayBalanceMethod(invoice.paymentMethod || 'Cash');
+   559→  };
+   560→
+   561→  const handlePayBalance = async () => {
+   562→    if (!payBalanceTarget) return;
+   563→    const amount = parseFloat(payBalanceAmount) || 0;
+   564→    const maxBalance = payBalanceTarget.balanceAmount || 0;
+   565→
+   566→    if (amount <= 0) {
+   567→      notify({ type: 'error', title: 'Error', message: 'Payment amount must be greater than 0' });
+   568→      return;
+   569→    }
+   570→    if (amount > maxBalance) {
+   571→      notify({ type: 'error', title: 'Error', message: `Payment amount cannot exceed balance of ${formatCurrency(maxBalance)}` });
+   572→      return;
+   573→    }
+   574→
+   575→    try {
+   576→      setPayingBalance(true);
+   577→      const res = await fetch(`/api/invoices/${payBalanceTarget.id}/pay`, {
+   578→        method: 'POST',
+   579→        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+   580→        body: JSON.stringify({
+   581→          amount,
+   582→          paymentMethod: payBalanceMethod,
+   583→        }),
+   584→      });
+   585→
+   586→      if (!res.ok) throw new Error('Payment failed');
+   587→      const updated = await res.json();
+   588→
+   589→      notify({ type: 'success', title: 'Payment Recorded', message: `Payment of ${formatCurrency(amount)} recorded for ${payBalanceTarget.invoiceNumber}` });
+   590→
+   591→      setInvoices((prev) =>
+   592→        prev.map((inv) => (inv.id === payBalanceTarget.id ? { ...inv, ...updated } : inv))
+   593→      );
+   594→      setPayBalanceTarget(null);
+   595→      onRefreshData();
+   596→    } catch {
+   597→      notify({ type: 'error', title: 'Error', message: 'Failed to record payment' });
+   598→    } finally {
+   599→      setPayingBalance(false);
+   600→    }
+   601→  };
+   602→
+   603→  // ── Refund Dialog Handlers ─────────────────────────────────
+   604→  const openRefundDialog = (invoice: Invoice) => {
+   605→    // Fetch full invoice to ensure we have all items
+   606→    fetch(`/api/invoices/${invoice.id}`, { headers: authHeaders })
+   607→      .then((res) => (res.ok ? res.json() : invoice))
+   608→      .then((data) => {
+   609→        setRefundTarget(data);
+   610→        setRefundSelectedItems(new Set());
+   611→        setRefundReason('');
+   612→      })
+   613→      .catch(() => {
+   614→        setRefundTarget(invoice);
+   615→        setRefundSelectedItems(new Set());
+   616→        setRefundReason('');
+   617→      });
+   618→  };
+   619→
+   620→  const toggleRefundItem = (index: number) => {
+   621→    setRefundSelectedItems((prev) => {
+   622→      const next = new Set(prev);
+   623→      if (next.has(index)) {
+   624→        next.delete(index);
+   625→      } else {
+   626→        next.add(index);
+   627→      }
+   628→      return next;
+   629→    });
+   630→  };
+   631→
+   632→  const toggleSelectAllRefundItems = () => {
+   633→    if (!refundTarget) return;
+   634→    const allIndices = (refundTarget.invoiceItems || []).map((_, i) => i);
+   635→    if (refundSelectedItems.size === allIndices.length) {
+   636→      setRefundSelectedItems(new Set());
+   637→    } else {
+   638→      setRefundSelectedItems(new Set(allIndices));
+   639→    }
+   640→  };
+   641→
+   642→  const refundTotal = useMemo(() => {
+   643→    if (!refundTarget) return 0;
+   644→    return Array.from(refundSelectedItems).reduce((sum, idx) => {
+   645→      const item = (refundTarget.invoiceItems || [])?.[idx];
+   646→      return sum + (item?.total || 0);
+   647→    }, 0);
+   648→  }, [refundTarget, refundSelectedItems]);
+   649→
+   650→  const handleProcessRefund = async () => {
+   651→    if (!refundTarget) return;
+   652→    if (refundSelectedItems.size === 0) {
+   653→      notify({ type: 'error', title: 'Error', message: 'Please select at least one item to refund' });
+   654→      return;
+   655→    }
+   656→
+   657→    const selectedItems: RefundItem[] = Array.from(refundSelectedItems)
+   658→      .map((idx) => {
+   659→        const item = refundTarget.invoiceItems?.[idx];
+   660→        if (!item) return null;
+   661→        return {
+   662→          name: item.name,
+   663→          qty: item.qty,
+   664→          rate: item.rate,
+   665→          total: item.total,
+   666→        };
+   667→      })
+   668→      .filter(Boolean) as RefundItem[];
+   669→
+   670→    try {
+   671→      setProcessingRefund(true);
+   672→      const res = await fetch('/api/refunds', {
+   673→        method: 'POST',
+   674→        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+   675→        body: JSON.stringify({
+   676→          originalInvoiceId: refundTarget.id,
+   677→          items: selectedItems,
+   678→          refundAmount: refundTotal,
+   679→          reason: refundReason,
+   680→        }),
+   681→      });
+   682→
+   683→      if (!res.ok) throw new Error('Refund failed');
+   684→      const result = await res.json();
+   685→
+   686→      notify({ type: 'success', title: 'Refund Processed', message: `Refund ${result.refundNumber} processed for ${formatCurrency(refundTotal)} — Invoice ${refundTarget.invoiceNumber}, ${selectedItems.length} item(s) refunded` });
+   687→
+   688→      // Re-fetch all invoices from the server to get updated status/amounts
+   689→      setRefundTarget(null);
+   690→      setRefundSelectedItems(new Set());
+   691→      setRefundReason('');
+   692→      // Use a small delay to ensure DB is fully committed before re-fetching
+   693→      await new Promise((r) => setTimeout(r, 100));
+   694→      await fetchInvoices();
+   695→      onRefreshData();
+   696→    } catch {
+   697→      notify({ type: 'error', title: 'Error', message: 'Failed to process refund' });
+   698→    } finally {
+   699→      setProcessingRefund(false);
+   700→    }
+   701→  };
+   702→
+   703→  // ── Replace Dialog Handlers ──────────────────────────────
+   704→  const openReplaceDialog = (invoice: Invoice) => {
+   705→    // Fetch full invoice to ensure we have all items
+   706→    fetch(`/api/invoices/${invoice.id}`, { headers: authHeaders })
+   707→      .then((res) => (res.ok ? res.json() : invoice))
+   708→      .then((data) => {
+   709→        setReplaceTarget(data);
+   710→        setReplaceSelectedItems(new Set());
+   711→        setReplaceReason('');
+   712→      })
+   713→      .catch(() => {
+   714→        setReplaceTarget(invoice);
+   715→        setReplaceSelectedItems(new Set());
+   716→        setReplaceReason('');
+   717→      });
+   718→  };
+   719→
+   720→  const toggleReplaceItem = (index: number) => {
+   721→    setReplaceSelectedItems((prev) => {
+   722→      const next = new Set(prev);
+   723→      if (next.has(index)) {
+   724→        next.delete(index);
+   725→      } else {
+   726→        next.add(index);
+   727→      }
+   728→      return next;
+   729→    });
+   730→  };
+   731→
+   732→  const toggleSelectAllReplaceItems = () => {
+   733→    if (!replaceTarget) return;
+   734→    const allIndices = (replaceTarget.invoiceItems || []).map((_, i) => i);
+   735→    if (replaceSelectedItems.size === allIndices.length) {
+   736→      setReplaceSelectedItems(new Set());
+   737→    } else {
+   738→      setReplaceSelectedItems(new Set(allIndices));
+   739→    }
+   740→  };
+   741→
+   742→  const replaceTotal = useMemo(() => {
+   743→    if (!replaceTarget) return 0;
+   744→    return Array.from(replaceSelectedItems).reduce((sum, idx) => {
+   745→      const item = (replaceTarget.invoiceItems || [])?.[idx];
+   746→      return sum + (item?.total || 0);
+   747→    }, 0);
+   748→  }, [replaceTarget, replaceSelectedItems]);
+   749→
+   750→  const replaceReasons = [
+   751→    'Wrong Item Delivered',
+   752→    'Item Damaged',
+   753→    'Customer Changed Order',
+   754→    'Quality Issue',
+   755→    'Size / Variation Mismatch',
+   756→    'Other',
+   757→  ];
+   758→
+   759→  const handleProcessReplace = async () => {
+   760→    if (!replaceTarget) return;
+   761→    if (replaceSelectedItems.size === 0) {
+   762→      notify({ type: 'error', title: 'Error', message: 'Please select at least one item to replace' });
+   763→      return;
+   764→    }
+   765→    if (!replaceReason) {
+   766→      notify({ type: 'error', title: 'Error', message: 'Please select a replacement reason' });
+   767→      return;
+   768→    }
+   769→
+   770→    const selectedItems: RefundItem[] = Array.from(replaceSelectedItems)
+   771→      .map((idx) => {
+   772→        const item = replaceTarget.invoiceItems?.[idx];
+   773→        if (!item) return null;
+   774→        return {
+   775→          name: item.name,
+   776→          qty: item.qty,
+   777→          rate: item.rate,
+   778→          total: item.total,
+   779→        };
+   780→      })
+   781→      .filter(Boolean) as RefundItem[];
+   782→
+   783→    try {
+   784→      setProcessingReplace(true);
+   785→
+   786→      // Step 1: Create a refund for the selected items
+   787→      const refundRes = await fetch('/api/refunds', {
+   788→        method: 'POST',
+   789→        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+   790→        body: JSON.stringify({
+   791→          originalInvoiceId: replaceTarget.id,
+   792→          items: selectedItems,
+   793→          refundAmount: replaceTotal,
+   794→          reason: `Replacement: ${replaceReason}`,
+   795→        }),
+   796→      });
+   797→
+   798→      if (!refundRes.ok) throw new Error('Refund creation failed');
+   799→      const refund = await refundRes.json();
+   800→
+   801→      // Step 2: Mark the original invoice as "Replaced"
+   802→      const updateRes = await fetch(`/api/invoices/${replaceTarget.id}`, {
+   803→        method: 'PUT',
+   804→        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+   805→        body: JSON.stringify({ status: 'Replaced' }),
+   806→      });
+   807→
+   808→      if (!updateRes.ok) throw new Error('Invoice update failed');
+   809→      await updateRes.json();
+   810→
+   811→      notify({ type: 'success', title: 'Replace Processed', message: `Replace processed for ${replaceTarget.invoiceNumber} — Refund ${refund.refundNumber} created for ${formatCurrency(replaceTotal)}, ${selectedItems.length} item(s). Create the new replacement bill now.`, duration: 6000 });
+   812→
+   813→      // Update the invoice status locally
+   814→      setInvoices((prev) =>
+   815→        prev.map((inv) =>
+   816→          inv.id === replaceTarget.id ? { ...inv, status: 'Replaced' } : inv
+   817→        )
+   818→      );
+   819→
+   820→      // Clean up dialog state
+   821→      setReplaceTarget(null);
+   822→      setReplaceSelectedItems(new Set());
+   823→      setReplaceReason('');
+   824→      onRefreshData();
+   825→
+   826→      // Navigate to New Bill section so user can create the replacement order
+   827→      onNavigate('new-bill');
+   828→    } catch (err) {
+   829→      console.error('Replace error:', err);
+   830→      notify({ type: 'error', title: 'Error', message: 'Replacement partially failed. A refund was created but invoice status was not updated.' });
+   831→      // Clean up to prevent duplicate attempts
+   832→      setReplaceTarget(null);
+   833→      setReplaceSelectedItems(new Set());
+   834→      setReplaceReason('');
+   835→    } finally {
+   836→      setProcessingReplace(false);
+   837→    }
+   838→  };
+   839→
+   840→  // ── Print A4 ───────────────────────────────────────────────
+   841→  const handlePrintA4 = () => {
+   842→    if (!invoicePreviewRef.current || !viewInvoice) return;
+   843→    const printWindow = window.open('', '_blank');
+   844→    if (!printWindow) {
+   845→      notify({ type: 'error', title: 'Error', message: 'Please allow pop-ups to print' });
+   846→      return;
+   847→    }
+   848→    printWindow.document.write(`<!DOCTYPE html><html><head><title>Invoice ${viewInvoice.invoiceNumber}</title>
+   849→<style>
+   850→  @page{size:A4;margin:10mm;}
+   851→  *{box-sizing:border-box;margin:0;padding:0;}
+   852→  body{font-family:'Segoe UI',Arial,sans-serif;margin:0;padding:20px;color:#1a1a1a;}
+   853→  .invoice-container{max-width:210mm;margin:0 auto;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;}
+   854→  .header{background:linear-gradient(135deg,#16a34a,#15803d);color:white;padding:24px 32px;}
+   855→  .shop-name{font-size:24px;font-weight:700;}
+   856→  .shop-info{font-size:12px;opacity:.9;margin-top:4px;}
+   857→  .invoice-meta{display:flex;justify-content:space-between;padding:20px 32px;border-bottom:1px solid #e5e7eb;flex-wrap:wrap;gap:12px;}
+   858→  .meta-item{font-size:13px;}.meta-label{color:#6b7280;font-size:11px;text-transform:uppercase;letter-spacing:.5px;}.meta-value{font-weight:600;margin-top:2px;}
+   859→  table{width:100%;border-collapse:collapse;}
+   860→  th{background:#f9fafb;padding:10px 16px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#6b7280;text-align:left;border-bottom:2px solid #e5e7eb;}
+   861→  td{padding:10px 16px;font-size:13px;border-bottom:1px solid #f3f4f6;}
+   862→  .text-right{text-align:right;}
+   863→  .summary{padding:16px 32px;}
+   864→  .summary-row{display:flex;justify-content:flex-end;gap:80px;padding:4px 0;font-size:13px;}
+   865→  .summary-total{display:flex;justify-content:flex-end;gap:80px;padding:12px 0 0;font-size:16px;font-weight:700;border-top:2px solid #16a34a;margin-top:8px;}
+   866→  .footer{padding:16px 32px;text-align:center;font-size:11px;color:#9ca3af;border-top:1px solid #e5e7eb;}
+   867→</style></head><body>
+   868→${invoicePreviewRef.current.innerHTML}
+   869→</body></html>`);
+   870→    printWindow.document.close();
+   871→    setTimeout(() => {
+   872→      try { if (!printWindow.closed) printWindow.print(); } catch { /* window closed */ }
+   873→    }, 500);
+   874→  };
+   875→
+   876→  // ── Print Thermal Receipt ──────────────────────────────────
+   877→  const handleThermalPrint = async (invoice?: Invoice) => {
+   878→    const inv = invoice || viewInvoice;
+   879→    if (!inv) return;
+   880→
+   881→    const shopName = settings?.shopName || 'Eservices';
+   882→    const shopAddr = settings?.shopAddress || '';
+   883→    const shopPhone = settings?.shopPhone || '';
+   884→    const shopGst = settings?.gstNumber || '';
+   885→    const shopGstState = settings?.gstState || '';
+   886→    // Show GST only if the original bill had GST values calculated
+   887→    const showGst = (inv.cgst > 0 || inv.sgst > 0);
+   888→    const tConfig = await fetchThermalSettings();
+   889→
+   890→    // Calculate GST rate from existing values
+   891→    const gstRate = inv.subtotal > 0 && inv.cgst > 0
+   892→      ? Math.round((inv.cgst / inv.subtotal) * 2 * 100)
+   893→      : (settings?.gstRate || 18);
+   894→
+   895→    const receiptData: ThermalReceiptData = {
+   896→      shopName,
+   897→      shopAddress: shopAddr,
+   898→      shopPhone,
+   899→      shopGst,
+   900→      shopGstState,
+   901→      showGst,
+   902→      invoiceNumber: inv.invoiceNumber,
+   903→      date: formatDateFull(inv.date),
+   904→      orderType: getOrderTypeLabel(inv.orderType),
+   905→      customerName: inv.customerName || '',
+   906→      customerPhone: inv.customerPhone || '',
+   907→      customerAddress: inv.customerAddress || '',
+   908→      items: (inv.invoiceItems || []).map(item => ({ name: item.name, qty: item.qty, rate: item.rate, total: item.total })),
+   909→      subtotal: inv.subtotal,
+   910→      cgst: inv.cgst || 0,
+   911→      sgst: inv.sgst || 0,
+   912→      gstRate,
+   913→      deliveryCharge: inv.deliveryCharge || 0,
+   914→      discountAmount: inv.discountAmount || 0,
+   915→      grandTotal: inv.grandTotal,
+   916→      paidAmount: inv.paidAmount || 0,
+   917→      balanceAmount: inv.balanceAmount || 0,
+   918→      paymentMethod: inv.paymentMethod || 'Cash',
+   919→      billStatus: getStatusLabel(inv.status),
+   920→    };
+   921→
+   922→    const thermalHtml = buildRichThermalHtml(receiptData, tConfig, `Receipt - ${inv.invoiceNumber}`);
+   923→
+   924→    try {
+   925→      const printWindow = window.open('', '_blank', 'width=350,height=700');
+   926→      if (!printWindow) {
+   927→        notify({ type: 'error', title: 'Error', message: 'Please allow pop-ups to print thermal receipts' });
+   928→        return;
+   929→      }
+   930→      printWindow.document.write(thermalHtml);
+   931→      printWindow.document.close();
+   932→      setTimeout(() => {
+   933→        printWindow.print();
+   934→      }, 600);
+   935→    } catch {
+   936→      notify({ type: 'error', title: 'Error', message: 'Failed to open print window' });
+   937→    }
+   938→  };
+   939→
+   940→  // ── A4 Invoice Preview ─────────────────────────────────────
+   941→  const renderA4Preview = (inv: Invoice) => {
+   942→    const shopName = settings?.shopName || 'Eservices';
+   943→    const shopAddr = settings?.shopAddress || '';
+   944→    const shopPhone = settings?.shopPhone || '';
+   945→    const shopEmail = settings?.shopEmail || '';
+   946→    const shopGst = settings?.gstNumber || '';
+   947→    const shopGstState = settings?.gstState || '';
+   948→    const gstFullMode = settings?.gstFullMode ?? false;
+   949→    // Show GST only if the original bill had GST values calculated
+   950→    const showGst = (inv.cgst > 0 || inv.sgst > 0);
+   951→
+   952→    return (
+   953→      <div className="invoice-container" style={{ fontSize: '13px' }}>
+   954→        <div
+   955→          className="header"
+   956→          style={{
+   957→            background: 'linear-gradient(135deg, #16a34a, #15803d)',
+   958→            color: 'white',
+   959→            padding: '24px 32px',
+   960→          }}
+   961→        >
+   962→          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+   963→            <div style={{ fontSize: '24px', fontWeight: 700 }}>{shopName}</div>
+   964→            {showGst && gstFullMode && (
+   965→              <div style={{
+   966→                display: 'inline-block',
+   967→                background: 'rgba(255,255,255,0.2)',
+   968→                color: '#fff',
+   969→                fontSize: '11px',
+   970→                fontWeight: 700,
+   971→                padding: '3px 12px',
+   972→                borderRadius: 4,
+   973→                letterSpacing: '1px',
+   974→              }}>
+   975→                TAX INVOICE
+   976→              </div>
+   977→            )}
+   978→          </div>
+   979→          <div style={{ fontSize: '12px', opacity: 0.9, marginTop: 4 }}>
+   980→            {[
+   981→              shopAddr,
+   982→              shopPhone ? `Ph: ${shopPhone}` : '',
+   983→              shopEmail,
+   984→              (showGst && gstFullMode && shopGst) ? `GSTIN: ${shopGst}` : '',
+   985→              (showGst && gstFullMode && shopGstState) ? `State: ${shopGstState}` : '',
+   986→            ]
+   987→              .filter(Boolean)
+   988→              .join(' | ')}
+   989→          </div>
+   990→        </div>
+   991→
+   992→        <div
+   993→          style={{
+   994→            display: 'flex',
+   995→            justifyContent: 'space-between',
+   996→            padding: '20px 32px',
+   997→            borderBottom: '1px solid #e5e7eb',
+   998→            flexWrap: 'wrap',
+   999→            gap: 12,
+  1000→          }}
+  1001→        >
+  1002→          {[
+  1003→            { label: 'Invoice No', value: inv.invoiceNumber },
+  1004→            { label: 'Date', value: formatDate(inv.date) },
+  1005→            { label: 'Customer', value: inv.customerName || 'Walk-in' },
+  1006→            { label: 'Phone', value: inv.customerPhone || '-' },
+  1007→            { label: 'Address', value: inv.customerAddress || '-' },
+  1008→            { label: 'Order Type', value: getOrderTypeLabel(inv.orderType) },
+  1009→            { label: 'Payment', value: inv.paymentMethod },
+  1010→            { label: 'Status', value: getStatusLabel(inv.status) },
+  1011→          ].map((m) => (
+  1012→            <div key={m.label}>
+  1013→              <div
+  1014→                style={{
+  1015→                  color: '#6b7280',
+  1016→                  fontSize: '10px',
+  1017→                  textTransform: 'uppercase',
+  1018→                  letterSpacing: '0.5px',
+  1019→                }}
+  1020→              >
+  1021→                {m.label}
+  1022→              </div>
+  1023→              <div style={{ fontWeight: 600, marginTop: 2 }}>{m.value}</div>
+  1024→            </div>
+  1025→          ))}
+  1026→        </div>
+  1027→
+  1028→        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+  1029→          <thead>
+  1030→            <tr>
+  1031→              {['#', 'Item', 'Qty', 'Rate', 'Total'].map((h, i) => (
+  1032→                <th
+  1033→                  key={h}
+  1034→                  style={{
+  1035→                    background: '#f9fafb',
+  1036→                    padding: '10px 16px',
+  1037→                    fontSize: '11px',
+  1038→                    textTransform: 'uppercase',
+  1039→                    letterSpacing: '0.5px',
+  1040→                    color: '#6b7280',
+  1041→                    textAlign: i >= 2 ? 'right' : 'left',
+  1042→                    borderBottom: '2px solid #e5e7eb',
+  1043→                  }}
+  1044→                >
+  1045→                  {h}
+  1046→                </th>
+  1047→              ))}
+  1048→            </tr>
+  1049→          </thead>
+  1050→          <tbody>
+  1051→            {(inv.invoiceItems || []).map((item, idx) => (
+  1052→              <tr key={item.id || idx} style={{ background: idx % 2 === 1 ? '#f9fafb' : undefined }}>
+  1053→                <td style={{ padding: '10px 16px', textAlign: 'center' }}>{idx + 1}</td>
+  1054→                <td style={{ padding: '10px 16px' }}>{item.name}</td>
+  1055→                <td style={{ padding: '10px 16px', textAlign: 'right' }}>{item.qty}</td>
+  1056→                <td style={{ padding: '10px 16px', textAlign: 'right' }}>{formatCurrency(item.rate)}</td>
+  1057→                <td style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 600 }}>
+  1058→                  {formatCurrency(item.total)}
+  1059→                </td>
+  1060→              </tr>
+  1061→            ))}
+  1062→          </tbody>
+  1063→        </table>
+  1064→
+  1065→        <div style={{ padding: '16px 32px' }}>
+  1066→          {[
+  1067→            { label: 'Subtotal', value: formatCurrency(inv.subtotal) },
+  1068→            ...(showGst && inv.cgst > 0 ? [{ label: 'CGST', value: formatCurrency(inv.cgst) }] : []),
+  1069→            ...(showGst && inv.sgst > 0 ? [{ label: 'SGST', value: formatCurrency(inv.sgst) }] : []),
+  1070→            ...(inv.deliveryCharge > 0
+  1071→              ? [{ label: 'Delivery', value: formatCurrency(inv.deliveryCharge) }]
+  1072→              : []),
+  1073→            ...(inv.discountAmount > 0
+  1074→              ? [{ label: 'Discount', value: '-' + formatCurrency(inv.discountAmount) }]
+  1075→              : []),
+  1076→          ].map((row) => (
+  1077→            <div
+  1078→              key={row.label}
+  1079→              style={{
+  1080→                display: 'flex',
+  1081→                justifyContent: 'flex-end',
+  1082→                gap: 80,
+  1083→                padding: '4px 0',
+  1084→                fontSize: '13px',
+  1085→              }}
+  1086→            >
+  1087→              <span>{row.label}</span>
+  1088→              <span>{row.value}</span>
+  1089→            </div>
+  1090→          ))}
+  1091→          {(inv.paidAmount || 0) > 0 && (
+  1092→            <div
+  1093→              style={{
+  1094→                display: 'flex',
+  1095→                justifyContent: 'flex-end',
+  1096→                gap: 80,
+  1097→                padding: '4px 0',
+  1098→                fontSize: '13px',
+  1099→              }}
+  1100→            >
+  1101→              <span>Amount Paid</span>
+  1102→              <span>{formatCurrency(inv.paidAmount || 0)}</span>
+  1103→            </div>
+  1104→          )}
+  1105→          {(inv.balanceAmount || 0) > 0 && (
+  1106→            <div
+  1107→              style={{
+  1108→                display: 'flex',
+  1109→                justifyContent: 'flex-end',
+  1110→                gap: 80,
+  1111→                padding: '4px 0',
+  1112→                fontSize: '13px',
+  1113→                color: '#ea580c',
+  1114→                fontWeight: 600,
+  1115→              }}
+  1116→            >
+  1117→              <span>Balance Due</span>
+  1118→              <span>{formatCurrency(inv.balanceAmount || 0)}</span>
+  1119→            </div>
+  1120→          )}
+  1121→          <div
+  1122→            style={{
+  1123→              display: 'flex',
+  1124→              justifyContent: 'flex-end',
+  1125→              gap: 80,
+  1126→              padding: '12px 0 0',
+  1127→              fontSize: '16px',
+  1128→              fontWeight: 700,
+  1129→              borderTop: '2px solid #16a34a',
+  1130→              marginTop: 8,
+  1131→            }}
+  1132→          >
+  1133→            <span>Grand Total</span>
+  1134→            <span>{formatCurrency(inv.grandTotal)}</span>
+  1135→          </div>
+  1136→        </div>
+  1137→
+  1138→        <div
+  1139→          style={{
+  1140→            padding: '16px 32px',
+  1141→            textAlign: 'center',
+  1142→            fontSize: '11px',
+  1143→            color: '#9ca3af',
+  1144→            borderTop: '1px solid #e5e7eb',
+  1145→          }}
+  1146→        >
+  1147→          Thank you for your business! | Generated by Eservices
+  1148→        </div>
+  1149→      </div>
+  1150→    );
+  1151→  };
+  1152→
+  1153→  // ── Status filter pills ────────────────────────────────────
+  1154→  const statusPills = [
+  1155→    { value: 'all', label: 'All' },
+  1156→    { value: 'pending', label: 'Pending' },
+  1157→    { value: 'paid', label: 'Paid' },
+  1158→    { value: 'balance', label: 'Balance' },
+  1159→    { value: 'refunded', label: 'Refunded' },
+  1160→    { value: 'replaced', label: 'Replaced' },
+  1161→    { value: 'cancelled', label: 'Cancelled' },
+  1162→  ];
+  1163→
+  1164→  // ── Payment method options ─────────────────────────────────
+  1165→  const paymentMethods = [
+  1166→    { value: 'Cash', label: 'Cash', icon: <IndianRupee className="h-4 w-4" /> },
+  1167→    { value: 'UPI', label: 'UPI', icon: <Smartphone className="h-4 w-4" /> },
+  1168→    { value: 'Card', label: 'Card', icon: <CreditCard className="h-4 w-4" /> },
+  1169→    { value: 'Net Banking', label: 'Net Banking', icon: <Building2 className="h-4 w-4" /> },
+  1170→  ];
+  1171→
+  1172→  // ── Render ─────────────────────────────────────────────────
+  1173→  return (
+  1174→    <div className="h-full flex flex-col gap-6">
+  1175→      {/* Page Header */}
+  1176→      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 flex-shrink-0">
+  1177→        <div className="flex items-center gap-3">
+  1178→          <div className="flex size-10 items-center justify-center rounded-xl bg-emerald-100 dark:bg-emerald-900/40">
+  1179→            <Receipt className="size-5 text-emerald-600 dark:text-emerald-400" />
+  1180→          </div>
+  1181→          <div>
+  1182→            <h2 className="text-xl font-bold tracking-tight">Bill History</h2>
+  1183→            <p className="text-sm text-muted-foreground">
+  1184→              View and manage all your invoices
+  1185→            </p>
+  1186→          </div>
+  1187→        </div>
+  1188→        {isReadOnly && <ReadOnlyBanner module="Billing" noAccess={noAccess} />}
+  1189→        <div className="flex items-center gap-3">
+  1190→          {!loading && invoices.length > 0 && (
+  1191→            <Badge
+  1192→              variant="secondary"
+  1193→              className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 border-emerald-200"
+  1194→            >
+  1195→              {invoices.length} invoice{invoices.length !== 1 ? 's' : ''}
+  1196→            </Badge>
+  1197→          )}
+  1198→          <Button
+  1199→            onClick={() => onNavigate('new-bill')}
+  1200→            className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
+  1201→          >
+  1202→            <FileText className="h-4 w-4" />
+  1203→            New Bill
+  1204→          </Button>
+  1205→        </div>
+  1206→      </div>
+  1207→
+  1208→      {/* Search & Filters */}
+  1209→      <Card className="border-0 bg-muted/30 flex-shrink-0">
+  1210→        <CardContent className="p-4 space-y-3">
+  1211→          <div className="flex items-center gap-2 flex-wrap">
+  1212→            {statusPills.map((pill) => (
+  1213→              <button
+  1214→                key={pill.value}
+  1215→                onClick={() => setStatusFilter(pill.value)}
+  1216→                className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
+  1217→                  statusFilter === pill.value
+  1218→                    ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+  1219→                    : 'bg-background hover:bg-muted text-muted-foreground border'
+  1220→                }`}
+  1221→              >
+  1222→                {pill.label}
+  1223→              </button>
+  1224→            ))}
+  1225→            <div className="ml-auto" />
+  1226→            <button
+  1227→              onClick={() => setTodayFilter(!todayFilter)}
+  1228→              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
+  1229→                todayFilter
+  1230→                  ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+  1231→                  : 'bg-background hover:bg-muted text-muted-foreground border'
+  1232→              }`}
+  1233→            >
+  1234→              <CalendarCheck className="h-3.5 w-3.5" />
+  1235→              Today
+  1236→            </button>
+  1237→          </div>
+  1238→
+  1239→          <div className="relative max-w-md">
+  1240→            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+  1241→            <Input
+  1242→              placeholder="Search by invoice number, customer name, or phone..."
+  1243→              value={searchQuery}
+  1244→              onChange={(e) => setSearchQuery(e.target.value)}
+  1245→              className="pl-9"
+  1246→            />
+  1247→            {searchQuery && (
+  1248→              <button
+  1249→                onClick={() => setSearchQuery('')}
+  1250→                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+  1251→              >
+  1252→                <X className="h-4 w-4" />
+  1253→              </button>
+  1254→            )}
+  1255→          </div>
+  1256→
+  1257→          {(searchQuery || statusFilter !== 'all' || todayFilter) && !loading && (
+  1258→            <p className="text-xs text-muted-foreground">
+  1259→              Showing {filteredInvoices.length} of {invoices.length} invoices
+  1260→            </p>
+  1261→          )}
+  1262→        </CardContent>
+  1263→      </Card>
+  1264→
+  1265→      {/* Invoice Table */}
+  1266→      <Card className="flex-1 min-h-0 flex flex-col">
+  1267→        <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
+  1268→          {loading ? (
+  1269→            <div className="p-6 space-y-3">
+  1270→              <Skeleton className="h-10 w-full" />
+  1271→              <Skeleton className="h-10 w-full" />
+  1272→              <Skeleton className="h-10 w-full" />
+  1273→              <Skeleton className="h-10 w-3/4" />
+  1274→            </div>
+  1275→          ) : filteredInvoices.length === 0 ? (
+  1276→            <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
+  1277→              <div className="rounded-full bg-muted p-5 mb-4">
+  1278→                <Receipt className="h-10 w-10 text-muted-foreground" />
+  1279→              </div>
+  1280→              <h3 className="text-lg font-semibold text-foreground mb-1">No invoices found</h3>
+  1281→              <p className="text-sm text-muted-foreground max-w-xs">
+  1282→                {searchQuery
+  1283→                  ? `No invoices match "${searchQuery}". Try a different search.`
+  1284→                  : "You haven't created any invoices yet. Create your first bill to get started."}
+  1285→              </p>
+  1286→              {!searchQuery && (
+  1287→                <Button
+  1288→                  onClick={() => onNavigate('new-bill')}
+  1289→                  className="mt-4 bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
+  1290→                >
+  1291→                  <FileText className="h-4 w-4" />
+  1292→                  Create your first bill
+  1293→                </Button>
+  1294→              )}
+  1295→            </div>
+  1296→          ) : (
+  1297→            <ScrollArea className="flex-1 scroll-smooth">
+  1298→              <div className="min-w-[960px]">
+  1299→              <Table className="w-full">
+  1300→                <TableHeader className="sticky top-0 z-10 bg-background">
+  1301→                  <TableRow className="bg-muted/50 hover:bg-muted/50">
+  1302→                    <TableHead className="min-w-[130px]">Invoice No</TableHead>
+  1303→                    <TableHead className="min-w-[100px]">Date</TableHead>
+  1304→                    <TableHead className="min-w-[150px]">Customer</TableHead>
+  1305→                    <TableHead className="min-w-[70px] text-center">Items</TableHead>
+  1306→                    <TableHead className="min-w-[110px] text-right">Grand Total</TableHead>
+  1307→                    <TableHead className="min-w-[120px] text-right">Balance</TableHead>
+  1308→                    <TableHead className="min-w-[100px] text-center">Status</TableHead>
+  1309→                    <TableHead className="min-w-[240px] text-right">Actions</TableHead>
+  1310→                    </TableRow>
+  1311→                  </TableHeader>
+  1312→                  <TableBody>
+  1313→                    {filteredInvoices.map((invoice, idx) => {
+  1314→                      const status = (invoice.status || '').toLowerCase();
+  1315→                      const isPending = status === 'pending';
+  1316→                      const isBalance = status === 'balance';
+  1317→                      const isPaid = status === 'paid' || status === 'completed';
+  1318→                      const isRefunded = status === 'refunded';
+  1319→                      const isReplaced = status === 'replaced';
+  1320→                      const showBalance = isBalance && (invoice.balanceAmount || 0) > 0;
+  1321→
+  1322→                      return (
+  1323→                        <TableRow
+  1324→                          key={invoice.id}
+  1325→                          className={`transition-colors ${
+  1326→                            idx % 2 === 1 ? 'bg-muted/20' : ''
+  1327→                          } hover:bg-emerald-50/50 dark:hover:bg-emerald-950/20`}
+  1328→                        >
+  1329→                          {/* Invoice Number */}
+  1330→                          <TableCell className="font-semibold text-sm">
+  1331→                            {invoice.invoiceNumber}
+  1332→                          </TableCell>
+  1333→
+  1334→                          {/* Date */}
+  1335→                          <TableCell className="text-sm text-muted-foreground">
+  1336→                            {formatDate(invoice.date)}
+  1337→                          </TableCell>
+  1338→
+  1339→                          {/* Customer */}
+  1340→                          <TableCell className="text-sm">
+  1341→                            <div className="font-medium">{invoice.customerName}</div>
+  1342→                            <div className="flex items-center gap-1.5 mt-0.5">
+  1343→                              <Badge
+  1344→                                variant="outline"
+  1345→                                className={`gap-0.5 text-[10px] px-1.5 py-0 ${getOrderTypeBadgeClass(invoice.orderType)}`}
+  1346→                              >
+  1347→                                {getOrderTypeIcon(invoice.orderType)}
+  1348→                                {getOrderTypeLabel(invoice.orderType)}
+  1349→                              </Badge>
+  1350→                              {invoice.customerPhone && (
+  1351→                                <span className="text-xs text-muted-foreground">
+  1352→                                  {invoice.customerPhone}
+  1353→                                </span>
+  1354→                              )}
+  1355→                            </div>
+  1356→                          </TableCell>
+  1357→
+  1358→                          {/* Items Count */}
+  1359→                          <TableCell className="text-sm text-center text-muted-foreground">
+  1360→                            {(invoice.invoiceItems || []).length}
+  1361→                          </TableCell>
+  1362→
+  1363→                          {/* Grand Total */}
+  1364→                          <TableCell className="text-sm font-semibold text-right tabular-nums">
+  1365→                            {formatCurrency(invoice.grandTotal)}
+  1366→                          </TableCell>
+  1367→
+  1368→                          {/* Balance Column */}
+  1369→                          <TableCell className="text-right">
+  1370→                            {isPaid ? (
+  1371→                              <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400 flex items-center justify-end gap-1">
+  1372→                                <CircleCheckBig className="h-3.5 w-3.5" />
+  1373→                                Full
+  1374→                              </span>
+  1375→                            ) : showBalance ? (
+  1376→                              <span
+  1377→                                className={`text-sm font-semibold tabular-nums ${getBalanceColorClass(invoice)}`}
+  1378→                              >
+  1379→                                {formatCurrency(invoice.balanceAmount || 0)}
+  1380→                              </span>
+  1381→                            ) : isPending ? (
+  1382→                              <span className="text-xs text-amber-600 dark:text-amber-400">
+  1383→                                Unpaid
+  1384→                              </span>
+  1385→                            ) : isRefunded || isReplaced ? (
+  1386→                              <span className="text-xs text-muted-foreground">—</span>
+  1387→                            ) : (
+  1388→                              <span className="text-xs text-muted-foreground">—</span>
+  1389→                            )}
+  1390→                          </TableCell>
+  1391→
+  1392→                          {/* Status Badge */}
+  1393→                          <TableCell className="text-center">
+  1394→                            <Badge
+  1395→                              variant="outline"
+  1396→                              className={`gap-1 text-xs ${getStatusColor(invoice.status)}`}
+  1397→                            >
+  1398→                              {getStatusIcon(invoice.status)}
+  1399→                              {getStatusLabel(invoice.status)}
+  1400→                              {isBalance && showBalance && (
+  1401→                                <span className="ml-0.5 font-semibold">
+  1402→                                  {formatCurrency(invoice.balanceAmount || 0)}
+  1403→                                </span>
+  1404→                              )}
+  1405→                            </Badge>
+  1406→                          </TableCell>
+  1407→
+  1408→                          {/* Actions */}
+  1409→                          <TableCell className="text-right">
+  1410→                            <div className="flex items-center justify-end gap-0.5 flex-wrap">
+  1411→                              {/* View */}
+  1412→                              <Button
+  1413→                                variant="ghost"
+  1414→                                size="icon"
+  1415→                                className="h-8 w-8 hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/30"
+  1416→                                onClick={() => handleView(invoice)}
+  1417→                                title="View Invoice"
+  1418→                              >
+  1419→                                <Eye className="h-4 w-4" />
+  1420→                              </Button>
+  1421→
+  1422→                              {/* Edit */}
+  1423→                              <Button
+  1424→                                variant="ghost"
+  1425→                                size="icon"
+  1426→                                className="h-8 w-8 hover:bg-amber-50 hover:text-amber-700 dark:hover:bg-amber-950/30 disabled:opacity-40"
+  1427→                                onClick={() => handleEdit(invoice)}
+  1428→                                title={!canEdit ? 'No permission to edit' : 'Edit Invoice'}
+  1429→                                disabled={!canEdit}
+  1430→                              >
+  1431→                                <Pencil className="h-4 w-4" />
+  1432→                              </Button>
+  1433→
+  1434→                              {/* Update (Pending/Balance) */}
+  1435→                              {(isPending || isBalance) && (
+  1436→                                <Button
+  1437→                                  variant="ghost"
+  1438→                                  size="icon"
+  1439→                                  className="h-8 w-8 hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-blue-950/30 disabled:opacity-40"
+  1440→                                  onClick={() => openUpdateDialog(invoice)}
+  1441→                                  title={!canEdit ? 'No permission to update' : 'Update Bill'}
+  1442→                                  disabled={!canEdit}
+  1443→                                >
+  1444→                                  <RefreshCw className="h-4 w-4" />
+  1445→                                </Button>
+  1446→                              )}
+  1447→
+  1448→                              {/* Pay Balance */}
+  1449→                              {showBalance && (
+  1450→                                <Button
+  1451→                                  variant="ghost"
+  1452→                                  size="sm"
+  1453→                                  className="h-8 gap-1 text-orange-600 hover:bg-orange-50 hover:text-orange-700 dark:text-orange-400 dark:hover:bg-orange-950/30 px-2 disabled:opacity-40"
+  1454→                                  onClick={() => openPayBalanceDialog(invoice)}
+  1455→                                  title={!canEdit ? 'No permission to pay balance' : 'Pay Balance'}
+  1456→                                  disabled={!canEdit}
+  1457→                                >
+  1458→                                  <Wallet className="h-3.5 w-3.5" />
+  1459→                                  <span className="text-xs font-medium">Pay</span>
+  1460→                                </Button>
+  1461→                              )}
+  1462→
+  1463→                              {/* Refund (only for paid/completed/balance, not already refunded/replaced) */}
+  1464→                              {!isRefunded && !isReplaced && (
+  1465→                                <Button
+  1466→                                  variant="ghost"
+  1467→                                  size="icon"
+  1468→                                  className="h-8 w-8 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/30 disabled:opacity-40"
+  1469→                                  onClick={() => openRefundDialog(invoice)}
+  1470→                                  title={!canEdit ? 'No permission to refund' : 'Refund'}
+  1471→                                  disabled={!canEdit}
+  1472→                                >
+  1473→                                  <RotateCcw className="h-4 w-4" />
+  1474→                                </Button>
+  1475→                              )}
+  1476→
+  1477→                              {/* Replace */}
+  1478→                              {!isRefunded && !isReplaced && (
+  1479→                                <Button
+  1480→                                  variant="ghost"
+  1481→                                  size="icon"
+  1482→                                  className="h-8 w-8 hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/30 disabled:opacity-40"
+  1483→                                  onClick={() => openReplaceDialog(invoice)}
+  1484→                                  title={!canEdit ? 'No permission to replace' : 'Replace Items'}
+  1485→                                  disabled={!canEdit}
+  1486→                                >
+  1487→                                  <ArrowRightLeft className="h-4 w-4" />
+  1488→                                </Button>
+  1489→                              )}
+  1490→
+  1491→                              {/* Print Thermal */}
+  1492→                              <Button
+  1493→                                variant="ghost"
+  1494→                                size="icon"
+  1495→                                className="h-8 w-8 hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/30"
+  1496→                                onClick={() => handleThermalPrint(invoice)}
+  1497→                                title="Print Thermal"
+  1498→                              >
+  1499→                                <Printer className="h-4 w-4" />
+  1500→                              </Button>
+  1501→
+  1502→                              {/* Delete */}
+  1503→                              <Button
+  1504→                                variant="ghost"
+  1505→                                size="icon"
+  1506→                                className="h-8 w-8 text-destructive hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/30 disabled:opacity-40"
+  1507→                                onClick={() => setDeleteTarget(invoice)}
+  1508→                                title={!canDelete ? 'No permission to delete' : 'Delete Invoice'}
+  1509→                                disabled={!canDelete}
+  1510→                              >
+  1511→                                <Trash2 className="h-4 w-4" />
+  1512→                              </Button>
+  1513→                            </div>
+  1514→                          </TableCell>
+  1515→                        </TableRow>
+  1516→                      );
+  1517→                    })}
+  1518→                  </TableBody>
+  1519→                </Table>
+  1520→              </div>
+  1521→              <ScrollBar orientation="horizontal" />
+  1522→              </ScrollArea>
+  1523→          )}
+  1524→        </CardContent>
+  1525→      </Card>
+  1526→
+  1527→      {/* ────────────────────────────────────────────────────────
+  1528→          DIALOG: Invoice View
+  1529→      ──────────────────────────────────────────────────────── */}
+  1530→      <Dialog open={!!viewInvoice} onOpenChange={(open) => !open && setViewInvoice(null)}>
+  1531→        <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto p-0">
+  1532→          <DialogHeader className="p-6 pb-0">
+  1533→            <DialogTitle className="flex items-center gap-2">
+  1534→              <FileText className="h-5 w-5 text-emerald-600" />
+  1535→              Invoice {viewInvoice?.invoiceNumber}
+  1536→              {viewInvoice && (
+  1537→                <Badge
+  1538→                  variant="outline"
+  1539→                  className={`ml-2 gap-1 ${getStatusColor(viewInvoice.status)}`}
+  1540→                >
+  1541→                  {getStatusIcon(viewInvoice.status)}
+  1542→                  {getStatusLabel(viewInvoice.status)}
+  1543→                </Badge>
+  1544→              )}
+  1545→            </DialogTitle>
+  1546→            <DialogDescription>
+  1547→              Full invoice preview for {viewInvoice?.customerName || 'Walk-in'}
+  1548→            </DialogDescription>
+  1549→          </DialogHeader>
+  1550→
+  1551→          {viewLoading ? (
+  1552→            <div className="p-6 space-y-3">
+  1553→              <Skeleton className="h-20 w-full" />
+  1554→              <Skeleton className="h-40 w-full" />
+  1555→              <Skeleton className="h-20 w-full" />
+  1556→            </div>
+  1557→          ) : viewInvoice ? (
+  1558→            <>
+  1559→              <div className="p-6">
+  1560→                {/* Balance info banner */}
+  1561→                {(viewInvoice.balanceAmount || 0) > 0 &&
+  1562→                  (viewInvoice.status || '').toLowerCase() === 'balance' && (
+  1563→                    <Card className="mb-4 border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-950/30">
+  1564→                      <CardContent className="p-3 flex items-center justify-between">
+  1565→                        <div className="flex items-center gap-2">
+  1566→                          <AlertCircle className="h-4 w-4 text-orange-600" />
+  1567→                          <span className="text-sm font-medium text-orange-700 dark:text-orange-400">
+  1568→                            Balance Due: {formatCurrency(viewInvoice.balanceAmount || 0)}
+  1569→                          </span>
+  1570→                        </div>
+  1571→                        <Button
+  1572→                          size="sm"
+  1573→                          className="bg-orange-600 hover:bg-orange-700 text-white gap-1"
+  1574→                          onClick={() => {
+  1575→                            setViewInvoice(null);
+  1576→                            openPayBalanceDialog(viewInvoice);
+  1577→                          }}
+  1578→                        >
+  1579→                          <Wallet className="h-3.5 w-3.5" />
+  1580→                          Pay Now
+  1581→                        </Button>
+  1582→                      </CardContent>
+  1583→                    </Card>
+  1584→                  )}
+  1585→
+  1586→                <div ref={invoicePreviewRef}>{renderA4Preview(viewInvoice)}</div>
+  1587→              </div>
+  1588→              <DialogFooter className="p-6 pt-0 flex-row gap-2 flex-wrap">
+  1589→                <Button
+  1590→                  variant="outline"
+  1591→                  onClick={() => handleThermalPrint(viewInvoice)}
+  1592→                  className="gap-2"
+  1593→                >
+  1594→                  <Printer className="h-4 w-4" />
+  1595→                  Print Thermal
+  1596→                </Button>
+  1597→                <Button
+  1598→                  onClick={handlePrintA4}
+  1599→                  className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
+  1600→                >
+  1601→                  <PrinterIcon className="h-4 w-4" />
+  1602→                  Print A4
+  1603→                </Button>
+  1604→              </DialogFooter>
+  1605→            </>
+  1606→          ) : null}
+  1607→        </DialogContent>
+  1608→      </Dialog>
+  1609→
+  1610→      {/* ────────────────────────────────────────────────────────
+  1611→          DIALOG: Update Bill (Pending / Balance)
+  1612→      ──────────────────────────────────────────────────────── */}
+  1613→      <Dialog
+  1614→        open={!!updateTarget}
+  1615→        onOpenChange={(open) => !open && setUpdateTarget(null)}
+  1616→      >
+  1617→        <DialogContent className="sm:max-w-md">
+  1618→          <DialogHeader>
+  1619→            <DialogTitle className="flex items-center gap-2">
+  1620→              <RefreshCw className="h-5 w-5 text-blue-600" />
+  1621→              Update Invoice
+  1622→            </DialogTitle>
+  1623→            <DialogDescription>
+  1624→              Update payment details for{' '}
+  1625→              <span className="font-semibold text-foreground">
+  1626→                {updateTarget?.invoiceNumber}
+  1627→              </span>
+  1628→            </DialogDescription>
+  1629→          </DialogHeader>
+  1630→
+  1631→          <div className="space-y-4 py-2">
+  1632→            {/* Current info */}
+  1633→            <Card className="bg-muted/50 border-0">
+  1634→              <CardContent className="p-3">
+  1635→                <div className="grid grid-cols-2 gap-2 text-sm">
+  1636→                  <div>
+  1637→                    <span className="text-muted-foreground">Customer</span>
+  1638→                    <p className="font-medium">{updateTarget?.customerName || 'Walk-in'}</p>
+  1639→                  </div>
+  1640→                  <div>
+  1641→                    <span className="text-muted-foreground">Total</span>
+  1642→                    <p className="font-semibold">
+  1643→                      {updateTarget ? formatCurrency(updateTarget.grandTotal) : ''}
+  1644→                    </p>
+  1645→                  </div>
+  1646→                  <div>
+  1647→                    <span className="text-muted-foreground">Paid So Far</span>
+  1648→                    <p className="font-medium text-emerald-600 dark:text-emerald-400">
+  1649→                      {updateTarget ? formatCurrency(updateTarget.paidAmount || 0) : ''}
+  1650→                    </p>
+  1651→                  </div>
+  1652→                  <div>
+  1653→                    <span className="text-muted-foreground">Balance</span>
+  1654→                    <p className="font-medium text-orange-600 dark:text-orange-400">
+  1655→                      {updateTarget ? formatCurrency(updateTarget.balanceAmount || 0) : ''}
+  1656→                    </p>
+  1657→                  </div>
+  1658→                </div>
+  1659→              </CardContent>
+  1660→            </Card>
+  1661→
+  1662→            <Separator />
+  1663→
+  1664→            {/* Payment Method */}
+  1665→            <div className="space-y-2">
+  1666→              <Label className="text-sm font-medium">Payment Method</Label>
+  1667→              <Select value={updatePaymentMethod} onValueChange={setUpdatePaymentMethod}>
+  1668→                <SelectTrigger className="w-full">
+  1669→                  <SelectValue />
+  1670→                </SelectTrigger>
+  1671→                <SelectContent>
+  1672→                  {paymentMethods.map((pm) => (
+  1673→                    <SelectItem key={pm.value} value={pm.value}>
+  1674→                      <span className="flex items-center gap-2">
+  1675→                        {pm.icon}
+  1676→                        {pm.label}
+  1677→                      </span>
+  1678→                    </SelectItem>
+  1679→                  ))}
+  1680→                </SelectContent>
+  1681→              </Select>
+  1682→            </div>
+  1683→
+  1684→            {/* Status */}
+  1685→            <div className="space-y-2">
+  1686→              <Label className="text-sm font-medium">Update Status</Label>
+  1687→              <Select value={updateStatus} onValueChange={setUpdateStatus}>
+  1688→                <SelectTrigger className="w-full">
+  1689→                  <SelectValue />
+  1690→                </SelectTrigger>
+  1691→                <SelectContent>
+  1692→                  <SelectItem value="Pending">
+  1693→                    <span className="flex items-center gap-2">
+  1694→                      <Clock className="h-3.5 w-3.5 text-amber-500" />
+  1695→                      Pending
+  1696→                    </span>
+  1697→                  </SelectItem>
+  1698→                  <SelectItem value="Balance">
+  1699→                    <span className="flex items-center gap-2">
+  1700→                      <CircleDollarSign className="h-3.5 w-3.5 text-orange-500" />
+  1701→                      Balance
+  1702→                    </span>
+  1703→                  </SelectItem>
+  1704→                  <SelectItem value="Paid">
+  1705→                    <span className="flex items-center gap-2">
+  1706→                      <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />
+  1707→                      Paid
+  1708→                    </span>
+  1709→                  </SelectItem>
+  1710→                </SelectContent>
+  1711→              </Select>
+  1712→            </div>
+  1713→
+  1714→            {/* Balance-specific fields */}
+  1715→            {updateStatus.toLowerCase() === 'balance' && (
+  1716→              <div className="space-y-3 rounded-lg border border-orange-200 bg-orange-50/50 p-3 dark:border-orange-800 dark:bg-orange-950/20">
+  1717→                <div className="space-y-2">
+  1718→                  <Label className="text-sm font-medium">Amount Paid</Label>
+  1719→                  <div className="relative">
+  1720→                    <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+  1721→                    <Input
+  1722→                      type="number"
+  1723→                      min="0"
+  1724→                      max={updateTarget?.grandTotal || 0}
+  1725→                      step="0.01"
+  1726→                      value={updateAmountPaid}
+  1727→                      onChange={(e) => setUpdateAmountPaid(e.target.value)}
+  1728→                      className="pl-9"
+  1729→                      placeholder="0.00"
+  1730→                    />
+  1731→                  </div>
+  1732→                </div>
+  1733→                <div className="flex items-center justify-between text-sm">
+  1734→                  <span className="text-muted-foreground">Remaining Balance:</span>
+  1735→                  <span className="font-semibold text-orange-600 dark:text-orange-400">
+  1736→                    {updateTarget
+  1737→                      ? formatCurrency(
+  1738→                          Math.max(
+  1739→                            (updateTarget.grandTotal || 0) -
+  1740→                              (parseFloat(updateAmountPaid) || 0),
+  1741→                            0
+  1742→                          )
+  1743→                        )
+  1744→                      : '₹0.00'}
+  1745→                  </span>
+  1746→                </div>
+  1747→              </div>
+  1748→            )}
+  1749→          </div>
+  1750→
+  1751→          <DialogFooter className="gap-2">
+  1752→            <Button
+  1753→              variant="outline"
+  1754→              onClick={() => setUpdateTarget(null)}
+  1755→              disabled={updating}
+  1756→            >
+  1757→              Cancel
+  1758→            </Button>
+  1759→            <Button
+  1760→              onClick={handleUpdate}
+  1761→              disabled={updating}
+  1762→              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
+  1763→            >
+  1764→              {updating && <RefreshCw className="h-4 w-4 animate-spin" />}
+  1765→              Save Changes
+  1766→            </Button>
+  1767→          </DialogFooter>
+  1768→        </DialogContent>
+  1769→      </Dialog>
+  1770→
+  1771→      {/* ────────────────────────────────────────────────────────
+  1772→          DIALOG: Pay Balance
+  1773→      ──────────────────────────────────────────────────────── */}
+  1774→      <Dialog
+  1775→        open={!!payBalanceTarget}
+  1776→        onOpenChange={(open) => !open && setPayBalanceTarget(null)}
+  1777→      >
+  1778→        <DialogContent className="sm:max-w-md">
+  1779→          <DialogHeader>
+  1780→            <DialogTitle className="flex items-center gap-2">
+  1781→              <Wallet className="h-5 w-5 text-orange-600" />
+  1782→              Pay Balance
+  1783→            </DialogTitle>
+  1784→            <DialogDescription>
+  1785→              Record a payment for{' '}
+  1786→              <span className="font-semibold text-foreground">
+  1787→                {payBalanceTarget?.invoiceNumber}
+  1788→              </span>
+  1789→            </DialogDescription>
+  1790→          </DialogHeader>
+  1791→
+  1792→          <div className="space-y-4 py-2">
+  1793→            {/* Balance info */}
+  1794→            <Card className="border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-950/30">
+  1795→              <CardContent className="p-4">
+  1796→                <div className="text-center">
+  1797→                  <p className="text-sm text-muted-foreground mb-1">Current Balance Due</p>
+  1798→                  <p className="text-2xl font-bold text-orange-700 dark:text-orange-400">
+  1799→                    {payBalanceTarget
+  1800→                      ? formatCurrency(payBalanceTarget.balanceAmount || 0)
+  1801→                      : '₹0.00'}
+  1802→                  </p>
+  1803→                  <p className="text-xs text-muted-foreground mt-1">
+  1804→                    Total: {payBalanceTarget ? formatCurrency(payBalanceTarget.grandTotal) : ''} •
+  1805→                    Paid:{' '}
+  1806→                    {payBalanceTarget
+  1807→                      ? formatCurrency(payBalanceTarget.paidAmount || 0)
+  1808→                      : ''}
+  1809→                  </p>
+  1810→                </div>
+  1811→              </CardContent>
+  1812→            </Card>
+  1813→
+  1814→            {/* Payment Amount */}
+  1815→            <div className="space-y-2">
+  1816→              <Label className="text-sm font-medium">Payment Amount</Label>
+  1817→              <div className="relative">
+  1818→                <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+  1819→                <Input
+  1820→                  type="number"
+  1821→                  min="0.01"
+  1822→                  max={payBalanceTarget?.balanceAmount || 0}
+  1823→                  step="0.01"
+  1824→                  value={payBalanceAmount}
+  1825→                  onChange={(e) => setPayBalanceAmount(e.target.value)}
+  1826→                  className="pl-9 text-lg font-semibold"
+  1827→                  placeholder="0.00"
+  1828→                />
+  1829→              </div>
+  1830→              {payBalanceTarget && (
+  1831→                <p className="text-xs text-muted-foreground">
+  1832→                  Max: {formatCurrency(payBalanceTarget.balanceAmount || 0)}
+  1833→                </p>
+  1834→              )}
+  1835→            </div>
+  1836→
+  1837→            {/* Payment Method */}
+  1838→            <div className="space-y-2">
+  1839→              <Label className="text-sm font-medium">Payment Method</Label>
+  1840→              <Select value={payBalanceMethod} onValueChange={setPayBalanceMethod}>
+  1841→                <SelectTrigger className="w-full">
+  1842→                  <SelectValue />
+  1843→                </SelectTrigger>
+  1844→                <SelectContent>
+  1845→                  {paymentMethods.map((pm) => (
+  1846→                    <SelectItem key={pm.value} value={pm.value}>
+  1847→                      <span className="flex items-center gap-2">
+  1848→                        {pm.icon}
+  1849→                        {pm.label}
+  1850→                      </span>
+  1851→                    </SelectItem>
+  1852→                  ))}
+  1853→                </SelectContent>
+  1854→              </Select>
+  1855→            </div>
+  1856→
+  1857→            {/* Preview */}
+  1858→            {payBalanceTarget && parseFloat(payBalanceAmount) > 0 && (
+  1859→              <Card className="bg-muted/50 border-0">
+  1860→                <CardContent className="p-3">
+  1861→                  <div className="space-y-1.5 text-sm">
+  1862→                    <div className="flex justify-between">
+  1863→                      <span className="text-muted-foreground">Total Bill</span>
+  1864→                      <span>{formatCurrency(payBalanceTarget.grandTotal)}</span>
+  1865→                    </div>
+  1866→                    <div className="flex justify-between">
+  1867→                      <span className="text-muted-foreground">Already Paid</span>
+  1868→                      <span className="text-emerald-600 dark:text-emerald-400">
+  1869→                        {formatCurrency(payBalanceTarget.paidAmount || 0)}
+  1870→                      </span>
+  1871→                    </div>
+  1872→                    <Separator />
+  1873→                    <div className="flex justify-between">
+  1874→                      <span className="text-muted-foreground">This Payment</span>
+  1875→                      <span className="font-medium">
+  1876→                        {formatCurrency(parseFloat(payBalanceAmount) || 0)}
+  1877→                      </span>
+  1878→                    </div>
+  1879→                    <div className="flex justify-between font-semibold">
+  1880→                      <span>Remaining After Payment</span>
+  1881→                      <span
+  1882→                        className={
+  1883→                          (payBalanceTarget.balanceAmount || 0) -
+  1884→                            parseFloat(payBalanceAmount || '0') <=
+  1885→                          0
+  1886→                            ? 'text-emerald-600 dark:text-emerald-400'
+  1887→                            : 'text-orange-600 dark:text-orange-400'
+  1888→                        }
+  1889→                      >
+  1890→                        {formatCurrency(
+  1891→                          Math.max(
+  1892→                            (payBalanceTarget.balanceAmount || 0) -
+  1893→                              (parseFloat(payBalanceAmount) || 0),
+  1894→                            0
+  1895→                          )
+  1896→                        )}
+  1897→                      </span>
+  1898→                    </div>
+  1899→                  </div>
+  1900→                </CardContent>
+  1901→              </Card>
+  1902→            )}
+  1903→          </div>
+  1904→
+  1905→          <DialogFooter className="gap-2">
+  1906→            <Button
+  1907→              variant="outline"
+  1908→              onClick={() => setPayBalanceTarget(null)}
+  1909→              disabled={payingBalance}
+  1910→            >
+  1911→              Cancel
+  1912→            </Button>
+  1913→            <Button
+  1914→              onClick={handlePayBalance}
+  1915→              disabled={payingBalance}
+  1916→              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
+  1917→            >
+  1918→              {payingBalance && <RefreshCw className="h-4 w-4 animate-spin" />}
+  1919→              Record Payment
+  1920→            </Button>
+  1921→          </DialogFooter>
+  1922→        </DialogContent>
+  1923→      </Dialog>
+  1924→
+  1925→      {/* ────────────────────────────────────────────────────────
+  1926→          DIALOG: Refund
+  1927→      ──────────────────────────────────────────────────────── */}
+  1928→      <Dialog
+  1929→        open={!!refundTarget}
+  1930→        onOpenChange={(open) => {
+  1931→          if (!open) {
+  1932→            setRefundTarget(null);
+  1933→            setRefundSelectedItems(new Set());
+  1934→            setRefundReason('');
+  1935→          }
+  1936→        }}
+  1937→      >
+  1938→        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-hidden flex flex-col">
+  1939→          <DialogHeader>
+  1940→            <DialogTitle className="flex items-center gap-2">
+  1941→              <RotateCcw className="h-5 w-5 text-red-600" />
+  1942→              Process Refund
+  1943→            </DialogTitle>
+  1944→            <DialogDescription>
+  1945→              Select items to refund from invoice{' '}
+  1946→              <span className="font-semibold text-foreground">
+  1947→                {refundTarget?.invoiceNumber}
+  1948→              </span>
+  1949→            </DialogDescription>
+  1950→          </DialogHeader>
+  1951→
+  1952→          {/* Bill Info */}
+  1953→          <Card className="bg-muted/50 border-0 flex-shrink-0">
+  1954→            <CardContent className="p-3">
+  1955→              <div className="grid grid-cols-3 gap-2 text-sm">
+  1956→                <div>
+  1957→                  <span className="text-muted-foreground text-xs">Invoice</span>
+  1958→                  <p className="font-medium">{refundTarget?.invoiceNumber}</p>
+  1959→                </div>
+  1960→                <div>
+  1961→                  <span className="text-muted-foreground text-xs">Date</span>
+  1962→                  <p className="font-medium">
+  1963→                    {refundTarget ? formatDate(refundTarget.date) : ''}
+  1964→                  </p>
+  1965→                </div>
+  1966→                <div>
+  1967→                  <span className="text-muted-foreground text-xs">Customer</span>
+  1968→                  <p className="font-medium">{refundTarget?.customerName || 'Walk-in'}</p>
+  1969→                </div>
+  1970→              </div>
+  1971→            </CardContent>
+  1972→          </Card>
+  1973→
+  1974→          {/* Items List */}
+  1975→          <div className="flex-1 overflow-hidden flex flex-col">
+  1976→            <div className="flex items-center justify-between mb-2 flex-shrink-0">
+  1977→              <Label className="text-sm font-medium">Select Items to Refund</Label>
+  1978→              <button
+  1979→                onClick={toggleSelectAllRefundItems}
+  1980→                className="text-xs text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 font-medium"
+  1981→              >
+  1982→                {refundSelectedItems.size === (refundTarget?.invoiceItems.length || 0)
+  1983→                  ? 'Deselect All'
+  1984→                  : 'Select All'}
+  1985→              </button>
+  1986→            </div>
+  1987→
+  1988→            <ScrollArea className="flex-1 max-h-60">
+  1989→              <div className="space-y-1 pr-2">
+  1990→                {(refundTarget?.invoiceItems || []).map((item, idx) => {
+  1991→                  const isSelected = refundSelectedItems.has(idx);
+  1992→                  return (
+  1993→                    <div
+  1994→                      key={item.id || idx}
+  1995→                      className={`flex items-center gap-3 p-2.5 rounded-lg border transition-colors cursor-pointer ${
+  1996→                        isSelected
+  1997→                          ? 'border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/30'
+  1998→                          : 'border-transparent hover:bg-muted/50'
+  1999→                      }`}
+  2000→                      onClick={() => toggleRefundItem(idx)}
+
+[showing lines 1-2000 of 2302; use offset=2001 with limit to continue reading]

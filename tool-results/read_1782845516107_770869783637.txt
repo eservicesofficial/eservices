@@ -1,0 +1,2002 @@
+     1→'use client';
+     2→
+     3→import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+     4→import {
+     5→  Lock, Eye, EyeOff, Shield, Receipt, ArrowRight, Loader2,
+     6→  CheckCircle2, Keyboard, Sparkles, FileText, Printer,
+     7→  User, AlertCircle, Building2, Mail, KeyRound,
+     8→  Copy, Check, ShieldAlert, Clock, Phone, ArrowLeft,
+     9→  AlertTriangle, Timer, Hash, Ban, X,
+    10→} from 'lucide-react';
+    11→import { Button } from '@/components/ui/button';
+    12→import { Input } from '@/components/ui/input';
+    13→import {
+    14→  Dialog,
+    15→  DialogContent,
+    16→  DialogHeader,
+    17→  DialogTitle,
+    18→  DialogDescription,
+    19→  DialogFooter,
+    20→} from '@/components/ui/dialog';
+    21→import { notify, useNotificationStore, dismissNotification } from '@/lib/notification-store';
+    22→import type { UserSession } from './auth-provider';
+    23→
+    24→// ── Auto-dismiss Toast Popup for Login Page ──────────────────────────────────
+    25→// The login page doesn't have the NotificationCenter (it's in the TopBar).
+    26→// This component subscribes to the notification store and displays each new
+    27→// notification as a popup toast that auto-dismisses after 4 seconds.
+    28→function LoginToastContainer() {
+    29→  const notifications = useNotificationStore((s) => s.notifications);
+    30→  const [visibleToasts, setVisibleToasts] = useState<Array<{ id: string; type: string; title: string; message: string; fading: boolean }>>([]);
+    31→  // Track processed IDs with a Set so we never replay or duplicate a notification,
+    32→  // even when items are removed from the store (dismissNotification / clearAll).
+    33→  const processedIds = useRef<Set<string>>(new Set(notifications.map((n) => n.id)));
+    34→
+    35→  useEffect(() => {
+    36→    // Find notifications we haven't shown yet
+    37→    const newNotifs = notifications.filter((n) => !processedIds.current.has(n.id));
+    38→    if (newNotifs.length === 0) return;
+    39→
+    40→    // Mark them as processed
+    41→    for (const n of newNotifs) {
+    42→      processedIds.current.add(n.id);
+    43→    }
+    44→
+    45→    const newToasts = newNotifs.map((n) => ({ id: n.id, type: n.type, title: n.title, message: n.message, fading: false }));
+    46→    setVisibleToasts((prev) => [...prev, ...newToasts]);
+    47→
+    48→    // Auto-dismiss each toast after 4 seconds
+    49→    for (const n of newNotifs) {
+    50→      const id = n.id;
+    51→      setTimeout(() => {
+    52→        setVisibleToasts((prev) => prev.map((t) => t.id === id ? { ...t, fading: true } : t));
+    53→        setTimeout(() => {
+    54→          setVisibleToasts((prev) => prev.filter((t) => t.id !== id));
+    55→          dismissNotification(id);
+    56→        }, 300);
+    57→      }, 4000);
+    58→    }
+    59→  }, [notifications]);
+    60→
+    61→  const iconMap: Record<string, React.ReactNode> = {
+    62→    success: <CheckCircle2 className="size-5 text-emerald-500 shrink-0" />,
+    63→    error: <AlertCircle className="size-5 text-red-500 shrink-0" />,
+    64→    warning: <AlertTriangle className="size-5 text-amber-500 shrink-0" />,
+    65→    info: <AlertCircle className="size-5 text-sky-500 shrink-0" />,
+    66→  };
+    67→  const borderMap: Record<string, string> = {
+    68→    success: 'border-l-emerald-500',
+    69→    error: 'border-l-red-500',
+    70→    warning: 'border-l-amber-500',
+    71→    info: 'border-l-sky-500',
+    72→  };
+    73→  const bgMap: Record<string, string> = {
+    74→    success: 'bg-emerald-50 dark:bg-emerald-950/30',
+    75→    error: 'bg-red-50 dark:bg-red-950/30',
+    76→    warning: 'bg-amber-50 dark:bg-amber-950/30',
+    77→    info: 'bg-sky-50 dark:bg-sky-950/30',
+    78→  };
+    79→
+    80→  if (visibleToasts.length === 0) return null;
+    81→
+    82→  return (
+    83→    <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 max-w-sm w-full pointer-events-none">
+    84→      {visibleToasts.map((t) => (
+    85→        <div
+    86→          key={t.id}
+    87→          className={`pointer-events-auto flex items-start gap-3 p-4 rounded-xl border-l-4 ${borderMap[t.type] || borderMap.info} ${bgMap[t.type] || bgMap.info} shadow-lg shadow-black/10 backdrop-blur-sm transition-all duration-300 ${t.fading ? 'opacity-0 translate-x-4' : 'opacity-100 translate-x-0'}`}
+    88→        >
+    89→          {iconMap[t.type] || iconMap.info}
+    90→          <div className="flex-1 min-w-0">
+    91→            <p className="text-sm font-semibold text-foreground">{t.title}</p>
+    92→            <p className="text-xs text-muted-foreground mt-0.5">{t.message}</p>
+    93→          </div>
+    94→          <button onClick={() => { dismissNotification(t.id); setVisibleToasts((prev) => prev.filter((v) => v.id !== t.id)); }} className="text-muted-foreground hover:text-foreground shrink-0">
+    95→            <X className="size-4" />
+    96→          </button>
+    97→        </div>
+    98→      ))}
+    99→    </div>
+   100→  );
+   101→}
+   102→
+   103→interface LoginPageProps {
+   104→  onLoginSuccess: (token: string, user: UserSession) => void;
+   105→}
+   106→
+   107→const PARTICLES = [
+   108→  { size: 4, color: '#34d399', opacity: 0.2, left: '6%', delay: '0s', duration: '16s' },
+   109→  { size: 6, color: '#2dd4bf', opacity: 0.15, left: '16%', delay: '-3s', duration: '20s' },
+   110→  { size: 3, color: '#4ade80', opacity: 0.25, left: '28%', delay: '-6s', duration: '14s' },
+   111→  { size: 8, color: '#a3e635', opacity: 0.1, left: '36%', delay: '-9s', duration: '22s' },
+   112→  { size: 5, color: '#34d399', opacity: 0.18, left: '48%', delay: '-2s', duration: '17s' },
+   113→  { size: 4, color: '#2dd4bf', opacity: 0.22, left: '58%', delay: '-11s', duration: '19s' },
+   114→  { size: 7, color: '#4ade80', opacity: 0.12, left: '68%', delay: '-5s', duration: '23s' },
+   115→  { size: 3, color: '#a3e635', opacity: 0.2, left: '78%', delay: '-8s', duration: '15s' },
+   116→  { size: 6, color: '#34d399', opacity: 0.14, left: '88%', delay: '-13s', duration: '21s' },
+   117→];
+   118→
+   119→const FLOATING_ICONS = [
+   120→  { Icon: FileText, x: '10%', delay: '0s', duration: '20s', size: 22, opacity: 0.08 },
+   121→  { Icon: Receipt, x: '30%', delay: '-5s', duration: '24s', size: 26, opacity: 0.06 },
+   122→  { Icon: Printer, x: '55%', delay: '-10s', duration: '18s', size: 20, opacity: 0.07 },
+   123→  { Icon: FileText, x: '75%', delay: '-7s', duration: '22s', size: 24, opacity: 0.05 },
+   124→];
+   125→
+   126→export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
+   127→  // Business login fields
+   128→  const [clientId, setClientId] = useState('');
+   129→  const [userId, setUserId] = useState('');
+   130→  const [password, setPassword] = useState('');
+   131→  const [showPassword, setShowPassword] = useState(false);
+   132→
+   133→  // Super admin login fields
+   134→  const [superEmail, setSuperEmail] = useState('');
+   135→  const [superPassword, setSuperPassword] = useState('');
+   136→  const [showSuperPassword, setShowSuperPassword] = useState(false);
+   137→
+   138→  // Mode toggle
+   139→  const [isSuperAdminMode, setIsSuperAdminMode] = useState(false);
+   140→
+   141→  // Forgot password state
+   142→  const [showForgotPassword, setShowForgotPassword] = useState(false);
+   143→  const [forgotEmail, setForgotEmail] = useState('');
+   144→  const [forgotSecurityQuestion, setForgotSecurityQuestion] = useState('');
+   145→  const [forgotSecurityAnswer, setForgotSecurityAnswer] = useState('');
+   146→  const [forgotNewPassword, setForgotNewPassword] = useState('');
+   147→  const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
+   148→  const [forgotStep, setForgotStep] = useState<'email' | 'answer' | 'reset'>('email');
+   149→  const [forgotLoading, setForgotLoading] = useState(false);
+   150→
+   151→  // Forgot Login ID state
+   152→  const [showForgotLoginId, setShowForgotLoginId] = useState(false);
+   153→  const [forgotLoginIdStep, setForgotLoginIdStep] = useState<'answer' | 'result'>('answer');
+   154→  const [forgotLoginIdAnswer, setForgotLoginIdAnswer] = useState('');
+   155→  const [forgotLoginIdQuestion, setForgotLoginIdQuestion] = useState('');
+   156→  const [recoveredEmail, setRecoveredEmail] = useState('');
+   157→  const [recoveredName, setRecoveredName] = useState('');
+   158→  const [forgotLoginIdLoading, setForgotLoginIdLoading] = useState(false);
+   159→  const [emailCopied, setEmailCopied] = useState(false);
+   160→
+   161→  // Subscription expiry state
+   162→  const [showExpiredScreen, setShowExpiredScreen] = useState(false);
+   163→  const [expiredClientInfo, setExpiredClientInfo] = useState<{ clientId: string; businessName: string; expiresAt: string | null } | null>(null);
+   164→
+   165→  // Account suspended state (unit-level)
+   166→  const [showSuspendedScreen, setShowSuspendedScreen] = useState(false);
+   167→  const [suspendedClientInfo, setSuspendedClientInfo] = useState<{ clientId: string; businessName: string } | null>(null);
+   168→
+   169→  // User suspended state (individual user deactivated)
+   170→  const [showUserSuspendedScreen, setShowUserSuspendedScreen] = useState(false);
+   171→  const [userSuspendedInfo, setUserSuspendedInfo] = useState<{ clientId: string; businessName: string; userName: string; userLoginId: string } | null>(null);
+   172→
+   173→  // Force password change
+   174→  const [mustChangePassword, setMustChangePassword] = useState(false);
+   175→  const [pendingToken, setPendingToken] = useState<string | null>(null);
+   176→  const [pendingUser, setPendingUser] = useState<UserSession | null>(null);
+   177→  const [currentPassword, setCurrentPassword] = useState('');
+   178→  const [newPassword, setNewPassword] = useState('');
+   179→  const [confirmPassword, setConfirmPassword] = useState('');
+   180→  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+   181→  const [showNewPassword, setShowNewPassword] = useState(false);
+   182→  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+   183→  const [changePasswordLoading, setChangePasswordLoading] = useState(false);
+   184→
+   185→  // UI state
+   186→  const [loading, setLoading] = useState(false);
+   187→  const [shake, setShake] = useState(false);
+   188→  const [attempts, setAttempts] = useState(0);
+   189→  const [locked, setLocked] = useState(false);
+   190→  const [lockTimer, setLockTimer] = useState(0);
+   191→  const [successState, setSuccessState] = useState(false);
+   192→  const [currentTime, setCurrentTime] = useState(new Date());
+   193→  const [mounted, setMounted] = useState(false);
+   194→  const [focusedField, setFocusedField] = useState<string | null>(null);
+   195→  const [showEnterHint, setShowEnterHint] = useState(false);
+   196→
+   197→  const clientIdRef = useRef<HTMLInputElement>(null);
+   198→  const userIdRef = useRef<HTMLInputElement>(null);
+   199→  const passRef = useRef<HTMLInputElement>(null);
+   200→  const superEmailRef = useRef<HTMLInputElement>(null);
+   201→  const superPassRef = useRef<HTMLInputElement>(null);
+   202→
+   203→  useEffect(() => {
+   204→    setMounted(true);
+   205→    // Only call /api/init ONCE per browser session (not on every login page mount).
+   206→    // Previously this ran on every login page visit, which triggered ensureSettingsSync()
+   207→    // on every mount — risking data reset if Settings rows were temporarily missing.
+   208→    // Now we use sessionStorage to ensure it only runs once per tab/session.
+   209→    if (!sessionStorage.getItem('eservices_init_done')) {
+   210→      sessionStorage.setItem('eservices_init_done', '1');
+   211→      fetch('/api/init').catch(() => { /* non-critical, silent fail */ });
+   212→    }
+   213→  }, []);
+   214→  useEffect(() => {
+   215→    if (mounted) {
+   216→      const timer = setTimeout(() => {
+   217→        if (isSuperAdminMode) {
+   218→          superEmailRef.current?.focus();
+   219→        } else {
+   220→          clientIdRef.current?.focus();
+   221→        }
+   222→      }, 600);
+   223→      return () => clearTimeout(timer);
+   224→    }
+   225→  }, [mounted, isSuperAdminMode]);
+   226→  useEffect(() => {
+   227→    const interval = setInterval(() => setCurrentTime(new Date()), 1000);
+   228→    return () => clearInterval(interval);
+   229→  }, []);
+   230→  useEffect(() => {
+   231→    if (lockTimer > 0) {
+   232→      const timer = setTimeout(() => setLockTimer((prev) => prev - 1), 1000);
+   233→      return () => clearTimeout(timer);
+   234→    } else if (locked) {
+   235→      setLocked(false);
+   236→      setAttempts(0);
+   237→    }
+   238→  }, [lockTimer, locked]);
+   239→  useEffect(() => {
+   240→    const timer = setTimeout(() => setShowEnterHint(true), 3000);
+   241→    return () => clearTimeout(timer);
+   242→  }, []);
+   243→
+   244→  const greeting = useMemo(() => {
+   245→    const h = currentTime.getHours();
+   246→    if (h < 12) return 'Good Morning';
+   247→    if (h < 17) return 'Good Afternoon';
+   248→    return 'Good Evening';
+   249→  }, [currentTime]);
+   250→
+   251→  const timeStr = currentTime.toLocaleTimeString('en-US', {
+   252→    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true,
+   253→  });
+   254→
+   255→  const dateStr = currentTime.toLocaleDateString('en-US', {
+   256→    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+   257→  });
+   258→
+   259→  const fetchWithRetry = async (url: string, options: RequestInit, maxAttempts = 5): Promise<Response | null> => {
+   260→    let lastError: Error | null = null;
+   261→    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+   262→      try {
+   263→        // Create an AbortController with a 8-second timeout per attempt
+   264→        const controller = new AbortController();
+   265→        const timeoutId = setTimeout(() => controller.abort(), 8000);
+   266→        try {
+   267→          const res = await fetch(url, { ...options, signal: controller.signal });
+   268→          lastError = null;
+   269→          return res;
+   270→        } finally {
+   271→          clearTimeout(timeoutId);
+   272→        }
+   273→      } catch (fetchErr) {
+   274→        // Ignore AbortError (our own timeout) — don't count as a real error
+   275→        if (fetchErr instanceof DOMException && fetchErr.name === 'AbortError') {
+   276→          lastError = fetchErr as Error;
+   277→          if (attempt === 0) {
+   278→            notify({ type: 'info', title: 'Please Wait', message: 'Server is starting up... please wait', duration: 5000 });
+   279→          }
+   280→          const delay = Math.min(2000 * (attempt + 1), 6000);
+   281→          await new Promise(r => setTimeout(r, delay));
+   282→          continue;
+   283→        }
+   284→        lastError = fetchErr as Error;
+   285→        if (attempt === 0) {
+   286→          notify({ type: 'info', title: 'Please Wait', message: 'Server is starting up... please wait', duration: 5000 });
+   287→        }
+   288→        const delay = Math.min(2000 * (attempt + 1), 6000);
+   289→        await new Promise(r => setTimeout(r, delay));
+   290→      }
+   291→    }
+   292→    return null;
+   293→  };
+   294→
+   295→  const handleLogin = async (e: React.FormEvent) => {
+   296→    e.preventDefault();
+   297→    if (locked) {
+   298→      notify({ type: 'error', title: 'Account Locked', message: `Locked. Try again in ${lockTimer}s` });
+   299→      return;
+   300→    }
+   301→
+   302→    if (isSuperAdminMode) {
+   303→      // Super Admin login
+   304→      if (!superEmail.trim() || !superPassword.trim()) {
+   305→        notify({ type: 'error', title: 'Validation Error', message: 'All fields are required' });
+   306→        return;
+   307→      }
+   308→      setLoading(true);
+   309→      try {
+   310→        const res = await fetchWithRetry('/api/super-admin/auth', {
+   311→          method: 'POST',
+   312→          headers: { 'Content-Type': 'application/json' },
+   313→          body: JSON.stringify({
+   314→            email: superEmail.trim(),
+   315→            password: superPassword.trim(),
+   316→          }),
+   317→        });
+   318→        if (!res) {
+   319→          notify({ type: 'error', title: 'Connection Error', message: 'Server is not responding. Please wait a moment and try again.' });
+   320→          return;
+   321→        }
+   322→        const data = await res.json();
+   323→        if (res.ok && data.success) {
+   324→          const user = data.user;
+   325→          const userSession: UserSession = {
+   326→            unitCode: 'SUPER',
+   327→            unitName: 'System',
+   328→            userId: user.id,
+   329→            loginId: user.email,
+   330→            name: user.name,
+   331→            role: 'SuperAdmin',
+   332→            permissions: {},
+   333→            isSuperAdmin: true,
+   334→          };
+   335→          setSuccessState(true);
+   336→          notify({ type: 'success', title: 'Welcome', message: `Welcome, ${user.name}!` });
+   337→          setTimeout(() => {
+   338→            try {
+   339→              onLoginSuccess(data.token, userSession);
+   340→            } catch (err) {
+   341→              console.error('Login success callback failed:', err);
+   342→              setSuccessState(false);
+   343→              notify({ type: 'error', title: 'Error', message: 'Failed to complete login. Please try again.' });
+   344→            }
+   345→          }, 1200);
+   346→        } else {
+   347→          setShake(true);
+   348→          setTimeout(() => setShake(false), 600);
+   349→          const newAttempts = attempts + 1;
+   350→          setAttempts(newAttempts);
+   351→          if (newAttempts >= 5) {
+   352→            setLocked(true);
+   353→            setLockTimer(30);
+   354→            notify({ type: 'error', title: 'Account Locked', message: 'Too many failed attempts. Locked for 30 seconds.' });
+   355→          } else {
+   356→            notify({ type: 'error', title: 'Error', message: data.error || 'Login failed' });
+   357→          }
+   358→        }
+   359→      } catch (err) {
+   360→        const errMsg = err instanceof Error ? err.message : 'Unknown error';
+   361→        console.error('Super Admin login error:', err);
+   362→        notify({ type: 'error', title: 'Error', message: `Something went wrong: ${errMsg}` });
+   363→      } finally {
+   364→        setLoading(false);
+   365→      }
+   366→    } else {
+   367→      // Business login
+   368→      if (!clientId.trim() || !userId.trim() || !password.trim()) {
+   369→        notify({ type: 'error', title: 'Validation Error', message: 'All fields are required' });
+   370→        return;
+   371→      }
+   372→      setLoading(true);
+   373→      try {
+   374→        const res = await fetchWithRetry('/api/auth', {
+   375→          method: 'POST',
+   376→          headers: { 'Content-Type': 'application/json' },
+   377→          body: JSON.stringify({
+   378→            unitCode: clientId.trim().toUpperCase(),
+   379→            loginId: userId.trim(),
+   380→            password: password.trim(),
+   381→          }),
+   382→        });
+   383→        if (!res) {
+   384→          notify({ type: 'error', title: 'Connection Error', message: 'Server is not responding. Please wait a moment and try again.' });
+   385→          return;
+   386→        }
+   387→        const data = await res.json();
+   388→        if (res.ok && data.success) {
+   389→          if (data.user?.mustChangePassword) {
+   390→            setPendingToken(data.token);
+   391→            setPendingUser(data.user);
+   392→            setMustChangePassword(true);
+   393→            setLoading(false);
+   394→            return;
+   395→          }
+   396→          setSuccessState(true);
+   397→          notify({ type: 'success', title: 'Welcome', message: `Welcome, ${data.user.name}!` });
+   398→          setTimeout(() => {
+   399→            try {
+   400→              onLoginSuccess(data.token, data.user);
+   401→            } catch (err) {
+   402→              console.error('Login success callback failed:', err);
+   403→              setSuccessState(false);
+   404→              notify({ type: 'error', title: 'Error', message: 'Failed to complete login. Please try again.' });
+   405→            }
+   406→          }, 1200);
+   407→        } else {
+   408→          // Check if subscription expired
+   409→          if (data.expired) {
+   410→            setExpiredClientInfo({
+   411→              clientId: clientId.trim().toUpperCase(),
+   412→              businessName: data.businessName || clientId.trim().toUpperCase(),
+   413→              expiresAt: data.expiresAt || null,
+   414→            });
+   415→            setShowExpiredScreen(true);
+   416→            setLoading(false);
+   417→            return;
+   418→          }
+   419→          // Check if account suspended (unit-level)
+   420→          if (data.suspended) {
+   421→            setSuspendedClientInfo({
+   422→              clientId: clientId.trim().toUpperCase(),
+   423→              businessName: data.businessName || clientId.trim().toUpperCase(),
+   424→            });
+   425→            setShowSuspendedScreen(true);
+   426→            setLoading(false);
+   427→            return;
+   428→          }
+   429→          // Check if individual user is suspended/deactivated
+   430→          if (data.userSuspended) {
+   431→            setUserSuspendedInfo({
+   432→              clientId: data.clientId || clientId.trim().toUpperCase(),
+   433→              businessName: data.businessName || clientId.trim().toUpperCase(),
+   434→              userName: data.userName || userId.trim(),
+   435→              userLoginId: data.userLoginId || userId.trim(),
+   436→            });
+   437→            setShowUserSuspendedScreen(true);
+   438→            setLoading(false);
+   439→            return;
+   440→          }
+   441→          setShake(true);
+   442→          setTimeout(() => setShake(false), 600);
+   443→          const newAttempts = attempts + 1;
+   444→          setAttempts(newAttempts);
+   445→          if (newAttempts >= 5) {
+   446→            setLocked(true);
+   447→            setLockTimer(30);
+   448→            notify({ type: 'error', title: 'Account Locked', message: 'Too many failed attempts. Locked for 30 seconds.' });
+   449→          } else {
+   450→            notify({ type: 'error', title: 'Error', message: data.error || 'Login failed' });
+   451→          }
+   452→        }
+   453→      } catch (err) {
+   454→        const errMsg = err instanceof Error ? err.message : 'Unknown error';
+   455→        console.error('Business login error:', err);
+   456→        notify({ type: 'error', title: 'Error', message: `Something went wrong: ${errMsg}` });
+   457→      } finally {
+   458→        setLoading(false);
+   459→      }
+   460→    }
+   461→  };
+   462→
+   463→  const handleChangePassword = async (e: React.FormEvent) => {
+   464→    e.preventDefault();
+   465→    if (!currentPassword.trim() || !newPassword.trim() || !confirmPassword.trim()) {
+   466→      notify({ type: 'error', title: 'Validation Error', message: 'All fields are required' });
+   467→      return;
+   468→    }
+   469→    if (newPassword.length < 4) {
+   470→      notify({ type: 'error', title: 'Validation Error', message: 'New password must be at least 4 characters' });
+   471→      return;
+   472→    }
+   473→    if (newPassword !== confirmPassword) {
+   474→      notify({ type: 'error', title: 'Validation Error', message: 'New password and confirm password do not match' });
+   475→      return;
+   476→    }
+   477→    if (currentPassword === newPassword) {
+   478→      notify({ type: 'error', title: 'Validation Error', message: 'New password must be different from current password' });
+   479→      return;
+   480→    }
+   481→    if (!pendingToken) return;
+   482→
+   483→    setChangePasswordLoading(true);
+   484→    try {
+   485→      const res = await fetch('/api/auth/change-password', {
+   486→        method: 'POST',
+   487→        headers: {
+   488→          'Content-Type': 'application/json',
+   489→          'Authorization': `Bearer ${pendingToken}`,
+   490→        },
+   491→        body: JSON.stringify({
+   492→          currentPassword: currentPassword.trim(),
+   493→          newPassword: newPassword.trim(),
+   494→        }),
+   495→      });
+   496→      const data = await res.json();
+   497→      if (res.ok && data.success) {
+   498→        notify({ type: 'success', title: 'Password Changed', message: 'Password changed successfully!' });
+   499→        // Use fresh user data from the server response (includes DB-fresh unitCode/unitName/permissions)
+   500→        // instead of the stale pendingUser from the JWT
+   501→        const updatedUser: UserSession = data.user
+   502→          ? { ...(data.user as UserSession), mustChangePassword: false }
+   503→          : { ...(pendingUser as UserSession), mustChangePassword: false };
+   504→        // Use the new token if returned, otherwise keep the existing one
+   505→        const newToken = data.token || pendingToken;
+   506→        setMustChangePassword(false);
+   507→        setPendingToken(null);
+   508→        setPendingUser(null);
+   509→        setCurrentPassword('');
+   510→        setNewPassword('');
+   511→        setConfirmPassword('');
+   512→        setSuccessState(true);
+   513→        setTimeout(() => {
+   514→          try {
+   515→            onLoginSuccess(newToken, updatedUser);
+   516→          } catch (err) {
+   517→            console.error('Login success callback failed:', err);
+   518→            setSuccessState(false);
+   519→            notify({ type: 'error', title: 'Error', message: 'Failed to complete login. Please try again.' });
+   520→          }
+   521→        }, 1200);
+   522→      } else {
+   523→        notify({ type: 'error', title: 'Error', message: data.error || 'Failed to change password' });
+   524→      }
+   525→    } catch {
+   526→      notify({ type: 'error', title: 'Error', message: 'Something went wrong. Please try again.' });
+   527→    } finally {
+   528→      setChangePasswordLoading(false);
+   529→    }
+   530→  };
+   531→
+   532→  const handleKeyDown = (e: React.KeyboardEvent, nextRef?: React.RefObject<HTMLInputElement | null>) => {
+   533→    if (e.key === 'Enter') {
+   534→      if (nextRef?.current) {
+   535→        nextRef.current.focus();
+   536→      }
+   537→    }
+   538→  };
+   539→
+   540→  const handleForgotPasswordGetQuestion = async () => {
+   541→    if (!forgotEmail.trim()) {
+   542→      notify({ type: 'error', title: 'Validation Error', message: 'Please enter your email' });
+   543→      return;
+   544→    }
+   545→    setForgotLoading(true);
+   546→    try {
+   547→      const res = await fetch(`/api/super-admin/forgot-password?email=${encodeURIComponent(forgotEmail.trim())}`);
+   548→      const data = await res.json();
+   549→      if (res.ok) {
+   550→        setForgotSecurityQuestion(data.securityQuestion);
+   551→        setForgotStep('answer');
+   552→      } else {
+   553→        notify({ type: 'error', title: 'Error', message: data.error || 'Failed to fetch security question' });
+   554→      }
+   555→    } catch {
+   556→      notify({ type: 'error', title: 'Error', message: 'Something went wrong' });
+   557→    } finally {
+   558→      setForgotLoading(false);
+   559→    }
+   560→  };
+   561→
+   562→  // Verify security answer before allowing password reset
+   563→  const handleVerifySecurityAnswer = async () => {
+   564→    if (!forgotSecurityAnswer.trim()) {
+   565→      notify({ type: 'error', title: 'Validation Error', message: 'Please enter the security answer' });
+   566→      return;
+   567→    }
+   568→    setForgotLoading(true);
+   569→    try {
+   570→      // Use the dedicated PUT endpoint to verify the answer without resetting password
+   571→      const res = await fetch('/api/super-admin/forgot-password', {
+   572→        method: 'PUT',
+   573→        headers: { 'Content-Type': 'application/json' },
+   574→        body: JSON.stringify({
+   575→          email: forgotEmail.trim(),
+   576→          securityAnswer: forgotSecurityAnswer.trim(),
+   577→        }),
+   578→      });
+   579→      const data = await res.json();
+   580→      if (res.ok && data.verified) {
+   581→        // Answer is correct — advance to the reset step
+   582→        setForgotStep('reset');
+   583→      } else {
+   584→        // Answer is incorrect — show error, stay on answer step
+   585→        notify({ type: 'error', title: 'Verification Failed', message: data.error || 'Security answer is incorrect. Please try again.' });
+   586→      }
+   587→    } catch {
+   588→      notify({ type: 'error', title: 'Error', message: 'Something went wrong. Please try again.' });
+   589→    } finally {
+   590→      setForgotLoading(false);
+   591→    }
+   592→  };
+   593→
+   594→  const handleForgotPasswordReset = async () => {
+   595→    if (!forgotSecurityAnswer.trim()) {
+   596→      notify({ type: 'error', title: 'Validation Error', message: 'Please enter the security answer' });
+   597→      return;
+   598→    }
+   599→    if (!forgotNewPassword || forgotNewPassword.length < 6) {
+   600→      notify({ type: 'error', title: 'Validation Error', message: 'New password must be at least 6 characters' });
+   601→      return;
+   602→    }
+   603→    if (forgotNewPassword !== forgotConfirmPassword) {
+   604→      notify({ type: 'error', title: 'Validation Error', message: 'Passwords do not match' });
+   605→      return;
+   606→    }
+   607→    setForgotLoading(true);
+   608→    try {
+   609→      const res = await fetch('/api/super-admin/forgot-password', {
+   610→        method: 'POST',
+   611→        headers: { 'Content-Type': 'application/json' },
+   612→        body: JSON.stringify({
+   613→          email: forgotEmail.trim(),
+   614→          securityAnswer: forgotSecurityAnswer.trim(),
+   615→          newPassword: forgotNewPassword,
+   616→        }),
+   617→      });
+   618→      const data = await res.json();
+   619→      if (res.ok && data.success) {
+   620→        notify({ type: 'success', title: 'Password Reset', message: 'Password reset successfully! You can now log in.' });
+   621→        setShowForgotPassword(false);
+   622→        setForgotStep('email');
+   623→        setForgotEmail('');
+   624→        setForgotSecurityQuestion('');
+   625→        setForgotSecurityAnswer('');
+   626→        setForgotNewPassword('');
+   627→        setForgotConfirmPassword('');
+   628→      } else {
+   629→        notify({ type: 'error', title: 'Error', message: data.error || 'Failed to reset password' });
+   630→      }
+   631→    } catch {
+   632→      notify({ type: 'error', title: 'Error', message: 'Something went wrong' });
+   633→    } finally {
+   634→      setForgotLoading(false);
+   635→    }
+   636→  };
+   637→
+   638→  const resetForgotPassword = () => {
+   639→    setShowForgotPassword(false);
+   640→    setForgotStep('email');
+   641→    setForgotEmail('');
+   642→    setForgotSecurityQuestion('');
+   643→    setForgotSecurityAnswer('');
+   644→    setForgotNewPassword('');
+   645→    setForgotConfirmPassword('');
+   646→  };
+   647→
+   648→  const handleForgotLoginIdOpen = async () => {
+   649→    setShowForgotLoginId(true);
+   650→    setForgotLoginIdStep('answer');
+   651→    setForgotLoginIdAnswer('');
+   652→    setRecoveredEmail('');
+   653→    setRecoveredName('');
+   654→    setEmailCopied(false);
+   655→    setForgotLoginIdLoading(true);
+   656→    try {
+   657→      const res = await fetch('/api/super-admin/recover-email');
+   658→      const data = await res.json();
+   659→      if (res.ok) {
+   660→        setForgotLoginIdQuestion(data.securityQuestion);
+   661→      } else {
+   662→        notify({ type: 'error', title: 'Error', message: data.error || 'Failed to fetch security question' });
+   663→        setShowForgotLoginId(false);
+   664→      }
+   665→    } catch {
+   666→      notify({ type: 'error', title: 'Error', message: 'Something went wrong' });
+   667→      setShowForgotLoginId(false);
+   668→    } finally {
+   669→      setForgotLoginIdLoading(false);
+   670→    }
+   671→  };
+   672→
+   673→  const handleForgotLoginIdSubmit = async () => {
+   674→    if (!forgotLoginIdAnswer.trim()) {
+   675→      notify({ type: 'error', title: 'Validation Error', message: 'Please enter the security answer' });
+   676→      return;
+   677→    }
+   678→    setForgotLoginIdLoading(true);
+   679→    try {
+   680→      const res = await fetch('/api/super-admin/recover-email', {
+   681→        method: 'POST',
+   682→        headers: { 'Content-Type': 'application/json' },
+   683→        body: JSON.stringify({ securityAnswer: forgotLoginIdAnswer.trim() }),
+   684→      });
+   685→      const data = await res.json();
+   686→      if (res.ok && data.success) {
+   687→        setRecoveredEmail(data.email);
+   688→        setRecoveredName(data.name);
+   689→        setForgotLoginIdStep('result');
+   690→        notify({ type: 'success', title: 'Recovery Success', message: 'Login ID recovered successfully!' });
+   691→      } else {
+   692→        notify({ type: 'error', title: 'Error', message: data.error || 'Security answer is incorrect' });
+   693→      }
+   694→    } catch {
+   695→      notify({ type: 'error', title: 'Error', message: 'Something went wrong' });
+   696→    } finally {
+   697→      setForgotLoginIdLoading(false);
+   698→    }
+   699→  };
+   700→
+   701→  const resetForgotLoginId = () => {
+   702→    setShowForgotLoginId(false);
+   703→    setForgotLoginIdStep('answer');
+   704→    setForgotLoginIdAnswer('');
+   705→    setForgotLoginIdQuestion('');
+   706→    setRecoveredEmail('');
+   707→    setRecoveredName('');
+   708→    setEmailCopied(false);
+   709→  };
+   710→
+   711→  const handleCopyEmail = async () => {
+   712→    try {
+   713→      await navigator.clipboard.writeText(recoveredEmail);
+   714→      setEmailCopied(true);
+   715→      notify({ type: 'success', title: 'Copied', message: 'Email copied to clipboard!' });
+   716→      setTimeout(() => setEmailCopied(false), 2000);
+   717→    } catch {
+   718→      notify({ type: 'error', title: 'Error', message: 'Failed to copy email' });
+   719→    }
+   720→  };
+   721→
+   722→  // --- Account Suspended Screen ---
+   723→  if (showSuspendedScreen) {
+   724→    return (
+   725→      <div className="min-h-screen flex relative overflow-hidden">
+   726→        {/* LEFT PANEL — Decorative */}
+   727→        <div className="hidden lg:flex lg:w-[55%] xl:w-[60%] relative bg-gradient-to-br from-amber-950 via-orange-950 to-yellow-950 overflow-hidden">
+   728→          <div className="absolute inset-0 pointer-events-none">
+   729→            <div className="absolute -top-1/3 -left-1/4 w-[800px] h-[800px] rounded-full bg-amber-500/8 login-mesh-1" />
+   730→            <div className="absolute -bottom-1/3 -right-1/4 w-[700px] h-[700px] rounded-full bg-orange-400/8 login-mesh-2" />
+   731→          </div>
+   732→          <div className="absolute inset-0 opacity-[0.03]" style={{
+   733→            backgroundImage: `linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)`,
+   734→            backgroundSize: '60px 60px',
+   735→          }} />
+   736→          <div className="absolute inset-0 pointer-events-none overflow-hidden">
+   737→            {FLOATING_ICONS.map((item, i) => (
+   738→              <div key={i} className="login-particle absolute text-white" style={{
+   739→                left: item.x, animationDuration: item.duration, animationDelay: item.delay, opacity: item.opacity * 0.6,
+   740→              }}>
+   741→                <item.Icon size={item.size} />
+   742→              </div>
+   743→            ))}
+   744→          </div>
+   745→          <div className="relative z-10 flex flex-col justify-between p-10 xl:p-14 w-full">
+   746→            <div>
+   747→              <div className="flex items-center gap-3 mb-2">
+   748→                <div className="flex size-12 rounded-xl bg-white/10 border border-white/10 items-center justify-center backdrop-blur-sm">
+   749→                  <img src="/icon-192.png" alt="Eservices" className="size-7 rounded-lg object-cover" />
+   750→                </div>
+   751→                <div>
+   752→                  <h1 className="text-2xl font-bold text-white tracking-tight">Eservices</h1>
+   753→                  <p className="text-amber-300/60 text-xs font-medium tracking-wide uppercase">POS & Billing System</p>
+   754→                </div>
+   755→              </div>
+   756→            </div>
+   757→            <div className="flex-1 flex flex-col justify-center max-w-lg">
+   758→              <div className="flex items-center gap-3 mb-6">
+   759→                <div className="flex size-14 rounded-2xl bg-amber-500/20 border border-amber-400/20 items-center justify-center backdrop-blur-sm">
+   760→                  <AlertTriangle className="size-7 text-amber-300" />
+   761→                </div>
+   762→                <div>
+   763→                  <h2 className="text-2xl font-bold text-white">Account Suspended</h2>
+   764→                  <p className="text-amber-200/50 text-sm">Access temporarily restricted</p>
+   765→                </div>
+   766→              </div>
+   767→              <p className="text-amber-100/40 text-sm leading-relaxed max-w-md">
+   768→                Your account has been suspended by your administrator. To restore access,
+   769→                please contact your system administrator.
+   770→              </p>
+   771→            </div>
+   772→            <div className="flex items-center gap-6">
+   773→              <div className="flex items-center gap-2">
+   774→                <Shield className="size-4 text-amber-400/60" />
+   775→                <span className="text-amber-200/40 text-xs">256-bit Encrypted</span>
+   776→              </div>
+   777→              <div className="flex items-center gap-2">
+   778→                <Sparkles className="size-4 text-amber-400/60" />
+   779→                <span className="text-amber-200/40 text-xs">v3.0 — Eservices</span>
+   780→              </div>
+   781→            </div>
+   782→          </div>
+   783→        </div>
+   784→
+   785→        {/* RIGHT PANEL — Suspended Notice */}
+   786→        <div className="w-full lg:w-[45%] xl:w-[40%] relative bg-white dark:bg-gray-950 flex items-center justify-center p-6 sm:p-8 lg:p-12">
+   787→          <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-amber-50 to-transparent dark:from-amber-950/20 dark:to-transparent rounded-bl-full pointer-events-none" />
+   788→          <div className="absolute bottom-0 left-0 w-48 h-48 bg-gradient-to-tr from-orange-50 to-transparent dark:from-orange-950/20 dark:to-transparent rounded-tr-full pointer-events-none" />
+   789→
+   790→          <div className="absolute pointer-events-none rounded-full" style={{
+   791→            width: '400px', height: '400px',
+   792→            background: 'radial-gradient(circle, rgba(245,158,11,0.08) 0%, rgba(249,115,22,0.05) 40%, transparent 70%)',
+   793→            top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+   794→            animation: 'glow-pulse 4s ease-in-out infinite', filter: 'blur(40px)',
+   795→          }} />
+   796→
+   797→          <div className="relative z-10 w-full max-w-[420px]">
+   798→            {/* Mobile Logo */}
+   799→            <div className="lg:hidden flex flex-col items-center mb-8">
+   800→              <div className="flex size-16 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 items-center justify-center shadow-lg shadow-amber-600/25 mb-3">
+   801→                <AlertTriangle className="size-8 text-white" />
+   802→              </div>
+   803→              <h1 className="text-xl font-bold text-gray-900 dark:text-white">Account Suspended</h1>
+   804→              <p className="text-muted-foreground text-xs mt-0.5">Access temporarily restricted</p>
+   805→            </div>
+   806→
+   807→            <div className="animate-fade-in-up">
+   808→              <div className="animated-border rounded-2xl p-[2px]">
+   809→                <div className="rounded-[14px] bg-white dark:bg-gray-950 p-6 sm:p-8">
+   810→                  {/* Header */}
+   811→                  <div className="mb-6">
+   812→                    <div className="flex items-center gap-2 mb-3">
+   813→                      <div className="flex size-8 rounded-lg bg-amber-100 dark:bg-amber-900/40 items-center justify-center">
+   814→                        <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400" />
+   815→                      </div>
+   816→                      <span className="text-xs font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
+   817→                        Account Notice
+   818→                      </span>
+   819→                    </div>
+   820→                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-1">Account Suspended</h2>
+   821→                    <p className="text-muted-foreground text-sm">Your access has been temporarily restricted</p>
+   822→                  </div>
+   823→
+   824→                  {/* Alert Box */}
+   825→                  <div className="mb-6 p-4 rounded-xl bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-950/30 dark:to-orange-950/20 border border-amber-200/60 dark:border-amber-800/40">
+   826→                    <div className="flex items-start gap-3">
+   827→                      <div className="flex size-10 rounded-full bg-amber-100 dark:bg-amber-900/50 items-center justify-center shrink-0">
+   828→                        <AlertCircle className="size-5 text-amber-600 dark:text-amber-400" />
+   829→                      </div>
+   830→                      <div>
+   831→                        <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+   832→                          Your account has been suspended
+   833→                        </p>
+   834→                        <p className="text-xs text-amber-600/80 dark:text-amber-400/70 mt-1 leading-relaxed">
+   835→                          Your administrator has temporarily suspended this account. Please contact them to restore access.
+   836→                        </p>
+   837→                      </div>
+   838→                    </div>
+   839→                  </div>
+   840→
+   841→                  {/* Details Card */}
+   842→                  <div className="mb-6 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+   843→                    <div className="px-4 py-2.5 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700">
+   844→                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Account Details</span>
+   845→                    </div>
+   846→                    <div className="p-4 space-y-3">
+   847→                      <div className="flex items-center justify-between">
+   848→                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+   849→                          <Building2 className="size-3.5" />
+   850→                          <span>Business</span>
+   851→                        </div>
+   852→                        <span className="text-sm font-semibold text-foreground">
+   853→                          {suspendedClientInfo?.businessName || '—'}
+   854→                        </span>
+   855→                      </div>
+   856→                      <div className="flex items-center justify-between">
+   857→                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+   858→                          <Hash className="size-3.5" />
+   859→                          <span>Client ID</span>
+   860→                        </div>
+   861→                        <span className="text-sm font-mono font-semibold text-foreground">
+   862→                          {suspendedClientInfo?.clientId || '—'}
+   863→                        </span>
+   864→                      </div>
+   865→                      <div className="flex items-center justify-between">
+   866→                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+   867→                          <ShieldAlert className="size-3.5" />
+   868→                          <span>Status</span>
+   869→                        </div>
+   870→                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+   871→                          <AlertTriangle className="size-3" />
+   872→                          Suspended
+   873→                        </span>
+   874→                      </div>
+   875→                    </div>
+   876→                  </div>
+   877→
+   878→                  {/* Contact Info */}
+   879→                  <div className="mb-6 p-4 rounded-xl bg-amber-50/80 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-800/40">
+   880→                    <div className="flex items-start gap-3">
+   881→                      <Phone className="size-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+   882→                      <div>
+   883→                        <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+   884→                          Need help? Contact your administrator
+   885→                        </p>
+   886→                        <p className="text-xs text-amber-600/70 dark:text-amber-400/60 mt-0.5">
+   887→                          Reach out to your system administrator or IT support team to reactivate your account.
+   888→                        </p>
+   889→                      </div>
+   890→                    </div>
+   891→                  </div>
+   892→
+   893→                  {/* Back to Login */}
+   894→                  <Button
+   895→                    onClick={() => {
+   896→                      setShowSuspendedScreen(false);
+   897→                      setSuspendedClientInfo(null);
+   898→                    }}
+   899→                    className="w-full h-12 bg-gradient-to-r from-gray-800 to-gray-900 hover:from-gray-900 hover:to-black text-white font-semibold text-sm gap-2.5 transition-all duration-300 shadow-lg shadow-gray-800/25 hover:shadow-xl hover:shadow-gray-900/35 hover:-translate-y-0.5 active:translate-y-0 rounded-xl dark:from-gray-200 dark:to-gray-300 dark:text-gray-900 dark:shadow-gray-400/25"
+   900→                  >
+   901→                    <ArrowLeft className="size-4" />
+   902→                    Back to Login
+   903→                  </Button>
+   904→
+   905→                  <div className="mt-6 flex items-center justify-center gap-2 text-xs text-muted-foreground/50">
+   906→                    <div className="w-1.5 h-1.5 rounded-full bg-amber-500/50" />
+   907→                    <span>Eservices v3.0</span>
+   908→                    <span className="text-muted-foreground/30">|</span>
+   909→                    <span>Secured</span>
+   910→                  </div>
+   911→                </div>
+   912→              </div>
+   913→            </div>
+   914→          </div>
+   915→        </div>
+   916→
+   917→        <style dangerouslySetInnerHTML={{ __html: `
+   918→          @keyframes particle-rise {
+   919→            0% { transform: translateY(0) scale(1); }
+   920→            50% { opacity: 0.3; }
+   921→            100% { transform: translateY(-100vh) scale(0.5); opacity: 0; }
+   922→          }
+   923→          @keyframes glow-pulse {
+   924→            0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+   925→            50% { transform: translate(-50%, -50%) scale(1.15); opacity: 0.7; }
+   926→          }
+   927→        ` }} />
+   928→      </div>
+   929→    );
+   930→  }
+   931→
+   932→  // --- User Suspended Screen (looks like subscription expired page) ---
+   933→  if (showUserSuspendedScreen) {
+   934→    return (
+   935→      <div className="min-h-screen flex relative overflow-hidden">
+   936→        {/* LEFT PANEL — Decorative */}
+   937→        <div className="hidden lg:flex lg:w-[55%] xl:w-[60%] relative bg-gradient-to-br from-red-950 via-rose-950 to-orange-950 overflow-hidden">
+   938→          <div className="absolute inset-0 pointer-events-none">
+   939→            <div className="absolute -top-1/3 -left-1/4 w-[800px] h-[800px] rounded-full bg-red-500/8 login-mesh-1" />
+   940→            <div className="absolute -bottom-1/3 -right-1/4 w-[700px] h-[700px] rounded-full bg-rose-400/8 login-mesh-2" />
+   941→          </div>
+   942→          <div className="absolute inset-0 opacity-[0.03]" style={{
+   943→            backgroundImage: `linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)`,
+   944→            backgroundSize: '60px 60px',
+   945→          }} />
+   946→          <div className="absolute inset-0 pointer-events-none overflow-hidden">
+   947→            {FLOATING_ICONS.map((item, i) => (
+   948→              <div key={i} className="login-particle absolute text-white" style={{
+   949→                left: item.x, animationDuration: item.duration, animationDelay: item.delay, opacity: item.opacity * 0.6,
+   950→              }}>
+   951→                <item.Icon size={item.size} />
+   952→              </div>
+   953→            ))}
+   954→          </div>
+   955→          <div className="absolute inset-0 pointer-events-none overflow-hidden">
+   956→            {PARTICLES.map((p, i) => (
+   957→              <div key={`us-${i}`} className="absolute rounded-full" style={{
+   958→                width: p.size, height: p.size, left: p.left, bottom: '-20px',
+   959→                backgroundColor: p.color, opacity: p.opacity,
+   960→                animation: `particle-rise ${p.duration} linear infinite`, animationDelay: p.delay,
+   961→              }} />
+   962→            ))}
+   963→          </div>
+   964→          <div className="relative z-10 flex flex-col justify-between p-10 xl:p-14 w-full">
+   965→            <div>
+   966→              <div className="flex items-center gap-3 mb-2">
+   967→                <div className="flex size-12 rounded-xl bg-white/10 border border-white/10 items-center justify-center backdrop-blur-sm">
+   968→                  <img src="/icon-192.png" alt="Eservices" className="size-7 rounded-lg object-cover" />
+   969→                </div>
+   970→                <div>
+   971→                  <h1 className="text-2xl font-bold text-white tracking-tight">Eservices</h1>
+   972→                  <p className="text-red-300/60 text-xs font-medium tracking-wide uppercase">POS & Billing System</p>
+   973→                </div>
+   974→              </div>
+   975→            </div>
+   976→            <div className="flex-1 flex flex-col justify-center max-w-lg">
+   977→              <div className="flex items-center gap-3 mb-6">
+   978→                <div className="flex size-14 rounded-2xl bg-red-500/20 border border-red-400/20 items-center justify-center backdrop-blur-sm">
+   979→                  <Ban className="size-7 text-red-300" />
+   980→                </div>
+   981→                <div>
+   982→                  <h2 className="text-2xl font-bold text-white">Account Suspended</h2>
+   983→                  <p className="text-red-200/50 text-sm">Access has been revoked</p>
+   984→                </div>
+   985→              </div>
+   986→              <p className="text-red-100/40 text-sm leading-relaxed max-w-md">
+   987→                Your account has been suspended by the administrator. To restore access,
+   988→                please contact your business administrator or system owner for reactivation.
+   989→              </p>
+   990→            </div>
+   991→            <div className="flex items-center gap-6">
+   992→              <div className="flex items-center gap-2">
+   993→                <Shield className="size-4 text-red-400/60" />
+   994→                <span className="text-red-200/40 text-xs">256-bit Encrypted</span>
+   995→              </div>
+   996→              <div className="flex items-center gap-2">
+   997→                <Sparkles className="size-4 text-red-400/60" />
+   998→                <span className="text-red-200/40 text-xs">v3.0 — Eservices</span>
+   999→              </div>
+  1000→            </div>
+  1001→          </div>
+  1002→        </div>
+  1003→
+  1004→        {/* RIGHT PANEL — Suspended User Notice */}
+  1005→        <div className="w-full lg:w-[45%] xl:w-[40%] relative bg-white dark:bg-gray-950 flex items-center justify-center p-6 sm:p-8 lg:p-12">
+  1006→          <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-red-50 to-transparent dark:from-red-950/20 dark:to-transparent rounded-bl-full pointer-events-none" />
+  1007→          <div className="absolute bottom-0 left-0 w-48 h-48 bg-gradient-to-tr from-rose-50 to-transparent dark:from-rose-950/20 dark:to-transparent rounded-tr-full pointer-events-none" />
+  1008→
+  1009→          <div className="absolute pointer-events-none rounded-full" style={{
+  1010→            width: '400px', height: '400px',
+  1011→            background: 'radial-gradient(circle, rgba(239,68,68,0.08) 0%, rgba(244,63,94,0.05) 40%, transparent 70%)',
+  1012→            top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+  1013→            animation: 'glow-pulse 4s ease-in-out infinite', filter: 'blur(40px)',
+  1014→          }} />
+  1015→
+  1016→          <div className="relative z-10 w-full max-w-[420px]">
+  1017→            {/* Mobile Logo */}
+  1018→            <div className="lg:hidden flex flex-col items-center mb-8">
+  1019→              <div className="flex size-16 rounded-2xl bg-gradient-to-br from-red-500 to-rose-600 items-center justify-center shadow-lg shadow-red-600/25 mb-3">
+  1020→                <Ban className="size-8 text-white" />
+  1021→              </div>
+  1022→              <h1 className="text-xl font-bold text-gray-900 dark:text-white">Account Suspended</h1>
+  1023→              <p className="text-muted-foreground text-xs mt-0.5">Access has been revoked</p>
+  1024→            </div>
+  1025→
+  1026→            <div className="animate-fade-in-up">
+  1027→              <div className="animated-border rounded-2xl p-[2px]">
+  1028→                <div className="rounded-[14px] bg-white dark:bg-gray-950 p-6 sm:p-8">
+  1029→                  {/* Header */}
+  1030→                  <div className="mb-6">
+  1031→                    <div className="flex items-center gap-2 mb-3">
+  1032→                      <div className="flex size-8 rounded-lg bg-red-100 dark:bg-red-900/40 items-center justify-center">
+  1033→                        <Ban className="size-4 text-red-600 dark:text-red-400" />
+  1034→                      </div>
+  1035→                      <span className="text-xs font-semibold text-red-600 dark:text-red-400 uppercase tracking-wider">
+  1036→                        Account Notice
+  1037→                      </span>
+  1038→                    </div>
+  1039→                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-1">Account Suspended</h2>
+  1040→                    <p className="text-muted-foreground text-sm">Your access has been revoked by the administrator</p>
+  1041→                  </div>
+  1042→
+  1043→                  {/* Alert Box */}
+  1044→                  <div className="mb-6 p-4 rounded-xl bg-gradient-to-br from-red-50 to-rose-50 dark:from-red-950/30 dark:to-rose-950/20 border border-red-200/60 dark:border-red-800/40">
+  1045→                    <div className="flex items-start gap-3">
+  1046→                      <div className="flex size-10 rounded-full bg-red-100 dark:bg-red-900/50 items-center justify-center shrink-0">
+  1047→                        <AlertCircle className="size-5 text-red-600 dark:text-red-400" />
+  1048→                      </div>
+  1049→                      <div>
+  1050→                        <p className="text-sm font-semibold text-red-800 dark:text-red-300">
+  1051→                          Your account has been suspended
+  1052→                        </p>
+  1053→                        <p className="text-xs text-red-600/80 dark:text-red-400/70 mt-1 leading-relaxed">
+  1054→                          The administrator has deactivated your account. Please contact them to restore your access.
+  1055→                        </p>
+  1056→                      </div>
+  1057→                    </div>
+  1058→                  </div>
+  1059→
+  1060→                  {/* Details Card */}
+  1061→                  <div className="mb-6 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+  1062→                    <div className="px-4 py-2.5 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700">
+  1063→                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Account Details</span>
+  1064→                    </div>
+  1065→                    <div className="p-4 space-y-3">
+  1066→                      <div className="flex items-center justify-between">
+  1067→                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+  1068→                          <User className="size-3.5" />
+  1069→                          <span>User Name</span>
+  1070→                        </div>
+  1071→                        <span className="text-sm font-semibold text-foreground">
+  1072→                          {userSuspendedInfo?.userName || '—'}
+  1073→                        </span>
+  1074→                      </div>
+  1075→                      <div className="flex items-center justify-between">
+  1076→                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+  1077→                          <KeyRound className="size-3.5" />
+  1078→                          <span>Login ID</span>
+  1079→                        </div>
+  1080→                        <span className="text-sm font-mono font-semibold text-foreground">
+  1081→                          {userSuspendedInfo?.userLoginId || '—'}
+  1082→                        </span>
+  1083→                      </div>
+  1084→                      <div className="flex items-center justify-between">
+  1085→                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+  1086→                          <Building2 className="size-3.5" />
+  1087→                          <span>Business</span>
+  1088→                        </div>
+  1089→                        <span className="text-sm font-semibold text-foreground">
+  1090→                          {userSuspendedInfo?.businessName || '—'}
+  1091→                        </span>
+  1092→                      </div>
+  1093→                      <div className="flex items-center justify-between">
+  1094→                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+  1095→                          <Hash className="size-3.5" />
+  1096→                          <span>Client ID</span>
+  1097→                        </div>
+  1098→                        <span className="text-sm font-mono font-semibold text-foreground">
+  1099→                          {userSuspendedInfo?.clientId || '—'}
+  1100→                        </span>
+  1101→                      </div>
+  1102→                      <div className="flex items-center justify-between">
+  1103→                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+  1104→                          <ShieldAlert className="size-3.5" />
+  1105→                          <span>Status</span>
+  1106→                        </div>
+  1107→                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-400 border border-red-200 dark:border-red-800">
+  1108→                          <Ban className="size-3" />
+  1109→                          Suspended
+  1110→                        </span>
+  1111→                      </div>
+  1112→                    </div>
+  1113→                  </div>
+  1114→
+  1115→                  {/* Contact Info */}
+  1116→                  <div className="mb-6 p-4 rounded-xl bg-red-50/80 dark:bg-red-950/20 border border-red-200/60 dark:border-red-800/40">
+  1117→                    <div className="flex items-start gap-3">
+  1118→                      <Phone className="size-4 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+  1119→                      <div>
+  1120→                        <p className="text-sm font-medium text-red-800 dark:text-red-300">
+  1121→                          Need help? Contact your administrator
+  1122→                        </p>
+  1123→                        <p className="text-xs text-red-600/70 dark:text-red-400/60 mt-0.5">
+  1124→                          Reach out to your business administrator or IT support team to reactivate your account.
+  1125→                        </p>
+  1126→                      </div>
+  1127→                    </div>
+  1128→                  </div>
+  1129→
+  1130→                  {/* Back to Login */}
+  1131→                  <Button
+  1132→                    onClick={() => {
+  1133→                      setShowUserSuspendedScreen(false);
+  1134→                      setUserSuspendedInfo(null);
+  1135→                    }}
+  1136→                    className="w-full h-12 bg-gradient-to-r from-gray-800 to-gray-900 hover:from-gray-900 hover:to-black text-white font-semibold text-sm gap-2.5 transition-all duration-300 shadow-lg shadow-gray-800/25 hover:shadow-xl hover:shadow-gray-900/35 hover:-translate-y-0.5 active:translate-y-0 rounded-xl dark:from-gray-200 dark:to-gray-300 dark:text-gray-900 dark:shadow-gray-400/25"
+  1137→                  >
+  1138→                    <ArrowLeft className="size-4" />
+  1139→                    Back to Login
+  1140→                  </Button>
+  1141→
+  1142→                  <div className="mt-6 flex items-center justify-center gap-2 text-xs text-muted-foreground/50">
+  1143→                    <div className="w-1.5 h-1.5 rounded-full bg-red-500/50" />
+  1144→                    <span>Eservices v3.0</span>
+  1145→                    <span className="text-muted-foreground/30">|</span>
+  1146→                    <span>Secured</span>
+  1147→                  </div>
+  1148→                </div>
+  1149→              </div>
+  1150→            </div>
+  1151→          </div>
+  1152→        </div>
+  1153→
+  1154→        <style dangerouslySetInnerHTML={{ __html: `
+  1155→          @keyframes particle-rise {
+  1156→            0% { transform: translateY(0) scale(1); }
+  1157→            50% { opacity: 0.3; }
+  1158→            100% { transform: translateY(-100vh) scale(0.5); opacity: 0; }
+  1159→          }
+  1160→          @keyframes glow-pulse {
+  1161→            0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  1162→            50% { transform: translate(-50%, -50%) scale(1.15); opacity: 0.7; }
+  1163→          }
+  1164→        ` }} />
+  1165→      </div>
+  1166→    );
+  1167→  }
+  1168→
+  1169→  // --- Subscription Expired Screen ---
+  1170→  if (showExpiredScreen) {
+  1171→    const expDate = expiredClientInfo?.expiresAt
+  1172→      ? new Date(expiredClientInfo.expiresAt).toLocaleDateString('en-IN', {
+  1173→          day: '2-digit', month: 'long', year: 'numeric',
+  1174→        })
+  1175→      : '—';
+  1176→
+  1177→    return (
+  1178→      <div className="min-h-screen flex relative overflow-hidden">
+  1179→        {/* LEFT PANEL — Decorative */}
+  1180→        <div className="hidden lg:flex lg:w-[55%] xl:w-[60%] relative bg-gradient-to-br from-red-950 via-orange-950 to-amber-950 overflow-hidden">
+  1181→          <div className="absolute inset-0 pointer-events-none">
+  1182→            <div className="absolute -top-1/3 -left-1/4 w-[800px] h-[800px] rounded-full bg-red-500/8 login-mesh-1" />
+  1183→            <div className="absolute -bottom-1/3 -right-1/4 w-[700px] h-[700px] rounded-full bg-amber-400/8 login-mesh-2" />
+  1184→          </div>
+  1185→          <div className="absolute inset-0 opacity-[0.03]" style={{
+  1186→            backgroundImage: `linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)`,
+  1187→            backgroundSize: '60px 60px',
+  1188→          }} />
+  1189→          <div className="absolute inset-0 pointer-events-none overflow-hidden">
+  1190→            {FLOATING_ICONS.map((item, i) => (
+  1191→              <div key={i} className="login-particle absolute text-white" style={{
+  1192→                left: item.x, animationDuration: item.duration, animationDelay: item.delay, opacity: item.opacity * 0.6,
+  1193→              }}>
+  1194→                <item.Icon size={item.size} />
+  1195→              </div>
+  1196→            ))}
+  1197→          </div>
+  1198→          <div className="absolute inset-0 pointer-events-none overflow-hidden">
+  1199→            {PARTICLES.map((p, i) => (
+  1200→              <div key={`exp-${i}`} className="absolute rounded-full" style={{
+  1201→                width: p.size, height: p.size, left: p.left, bottom: '-20px',
+  1202→                backgroundColor: p.color, opacity: p.opacity,
+  1203→                animation: `particle-rise ${p.duration} linear infinite`, animationDelay: p.delay,
+  1204→              }} />
+  1205→            ))}
+  1206→          </div>
+  1207→          <div className="relative z-10 flex flex-col justify-between p-10 xl:p-14 w-full">
+  1208→            <div>
+  1209→              <div className="flex items-center gap-3 mb-2">
+  1210→                <div className="flex size-12 rounded-xl bg-white/10 border border-white/10 items-center justify-center backdrop-blur-sm">
+  1211→                  <img src="/icon-192.png" alt="Eservices" className="size-7 rounded-lg object-cover" />
+  1212→                </div>
+  1213→                <div>
+  1214→                  <h1 className="text-2xl font-bold text-white tracking-tight">Eservices</h1>
+  1215→                  <p className="text-red-300/60 text-xs font-medium tracking-wide uppercase">POS & Billing System</p>
+  1216→                </div>
+  1217→              </div>
+  1218→            </div>
+  1219→            <div className="flex-1 flex flex-col justify-center max-w-lg">
+  1220→              <div className="flex items-center gap-3 mb-6">
+  1221→                <div className="flex size-14 rounded-2xl bg-red-500/20 border border-red-400/20 items-center justify-center backdrop-blur-sm">
+  1222→                  <ShieldAlert className="size-7 text-red-300" />
+  1223→                </div>
+  1224→                <div>
+  1225→                  <h2 className="text-2xl font-bold text-white">Subscription Expired</h2>
+  1226→                  <p className="text-red-200/50 text-sm">Access temporarily restricted</p>
+  1227→                </div>
+  1228→              </div>
+  1229→              <p className="text-red-100/40 text-sm leading-relaxed max-w-md">
+  1230→                Your subscription period has ended. To continue using Eservices & Billing,
+  1231→                please contact your system administrator to renew your subscription plan.
+  1232→              </p>
+  1233→            </div>
+  1234→            <div className="flex items-center gap-6">
+  1235→              <div className="flex items-center gap-2">
+  1236→                <Shield className="size-4 text-red-400/60" />
+  1237→                <span className="text-red-200/40 text-xs">256-bit Encrypted</span>
+  1238→              </div>
+  1239→              <div className="flex items-center gap-2">
+  1240→                <Sparkles className="size-4 text-red-400/60" />
+  1241→                <span className="text-red-200/40 text-xs">v3.0 — Eservices</span>
+  1242→              </div>
+  1243→            </div>
+  1244→          </div>
+  1245→        </div>
+  1246→
+  1247→        {/* RIGHT PANEL — Expiry Notice */}
+  1248→        <div className="w-full lg:w-[45%] xl:w-[40%] relative bg-white dark:bg-gray-950 flex items-center justify-center p-6 sm:p-8 lg:p-12">
+  1249→          <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-red-50 to-transparent dark:from-red-950/20 dark:to-transparent rounded-bl-full pointer-events-none" />
+  1250→          <div className="absolute bottom-0 left-0 w-48 h-48 bg-gradient-to-tr from-amber-50 to-transparent dark:from-amber-950/20 dark:to-transparent rounded-tr-full pointer-events-none" />
+  1251→
+  1252→          <div className="absolute pointer-events-none rounded-full" style={{
+  1253→            width: '400px', height: '400px',
+  1254→            background: 'radial-gradient(circle, rgba(239,68,68,0.08) 0%, rgba(245,158,11,0.05) 40%, transparent 70%)',
+  1255→            top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+  1256→            animation: 'glow-pulse 4s ease-in-out infinite', filter: 'blur(40px)',
+  1257→          }} />
+  1258→
+  1259→          <div className="relative z-10 w-full max-w-[420px]">
+  1260→            {/* Mobile Logo */}
+  1261→            <div className="lg:hidden flex flex-col items-center mb-8">
+  1262→              <div className="flex size-16 rounded-2xl bg-gradient-to-br from-red-500 to-orange-600 items-center justify-center shadow-lg shadow-red-600/25 mb-3">
+  1263→                <ShieldAlert className="size-8 text-white" />
+  1264→              </div>
+  1265→              <h1 className="text-xl font-bold text-gray-900 dark:text-white">Subscription Expired</h1>
+  1266→              <p className="text-muted-foreground text-xs mt-0.5">Access temporarily restricted</p>
+  1267→            </div>
+  1268→
+  1269→            <div className="animate-fade-in-up">
+  1270→              <div className="animated-border rounded-2xl p-[2px]">
+  1271→                <div className="rounded-[14px] bg-white dark:bg-gray-950 p-6 sm:p-8">
+  1272→                  {/* Header */}
+  1273→                  <div className="mb-6">
+  1274→                    <div className="flex items-center gap-2 mb-3">
+  1275→                      <div className="flex size-8 rounded-lg bg-red-100 dark:bg-red-900/40 items-center justify-center">
+  1276→                        <ShieldAlert className="size-4 text-red-600 dark:text-red-400" />
+  1277→                      </div>
+  1278→                      <span className="text-xs font-semibold text-red-600 dark:text-red-400 uppercase tracking-wider">
+  1279→                        Subscription Notice
+  1280→                      </span>
+  1281→                    </div>
+  1282→                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-1">Access Expired</h2>
+  1283→                    <p className="text-muted-foreground text-sm">Your subscription period has ended</p>
+  1284→                  </div>
+  1285→
+  1286→                  {/* Alert Box */}
+  1287→                  <div className="mb-6 p-4 rounded-xl bg-gradient-to-br from-red-50 to-orange-50 dark:from-red-950/30 dark:to-orange-950/20 border border-red-200/60 dark:border-red-800/40">
+  1288→                    <div className="flex items-start gap-3">
+  1289→                      <div className="flex size-10 rounded-full bg-red-100 dark:bg-red-900/50 items-center justify-center shrink-0">
+  1290→                        <AlertTriangle className="size-5 text-red-600 dark:text-red-400" />
+  1291→                      </div>
+  1292→                      <div>
+  1293→                        <p className="text-sm font-semibold text-red-800 dark:text-red-300">
+  1294→                          Your subscription has expired
+  1295→                        </p>
+  1296→                        <p className="text-xs text-red-600/80 dark:text-red-400/70 mt-1 leading-relaxed">
+  1297→                          Please contact your administrator for renewal to restore full access to your account and data.
+  1298→                        </p>
+  1299→                      </div>
+  1300→                    </div>
+  1301→                  </div>
+  1302→
+  1303→                  {/* Details Card */}
+  1304→                  <div className="mb-6 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+  1305→                    <div className="px-4 py-2.5 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700">
+  1306→                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Account Details</span>
+  1307→                    </div>
+  1308→                    <div className="p-4 space-y-3">
+  1309→                      <div className="flex items-center justify-between">
+  1310→                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+  1311→                          <Building2 className="size-3.5" />
+  1312→                          <span>Business</span>
+  1313→                        </div>
+  1314→                        <span className="text-sm font-semibold text-foreground">
+  1315→                          {expiredClientInfo?.businessName || '—'}
+  1316→                        </span>
+  1317→                      </div>
+  1318→                      <div className="flex items-center justify-between">
+  1319→                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+  1320→                          <Hash className="size-3.5" />
+  1321→                          <span>Client ID</span>
+  1322→                        </div>
+  1323→                        <span className="text-sm font-mono font-semibold text-foreground">
+  1324→                          {expiredClientInfo?.clientId || '—'}
+  1325→                        </span>
+  1326→                      </div>
+  1327→                      <div className="flex items-center justify-between">
+  1328→                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+  1329→                          <Clock className="size-3.5" />
+  1330→                          <span>Expired On</span>
+  1331→                        </div>
+  1332→                        <span className="text-sm font-semibold text-red-600 dark:text-red-400">
+  1333→                          {expDate}
+  1334→                        </span>
+  1335→                      </div>
+  1336→                      <div className="flex items-center justify-between">
+  1337→                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+  1338→                          <ShieldAlert className="size-3.5" />
+  1339→                          <span>Status</span>
+  1340→                        </div>
+  1341→                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-400 border border-red-200 dark:border-red-800">
+  1342→                          <Timer className="size-3" />
+  1343→                          Expired
+  1344→                        </span>
+  1345→                      </div>
+  1346→                    </div>
+  1347→                  </div>
+  1348→
+  1349→                  {/* Contact Info */}
+  1350→                  <div className="mb-6 p-4 rounded-xl bg-amber-50/80 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-800/40">
+  1351→                    <div className="flex items-start gap-3">
+  1352→                      <Phone className="size-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+  1353→                      <div>
+  1354→                        <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+  1355→                          Need help? Contact your administrator
+  1356→                        </p>
+  1357→                        <p className="text-xs text-amber-600/70 dark:text-amber-400/60 mt-0.5">
+  1358→                          Reach out to your system administrator or IT support team to renew your subscription and restore access.
+  1359→                        </p>
+  1360→                      </div>
+  1361→                    </div>
+  1362→                  </div>
+  1363→
+  1364→                  {/* Back to Login */}
+  1365→                  <Button
+  1366→                    onClick={() => {
+  1367→                      setShowExpiredScreen(false);
+  1368→                      setExpiredClientInfo(null);
+  1369→                    }}
+  1370→                    className="w-full h-12 bg-gradient-to-r from-gray-800 to-gray-900 hover:from-gray-900 hover:to-black text-white font-semibold text-sm gap-2.5 transition-all duration-300 shadow-lg shadow-gray-800/25 hover:shadow-xl hover:shadow-gray-900/35 hover:-translate-y-0.5 active:translate-y-0 rounded-xl dark:from-gray-200 dark:to-gray-300 dark:text-gray-900 dark:shadow-gray-400/25"
+  1371→                  >
+  1372→                    <ArrowLeft className="size-4" />
+  1373→                    Back to Login
+  1374→                  </Button>
+  1375→
+  1376→                  <div className="mt-6 flex items-center justify-center gap-2 text-xs text-muted-foreground/50">
+  1377→                    <div className="w-1.5 h-1.5 rounded-full bg-red-500/50" />
+  1378→                    <span>Eservices v3.0</span>
+  1379→                    <span className="text-muted-foreground/30">|</span>
+  1380→                    <span>Secured</span>
+  1381→                  </div>
+  1382→                </div>
+  1383→              </div>
+  1384→            </div>
+  1385→          </div>
+  1386→        </div>
+  1387→
+  1388→        <style dangerouslySetInnerHTML={{ __html: `
+  1389→          @keyframes particle-rise {
+  1390→            0% { transform: translateY(0) scale(1); }
+  1391→            50% { opacity: 0.3; }
+  1392→            100% { transform: translateY(-100vh) scale(0.5); opacity: 0; }
+  1393→          }
+  1394→          @keyframes glow-pulse {
+  1395→            0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  1396→            50% { transform: translate(-50%, -50%) scale(1.15); opacity: 0.7; }
+  1397→          }
+  1398→        ` }} />
+  1399→      </div>
+  1400→    );
+  1401→  }
+  1402→
+  1403→  // --- Force Password Change Screen ---
+  1404→  if (mustChangePassword) {
+  1405→    return (
+  1406→      <div className="min-h-screen flex relative overflow-hidden">
+  1407→        {/* LEFT PANEL — Same as login */}
+  1408→        <div className="hidden lg:flex lg:w-[55%] xl:w-[60%] relative bg-gradient-to-br from-emerald-950 via-green-900 to-teal-950 overflow-hidden">
+  1409→          <div className="absolute inset-0 pointer-events-none">
+  1410→            <div className="absolute -top-1/3 -left-1/4 w-[800px] h-[800px] rounded-full bg-emerald-500/8 login-mesh-1" />
+  1411→            <div className="absolute -bottom-1/3 -right-1/4 w-[700px] h-[700px] rounded-full bg-teal-400/8 login-mesh-2" />
+  1412→          </div>
+  1413→          <div className="absolute inset-0 opacity-[0.03]" style={{
+  1414→            backgroundImage: `linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)`,
+  1415→            backgroundSize: '60px 60px',
+  1416→          }} />
+  1417→          <div className="absolute inset-0 pointer-events-none">
+  1418→            {FLOATING_ICONS.map((item, i) => (
+  1419→              <div key={i} className="login-particle absolute text-white" style={{
+  1420→                left: item.x, animationDuration: item.duration, animationDelay: item.delay, opacity: item.opacity,
+  1421→              }}>
+  1422→                <item.Icon size={item.size} />
+  1423→              </div>
+  1424→            ))}
+  1425→          </div>
+  1426→          <div className="absolute inset-0 pointer-events-none overflow-hidden">
+  1427→            {PARTICLES.map((p, i) => (
+  1428→              <div key={`dot-${i}`} className="absolute rounded-full" style={{
+  1429→                width: p.size, height: p.size, left: p.left, bottom: '-20px',
+  1430→                backgroundColor: p.color, opacity: p.opacity,
+  1431→                animation: `particle-rise ${p.duration} linear infinite`, animationDelay: p.delay,
+  1432→              }} />
+  1433→            ))}
+  1434→          </div>
+  1435→          <div className="relative z-10 flex flex-col justify-between p-10 xl:p-14 w-full">
+  1436→            <div>
+  1437→              <div className="flex items-center gap-3 mb-2">
+  1438→                <div className="flex size-12 rounded-xl bg-white/10 border border-white/10 items-center justify-center backdrop-blur-sm">
+  1439→                  <img src="/icon-192.png" alt="Eservices" className="size-7 rounded-lg object-cover" />
+  1440→                </div>
+  1441→                <div>
+  1442→                  <h1 className="text-2xl font-bold text-white tracking-tight">Eservices</h1>
+  1443→                  <p className="text-emerald-300/60 text-xs font-medium tracking-wide uppercase">POS & Billing System</p>
+  1444→                </div>
+  1445→              </div>
+  1446→            </div>
+  1447→            <div className="flex-1 flex flex-col justify-center max-w-lg">
+  1448→              <div className="flex items-center gap-3 mb-6">
+  1449→                <div className="flex size-14 rounded-2xl bg-amber-500/20 border border-amber-400/20 items-center justify-center backdrop-blur-sm">
+  1450→                  <KeyRound className="size-7 text-amber-300" />
+  1451→                </div>
+  1452→                <div>
+  1453→                  <h2 className="text-2xl font-bold text-white">Password Update</h2>
+  1454→                  <p className="text-emerald-200/50 text-sm">Required for your security</p>
+  1455→                </div>
+  1456→              </div>
+  1457→              <p className="text-emerald-100/40 text-sm leading-relaxed max-w-md">
+  1458→                For your security, you must update your password before accessing the system.
+  1459→                Please choose a strong password that you haven&apos;t used before.
+  1460→              </p>
+  1461→            </div>
+  1462→            <div className="flex items-center gap-6">
+  1463→              <div className="flex items-center gap-2">
+  1464→                <Shield className="size-4 text-emerald-400/60" />
+  1465→                <span className="text-emerald-200/40 text-xs">256-bit Encrypted</span>
+  1466→              </div>
+  1467→              <div className="flex items-center gap-2">
+  1468→                <Sparkles className="size-4 text-emerald-400/60" />
+  1469→                <span className="text-emerald-200/40 text-xs">v3.0 — Eservices</span>
+  1470→              </div>
+  1471→            </div>
+  1472→          </div>
+  1473→        </div>
+  1474→
+  1475→        {/* RIGHT PANEL — Change Password Form */}
+  1476→        <div className="w-full lg:w-[45%] xl:w-[40%] relative bg-white dark:bg-gray-950 flex items-center justify-center p-6 sm:p-8 lg:p-12">
+  1477→          <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-amber-50 to-transparent dark:from-amber-950/20 dark:to-transparent rounded-bl-full pointer-events-none" />
+  1478→          <div className="absolute bottom-0 left-0 w-48 h-48 bg-gradient-to-tr from-teal-50 to-transparent dark:from-teal-950/20 dark:to-transparent rounded-tr-full pointer-events-none" />
+  1479→
+  1480→          <div className="absolute pointer-events-none rounded-full" style={{
+  1481→            width: '400px', height: '400px',
+  1482→            background: 'radial-gradient(circle, rgba(245,158,11,0.10) 0%, rgba(20,184,166,0.06) 40%, transparent 70%)',
+  1483→            top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+  1484→            animation: 'glow-pulse 4s ease-in-out infinite', filter: 'blur(40px)',
+  1485→          }} />
+  1486→
+  1487→          <div className="relative z-10 w-full max-w-[420px]">
+  1488→            {/* Mobile Logo */}
+  1489→            <div className="lg:hidden flex flex-col items-center mb-8">
+  1490→              <div className="flex size-16 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-600 items-center justify-center shadow-lg shadow-amber-600/25 mb-3">
+  1491→                <KeyRound className="size-8 text-white" />
+  1492→              </div>
+  1493→              <h1 className="text-xl font-bold text-gray-900 dark:text-white">Change Password</h1>
+  1494→              <p className="text-muted-foreground text-xs mt-0.5">Required before continuing</p>
+  1495→            </div>
+  1496→
+  1497→            <div className="animate-fade-in-up">
+  1498→              <div className="animated-border rounded-2xl p-[2px]">
+  1499→                <div className="rounded-[14px] bg-white dark:bg-gray-950 p-6 sm:p-8">
+  1500→                  {/* Header */}
+  1501→                  <div className="mb-6">
+  1502→                    <div className="flex items-center gap-2 mb-3">
+  1503→                      <div className="flex size-8 rounded-lg bg-amber-100 dark:bg-amber-900/40 items-center justify-center">
+  1504→                        <KeyRound className="size-4 text-amber-600 dark:text-amber-400" />
+  1505→                      </div>
+  1506→                      <span className="text-xs font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
+  1507→                        Security Update
+  1508→                      </span>
+  1509→                    </div>
+  1510→                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-1">Change Password</h2>
+  1511→                    <p className="text-muted-foreground text-sm">You must change your password before continuing</p>
+  1512→                  </div>
+  1513→
+  1514→                  {/* Warning banner */}
+  1515→                  <div className="flex items-start gap-3 mb-5 p-3 rounded-xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-100/60 dark:border-amber-800/40">
+  1516→                    <AlertCircle className="size-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+  1517→                    <div>
+  1518→                      <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Password update required</p>
+  1519→                      <p className="text-xs text-amber-600/70 dark:text-amber-400/60 mt-0.5">Your current password must be changed for security purposes.</p>
+  1520→                    </div>
+  1521→                  </div>
+  1522→
+  1523→                  <form onSubmit={handleChangePassword} className="space-y-4">
+  1524→                    {/* Current Password */}
+  1525→                    <div className="space-y-1.5">
+  1526→                      <label htmlFor="currentPassword" className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+  1527→                        <Lock className="size-3.5 text-muted-foreground" />
+  1528→                        Current Password
+  1529→                      </label>
+  1530→                      <div className={`relative rounded-xl border transition-all duration-300 ${
+  1531→                        focusedField === 'currentPassword'
+  1532→                          ? 'border-amber-400 dark:border-amber-500 ring-[3px] ring-amber-500/15 shadow-lg shadow-amber-500/10'
+  1533→                          : 'border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50'
+  1534→                      }`}>
+  1535→                        <Lock className={`absolute left-4 top-1/2 -translate-y-1/2 size-[18px] transition-colors duration-200 ${
+  1536→                          focusedField === 'currentPassword' ? 'text-amber-500' : 'text-muted-foreground'
+  1537→                        }`} />
+  1538→                        <Input
+  1539→                          id="currentPassword"
+  1540→                          type={showCurrentPassword ? 'text' : 'password'}
+  1541→                          placeholder="Enter current password"
+  1542→                          value={currentPassword}
+  1543→                          onChange={(e) => setCurrentPassword(e.target.value)}
+  1544→                          onFocus={() => setFocusedField('currentPassword')}
+  1545→                          onBlur={() => setFocusedField(null)}
+  1546→                          className="pl-12 pr-12 h-12 border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:outline-none text-sm"
+  1547→                          disabled={changePasswordLoading}
+  1548→                          autoComplete="current-password"
+  1549→                        />
+  1550→                        <button
+  1551→                          type="button"
+  1552→                          onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+  1553→                          className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-gray-700 dark:hover:text-gray-300 transition-colors p-0.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800"
+  1554→                          tabIndex={-1}
+  1555→                          aria-label={showCurrentPassword ? 'Hide password' : 'Show password'}
+  1556→                        >
+  1557→                          {showCurrentPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+  1558→                        </button>
+  1559→                      </div>
+  1560→                    </div>
+  1561→
+  1562→                    {/* New Password */}
+  1563→                    <div className="space-y-1.5">
+  1564→                      <label htmlFor="newPassword" className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+  1565→                        <KeyRound className="size-3.5 text-muted-foreground" />
+  1566→                        New Password
+  1567→                      </label>
+  1568→                      <div className={`relative rounded-xl border transition-all duration-300 ${
+  1569→                        focusedField === 'newPassword'
+  1570→                          ? 'border-amber-400 dark:border-amber-500 ring-[3px] ring-amber-500/15 shadow-lg shadow-amber-500/10'
+  1571→                          : 'border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50'
+  1572→                      }`}>
+  1573→                        <KeyRound className={`absolute left-4 top-1/2 -translate-y-1/2 size-[18px] transition-colors duration-200 ${
+  1574→                          focusedField === 'newPassword' ? 'text-amber-500' : 'text-muted-foreground'
+  1575→                        }`} />
+  1576→                        <Input
+  1577→                          id="newPassword"
+  1578→                          type={showNewPassword ? 'text' : 'password'}
+  1579→                          placeholder="Enter new password (min 4 chars)"
+  1580→                          value={newPassword}
+  1581→                          onChange={(e) => setNewPassword(e.target.value)}
+  1582→                          onFocus={() => setFocusedField('newPassword')}
+  1583→                          onBlur={() => setFocusedField(null)}
+  1584→                          className="pl-12 pr-12 h-12 border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:outline-none text-sm"
+  1585→                          disabled={changePasswordLoading}
+  1586→                          autoComplete="new-password"
+  1587→                        />
+  1588→                        <button
+  1589→                          type="button"
+  1590→                          onClick={() => setShowNewPassword(!showNewPassword)}
+  1591→                          className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-gray-700 dark:hover:text-gray-300 transition-colors p-0.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800"
+  1592→                          tabIndex={-1}
+  1593→                          aria-label={showNewPassword ? 'Hide password' : 'Show password'}
+  1594→                        >
+  1595→                          {showNewPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+  1596→                        </button>
+  1597→                      </div>
+  1598→                      {newPassword && newPassword.length < 4 && (
+  1599→                        <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
+  1600→                          <AlertCircle className="size-3" />
+  1601→                          Minimum 4 characters required
+  1602→                        </p>
+  1603→                      )}
+  1604→                    </div>
+  1605→
+  1606→                    {/* Confirm Password */}
+  1607→                    <div className="space-y-1.5">
+  1608→                      <label htmlFor="confirmPassword" className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+  1609→                        <CheckCircle2 className="size-3.5 text-muted-foreground" />
+  1610→                        Confirm Password
+  1611→                      </label>
+  1612→                      <div className={`relative rounded-xl border transition-all duration-300 ${
+  1613→                        focusedField === 'confirmPassword'
+  1614→                          ? 'border-amber-400 dark:border-amber-500 ring-[3px] ring-amber-500/15 shadow-lg shadow-amber-500/10'
+  1615→                          : confirmPassword && newPassword && confirmPassword !== newPassword
+  1616→                            ? 'border-red-300 dark:border-red-700 bg-red-50/50 dark:bg-red-900/20'
+  1617→                            : 'border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50'
+  1618→                      }`}>
+  1619→                        <CheckCircle2 className={`absolute left-4 top-1/2 -translate-y-1/2 size-[18px] transition-colors duration-200 ${
+  1620→                          focusedField === 'confirmPassword' ? 'text-amber-500' : confirmPassword && newPassword && confirmPassword !== newPassword ? 'text-red-500' : 'text-muted-foreground'
+  1621→                        }`} />
+  1622→                        <Input
+  1623→                          id="confirmPassword"
+  1624→                          type={showConfirmPassword ? 'text' : 'password'}
+  1625→                          placeholder="Confirm new password"
+  1626→                          value={confirmPassword}
+  1627→                          onChange={(e) => setConfirmPassword(e.target.value)}
+  1628→                          onFocus={() => setFocusedField('confirmPassword')}
+  1629→                          onBlur={() => setFocusedField(null)}
+  1630→                          className="pl-12 pr-12 h-12 border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:outline-none text-sm"
+  1631→                          disabled={changePasswordLoading}
+  1632→                          autoComplete="new-password"
+  1633→                        />
+  1634→                        <button
+  1635→                          type="button"
+  1636→                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+  1637→                          className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-gray-700 dark:hover:text-gray-300 transition-colors p-0.5 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800"
+  1638→                          tabIndex={-1}
+  1639→                          aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+  1640→                        >
+  1641→                          {showConfirmPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+  1642→                        </button>
+  1643→                      </div>
+  1644→                      {confirmPassword && newPassword && confirmPassword !== newPassword && (
+  1645→                        <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
+  1646→                          <AlertCircle className="size-3" />
+  1647→                          Passwords do not match
+  1648→                        </p>
+  1649→                      )}
+  1650→                      {confirmPassword && newPassword && confirmPassword === newPassword && newPassword.length >= 4 && (
+  1651→                        <p className="text-xs text-emerald-500 mt-1 flex items-center gap-1">
+  1652→                          <CheckCircle2 className="size-3" />
+  1653→                          Passwords match
+  1654→                        </p>
+  1655→                      )}
+  1656→                    </div>
+  1657→
+  1658→                    <div className="pt-1">
+  1659→                      <Button
+  1660→                        type="submit"
+  1661→                        disabled={changePasswordLoading || !currentPassword.trim() || !newPassword.trim() || !confirmPassword.trim() || newPassword.length < 4 || newPassword !== confirmPassword}
+  1662→                        className="w-full h-13 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-semibold text-sm gap-2.5 transition-all duration-300 shadow-lg shadow-amber-600/25 hover:shadow-xl hover:shadow-amber-600/35 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:shadow-none disabled:hover:translate-y-0 rounded-xl"
+  1663→                      >
+  1664→                        {changePasswordLoading ? (
+  1665→                          <><Loader2 className="size-5 animate-spin" /><span>Updating Password...</span></>
+  1666→                        ) : (
+  1667→                          <><span>Update Password</span><ArrowRight className="size-4" /></>
+  1668→                        )}
+  1669→                      </Button>
+  1670→                    </div>
+  1671→                  </form>
+  1672→
+  1673→                  <div className="mt-6 flex items-center justify-center gap-2 text-xs text-muted-foreground/50">
+  1674→                    <div className="w-1.5 h-1.5 rounded-full bg-amber-500/50" />
+  1675→                    <span>Eservices v3.0</span>
+  1676→                    <span className="text-muted-foreground/30">|</span>
+  1677→                    <span>Secured</span>
+  1678→                  </div>
+  1679→                </div>
+  1680→              </div>
+  1681→            </div>
+  1682→          </div>
+  1683→        </div>
+  1684→
+  1685→        <style dangerouslySetInnerHTML={{ __html: `
+  1686→          @keyframes particle-rise {
+  1687→            0% { transform: translateY(0) scale(1); }
+  1688→            50% { opacity: 0.3; }
+  1689→            100% { transform: translateY(-100vh) scale(0.5); opacity: 0; }
+  1690→          }
+  1691→          @keyframes glow-pulse {
+  1692→            0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  1693→            50% { transform: translate(-50%, -50%) scale(1.15); opacity: 0.7; }
+  1694→          }
+  1695→        ` }} />
+  1696→      </div>
+  1697→    );
+  1698→  }
+  1699→
+  1700→  // --- Success State ---
+  1701→  if (successState) {
+  1702→    return (
+  1703→      <div className="min-h-screen flex items-center justify-center relative overflow-hidden">
+  1704→        <div className="absolute inset-0 bg-gradient-to-br from-emerald-950 via-green-900 to-teal-950" />
+  1705→        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+  1706→          <div className="absolute -top-1/2 -left-1/4 w-[800px] h-[800px] rounded-full bg-emerald-500/10 login-mesh-1" />
+  1707→          <div className="absolute -bottom-1/2 -right-1/4 w-[600px] h-[600px] rounded-full bg-teal-400/10 login-mesh-2" />
+  1708→        </div>
+  1709→        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+  1710→          {PARTICLES.map((p, i) => (
+  1711→            <div key={`s-${i}`} className="absolute rounded-full" style={{
+  1712→              width: p.size, height: p.size, left: p.left, bottom: '-20px',
+  1713→              backgroundColor: p.color, opacity: p.opacity,
+  1714→              animation: `particle-rise ${p.duration} linear infinite`, animationDelay: p.delay,
+  1715→            }} />
+  1716→          ))}
+  1717→        </div>
+  1718→        <div className="relative z-10 flex flex-col items-center gap-6">
+  1719→          <div className="relative">
+  1720→            <div className="absolute inset-0 rounded-full bg-emerald-400/20 animate-ping" style={{ animationDuration: '2s' }} />
+  1721→            <svg width="96" height="96" viewBox="0 0 96 96" fill="none">
+  1722→              <circle cx="48" cy="48" r="42" stroke="oklch(0.75 0.15 155)" strokeWidth="3" className="login-success-circle" />
+  1723→              <path d="M28 50L40 62L68 34" stroke="oklch(0.75 0.15 155)" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" className="login-success-check" />
+  1724→            </svg>
+  1725→          </div>
+  1726→          <div className="text-center animate-fade-in-up" style={{ animationDelay: '0.4s' }}>
+  1727→            <h2 className="text-3xl font-bold text-white mb-2">Access Granted!</h2>
+  1728→            <p className="text-emerald-200/60 text-sm">Loading your workspace...</p>
+  1729→          </div>
+  1730→          <div className="w-56 h-1.5 bg-white/10 rounded-full overflow-hidden">
+  1731→            <div className="h-full bg-gradient-to-r from-emerald-400 to-teal-400 rounded-full login-progress-fill" />
+  1732→          </div>
+  1733→        </div>
+  1734→
+  1735→        <style dangerouslySetInnerHTML={{ __html: `
+  1736→          @keyframes particle-rise {
+  1737→            0% { transform: translateY(0) scale(1); }
+  1738→            50% { opacity: 0.3; }
+  1739→            100% { transform: translateY(-100vh) scale(0.5); opacity: 0; }
+  1740→          }
+  1741→        ` }} />
+  1742→      </div>
+  1743→    );
+  1744→  }
+  1745→
+  1746→  // --- Main Login Page ---
+  1747→  const isBusinessFormValid = clientId.trim() && userId.trim() && password.trim();
+  1748→  const isSuperAdminFormValid = superEmail.trim() && superPassword.trim();
+  1749→
+  1750→  return (
+  1751→    <div className="min-h-screen flex relative overflow-hidden">
+  1752→      {/* Login Page Toast Notifications */}
+  1753→      <LoginToastContainer />
+  1754→      {/* LEFT PANEL */}
+  1755→      <div className="hidden lg:flex lg:w-[55%] xl:w-[60%] relative bg-gradient-to-br from-emerald-950 via-green-900 to-teal-950 overflow-hidden">
+  1756→        <div className="absolute inset-0 pointer-events-none">
+  1757→          <div className="absolute -top-1/3 -left-1/4 w-[800px] h-[800px] rounded-full bg-emerald-500/8 login-mesh-1" />
+  1758→          <div className="absolute -bottom-1/3 -right-1/4 w-[700px] h-[700px] rounded-full bg-teal-400/8 login-mesh-2" />
+  1759→        </div>
+  1760→        <div className="absolute inset-0 opacity-[0.03]" style={{
+  1761→          backgroundImage: `linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)`,
+  1762→          backgroundSize: '60px 60px',
+  1763→        }} />
+  1764→        <div className="absolute inset-0 pointer-events-none">
+  1765→          {FLOATING_ICONS.map((item, i) => (
+  1766→            <div key={i} className="login-particle absolute text-white" style={{
+  1767→              left: item.x, animationDuration: item.duration, animationDelay: item.delay, opacity: item.opacity,
+  1768→            }}>
+  1769→              <item.Icon size={item.size} />
+  1770→            </div>
+  1771→          ))}
+  1772→        </div>
+  1773→        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+  1774→          {PARTICLES.map((p, i) => (
+  1775→            <div key={`dot-${i}`} className="absolute rounded-full" style={{
+  1776→              width: p.size, height: p.size, left: p.left, bottom: '-20px',
+  1777→              backgroundColor: p.color, opacity: p.opacity,
+  1778→              animation: `particle-rise ${p.duration} linear infinite`, animationDelay: p.delay,
+  1779→            }} />
+  1780→          ))}
+  1781→        </div>
+  1782→
+  1783→        <div className="relative z-10 flex flex-col justify-between p-10 xl:p-14 w-full">
+  1784→          <div className={mounted ? 'animate-fade-in-up' : 'opacity-0'}>
+  1785→            <div className="flex items-center gap-3 mb-2">
+  1786→              <div className="flex size-12 rounded-xl bg-white/10 border border-white/10 items-center justify-center backdrop-blur-sm">
+  1787→                <Receipt className="size-6 text-white" />
+  1788→              </div>
+  1789→              <div>
+  1790→                <h1 className="text-2xl font-bold text-white tracking-tight">Eservices</h1>
+  1791→                <p className="text-emerald-300/60 text-xs font-medium tracking-wide uppercase">POS & Billing System</p>
+  1792→              </div>
+  1793→            </div>
+  1794→          </div>
+  1795→
+  1796→          <div className="flex-1 flex flex-col justify-center max-w-lg">
+  1797→            <div className={`${mounted ? 'animate-fade-in-up' : 'opacity-0'}`} style={{ animationDelay: '0.1s' }}>
+  1798→              <div className="flex items-center gap-2 mb-6">
+  1799→                <div className="size-2 rounded-full bg-emerald-400 login-pulse-dot" />
+  1800→                {mounted ? (
+  1801→                  <>
+  1802→                    <span className="text-emerald-300/70 text-sm font-medium">{greeting}</span>
+  1803→                    <span className="text-emerald-400/50 text-sm ml-1">|</span>
+  1804→                    <span className="text-emerald-300/50 text-sm tabular-nums">{timeStr}</span>
+  1805→                  </>
+  1806→                ) : (
+  1807→                  <span className="text-emerald-300/50 text-sm">Loading...</span>
+  1808→                )}
+  1809→              </div>
+  1810→
+  1811→              <h2 className="text-4xl xl:text-5xl font-bold text-white leading-tight mb-4">
+  1812→                <span className="block text-white/90">Smart</span>
+  1813→                <span className="block mt-1" style={{
+  1814→                  background: 'linear-gradient(135deg, #34d399, #6ee7b7, #5eead4)',
+  1815→                  WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
+  1816→                }}>
+  1817→                  POS & Billing
+  1818→                </span>
+  1819→              </h2>
+  1820→              <p className="text-emerald-100/50 text-base leading-relaxed max-w-md">
+  1821→                Complete billing solution with inventory management, cash tracking,
+  1822→                khata book, and professional invoice printing.
+  1823→              </p>
+  1824→            </div>
+  1825→
+  1826→            <div className="mt-10 grid grid-cols-2 gap-3">
+  1827→              {[
+  1828→                { icon: Receipt, label: 'A4 & Thermal', desc: 'Professional invoices' },
+  1829→                { icon: Shield, label: 'Secure Access', desc: 'Role-based control' },
+  1830→                { icon: FileText, label: 'GST Ready', desc: 'Tax compliant bills' },
+  1831→                { icon: Sparkles, label: 'All-in-One', desc: 'Inventory, cash & more' },
+  1832→              ].map((feature, i) => (
+  1833→                <div key={feature.label}
+  1834→                  className={`${mounted ? 'animate-fade-in-up' : 'opacity-0'} login-feature-card flex items-center gap-3 px-4 py-3 rounded-xl bg-white/[0.04] border border-white/[0.06]`}
+  1835→                  style={{ animationDelay: `${0.2 + i * 0.08}s` }}
+  1836→                >
+  1837→                  <div className="flex size-9 shrink-0 rounded-lg bg-white/[0.08] items-center justify-center">
+  1838→                    <feature.icon className="size-4 text-emerald-300/80" />
+  1839→                  </div>
+  1840→                  <div className="min-w-0">
+  1841→                    <p className="text-white/90 text-sm font-medium truncate">{feature.label}</p>
+  1842→                    <p className="text-emerald-200/40 text-xs truncate">{feature.desc}</p>
+  1843→                  </div>
+  1844→                </div>
+  1845→              ))}
+  1846→            </div>
+  1847→          </div>
+  1848→
+  1849→          <div className={`${mounted ? 'animate-fade-in-up' : 'opacity-0'}`} style={{ animationDelay: '0.6s' }}>
+  1850→            <div className="flex items-center gap-6">
+  1851→              <div className="flex items-center gap-2">
+  1852→                <Shield className="size-4 text-emerald-400/60" />
+  1853→                <span className="text-emerald-200/40 text-xs">256-bit Encrypted</span>
+  1854→              </div>
+  1855→              <div className="flex items-center gap-2">
+  1856→                <Sparkles className="size-4 text-emerald-400/60" />
+  1857→                <span className="text-emerald-200/40 text-xs">v3.0 — Eservices</span>
+  1858→              </div>
+  1859→            </div>
+  1860→          </div>
+  1861→        </div>
+  1862→      </div>
+  1863→
+  1864→      {/* RIGHT PANEL — Login Form */}
+  1865→      <div className="w-full lg:w-[45%] xl:w-[40%] relative bg-white dark:bg-gray-950 flex items-center justify-center p-6 sm:p-8 lg:p-12">
+  1866→        <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-emerald-50 to-transparent dark:from-emerald-950/20 dark:to-transparent rounded-bl-full pointer-events-none" />
+  1867→        <div className="absolute bottom-0 left-0 w-48 h-48 bg-gradient-to-tr from-teal-50 to-transparent dark:from-teal-950/20 dark:to-transparent rounded-tr-full pointer-events-none" />
+  1868→
+  1869→        <div className="absolute pointer-events-none rounded-full" style={{
+  1870→          width: '400px', height: '400px',
+  1871→          background: 'radial-gradient(circle, rgba(16,185,129,0.12) 0%, rgba(20,184,166,0.06) 40%, transparent 70%)',
+  1872→          top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+  1873→          animation: 'glow-pulse 4s ease-in-out infinite', filter: 'blur(40px)',
+  1874→        }} />
+  1875→
+  1876→        <div className="relative z-10 w-full max-w-[420px]">
+  1877→          {/* Mobile Logo */}
+  1878→          <div className={`lg:hidden flex flex-col items-center mb-8 ${mounted ? 'animate-fade-in-up' : 'opacity-0'}`}>
+  1879→            <div className="flex size-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 items-center justify-center shadow-lg shadow-emerald-600/25 mb-3 overflow-hidden">
+  1880→              <img src="/icon-192.png" alt="Eservices" className="size-10 rounded-xl object-cover" />
+  1881→            </div>
+  1882→            <h1 className="text-xl font-bold text-gray-900 dark:text-white">Eservices</h1>
+  1883→            <p className="text-muted-foreground text-xs mt-0.5">POS & Billing System</p>
+  1884→          </div>
+  1885→
+  1886→          <div className={`${mounted ? 'animate-login-slide-up' : 'opacity-0'} ${shake ? 'login-shake' : ''}`} style={{ animationDelay: '0.15s' }}>
+  1887→            <div className="animated-border rounded-2xl p-[2px]">
+  1888→              <div className="rounded-[14px] bg-white dark:bg-gray-950 p-6 sm:p-8">
+  1889→                {/* Header */}
+  1890→                <div className="mb-6">
+  1891→                  <div className="flex items-center gap-2 mb-3">
+  1892→                    <div className="flex size-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 items-center justify-center">
+  1893→                      {isSuperAdminMode ? (
+  1894→                        <Shield className="size-4 text-emerald-600 dark:text-emerald-400" />
+  1895→                      ) : (
+  1896→                        <Lock className="size-4 text-emerald-600 dark:text-emerald-400" />
+  1897→                      )}
+  1898→                    </div>
+  1899→                    <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
+  1900→                      {isSuperAdminMode ? 'Super Admin' : 'Secure Login'}
+  1901→                    </span>
+  1902→                  </div>
+  1903→                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-1">{mounted ? greeting : 'Welcome'}</h2>
+  1904→                  <p className="text-muted-foreground text-sm">
+  1905→                    {isSuperAdminMode
+  1906→                      ? 'Sign in with your admin credentials'
+  1907→                      : 'Enter your credentials to access the system'
+  1908→                    }
+  1909→                  </p>
+  1910→                </div>
+  1911→
+  1912→                {/* Clock */}
+  1913→                <div className="flex items-center gap-3 mb-5 p-3 rounded-xl bg-gradient-to-r from-emerald-50/80 to-teal-50/80 dark:from-emerald-950/30 dark:to-teal-950/30 border border-emerald-100/60 dark:border-emerald-800/40">
+  1914→                  <div className="flex size-10 rounded-lg bg-emerald-100 dark:bg-emerald-900/50 items-center justify-center">
+  1915→                    <span className="text-lg font-bold text-emerald-700 dark:text-emerald-300 tabular-nums leading-none">
+  1916→                      {mounted ? currentTime.getDate() : '--'}
+  1917→                    </span>
+  1918→                  </div>
+  1919→                  <div className="flex-1 min-w-0">
+  1920→                    <p className="text-xs font-medium text-emerald-800 dark:text-emerald-300">{mounted ? dateStr : 'Loading...'}</p>
+  1921→                    <p className="text-sm font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
+  1922→                      {mounted ? timeStr : '--:--:-- --'}
+  1923→                    </p>
+  1924→                  </div>
+  1925→                  <div className="w-2 h-2 rounded-full bg-emerald-500 login-pulse-dot" />
+  1926→                </div>
+  1927→
+  1928→                {locked ? (
+  1929→                  <div className="text-center py-10">
+  1930→                    <div className="relative inline-flex size-20 items-center justify-center rounded-full bg-red-50 dark:bg-red-950/30 mb-4">
+  1931→                      <div className="absolute inset-0 rounded-full border-2 border-red-200 dark:border-red-800/50 animate-ping opacity-30" />
+  1932→                      <Lock className="size-8 text-red-500" />
+  1933→                    </div>
+  1934→                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Account Locked</h3>
+  1935→                    <p className="text-sm text-muted-foreground mb-4">Too many failed login attempts</p>
+  1936→                    <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-red-50 dark:bg-red-950/30">
+  1937→                      <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+  1938→                      <span className="text-xl font-bold text-red-500 tabular-nums">{lockTimer}s</span>
+  1939→                    </div>
+  1940→                  </div>
+  1941→                ) : (
+  1942→                  <form onSubmit={handleLogin} className="space-y-4">
+  1943→                    {isSuperAdminMode ? (
+  1944→                      <>
+  1945→                        {/* Super Admin: Email */}
+  1946→                        <div className="space-y-1.5">
+  1947→                          <label htmlFor="superEmail" className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+  1948→                            <Mail className="size-3.5 text-muted-foreground" />
+  1949→                            Email
+  1950→                          </label>
+  1951→                          <div className={`relative rounded-xl border transition-all duration-300 ${
+  1952→                            focusedField === 'superEmail'
+  1953→                              ? 'border-emerald-400 dark:border-emerald-500 ring-[3px] ring-emerald-500/15 shadow-lg shadow-emerald-500/10'
+  1954→                              : 'border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50'
+  1955→                          }`}>
+  1956→                            <Mail className={`absolute left-4 top-1/2 -translate-y-1/2 size-[18px] transition-colors duration-200 ${
+  1957→                              focusedField === 'superEmail' ? 'text-emerald-500' : 'text-muted-foreground'
+  1958→                            }`} />
+  1959→                            <Input
+  1960→                              ref={superEmailRef}
+  1961→                              id="sa-email-field"
+  1962→                              name="sa-email-xyz"
+  1963→                              type="email"
+  1964→                              placeholder="Enter your email"
+  1965→                              value={superEmail}
+  1966→                              onChange={(e) => setSuperEmail(e.target.value)}
+  1967→                              onFocus={() => setFocusedField('superEmail')}
+  1968→                              onBlur={() => setFocusedField(null)}
+  1969→                              onKeyDown={(e) => handleKeyDown(e, superPassRef)}
+  1970→                              className="pl-12 pr-10 h-12 border-0 bg-transparent shadow-none focus-visible:ring-0 focus-visible:outline-none text-sm"
+  1971→                              disabled={loading}
+  1972→                              autoComplete="new-password"
+  1973→                              data-1p-ignore
+  1974→                              data-lpignore="true"
+  1975→                              data-form-type="other"
+  1976→                              maxLength={100}
+  1977→                            />
+  1978→                            {superEmail && (
+  1979→                              <CheckCircle2 className="absolute right-3.5 top-1/2 -translate-y-1/2 size-4 text-emerald-500 animate-scale-in" />
+  1980→                            )}
+  1981→                          </div>
+  1982→                        </div>
+  1983→
+  1984→                        {/* Super Admin: Password */}
+  1985→                        <div className="space-y-1.5">
+  1986→                          <label htmlFor="superPassword" className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-1.5">
+  1987→                            <Lock className="size-3.5 text-muted-foreground" />
+  1988→                            Password
+  1989→                          </label>
+  1990→                          <div className={`relative rounded-xl border transition-all duration-300 ${
+  1991→                            focusedField === 'superPassword'
+  1992→                              ? 'border-emerald-400 dark:border-emerald-500 ring-[3px] ring-emerald-500/15 shadow-lg shadow-emerald-500/10'
+  1993→                              : 'border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50'
+  1994→                          }`}>
+  1995→                            <Lock className={`absolute left-4 top-1/2 -translate-y-1/2 size-[18px] transition-colors duration-200 ${
+  1996→                              focusedField === 'superPassword' ? 'text-emerald-500' : 'text-muted-foreground'
+  1997→                            }`} />
+  1998→                            <Input
+  1999→                              ref={superPassRef}
+  2000→                              id="superPassword"
+
+[showing lines 1-2000 of 2612; use offset=2001 with limit to continue reading]
