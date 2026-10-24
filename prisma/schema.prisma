@@ -1,0 +1,704 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ====== SUPER ADMIN (system-level, NOT tied to any business) ======
+model SuperAdmin {
+  id                String    @id @default(cuid())
+  email             String    @unique
+  password          String
+  name              String
+  securityQuestion  String    @default("What is your name?")
+  securityAnswer    String    @default("sarkar")
+  isActive          Boolean   @default(true)
+  lastLogin         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+// ====== ID COUNTER (for auto-generating Client IDs) ======
+model IdCounter {
+  prefix     String @id   // "BK", "FD", "CL", etc.
+  lastNumber Int    @default(0)
+}
+
+// ====== CLIENT / BUSINESS (the "Client ID" entity) ======
+model Unit {
+  code            String    @id          // Client ID: BK001, FD001, etc.
+  name            String                 // Business Name
+  category        String    @default("") // bakery, food, clothing, general, pharmacy, electronics, custom
+  description     String    @default("")
+  address         String    @default("")
+  phone           String    @default("")
+  email           String    @default("")
+  gstNumber       String    @default("")
+  isActive        Boolean   @default(true)
+  expiresAt       DateTime?             // Subscription expiry date (null = never expires)
+  activationStatus String   @default("active") // "active" | "expired" | "suspended" | "trial"
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  users           User[]
+  settings        Settings[]
+  features        BusinessFeature[]
+  customFields    CustomItemField[]
+}
+
+model User {
+  id                 String    @id @default(cuid())
+  unitCode           String
+  loginId            String
+  password           String
+  name               String
+  role               String    @default("Staff") // "Admin" | "Manager" | "Cashier" | "Staff"
+  permissions        String    @default("{}") // JSON: { billing: { access, create, edit, delete }, ... }
+  isActive           Boolean   @default(true)
+  mustChangePassword Boolean   @default(false) // Force password change on first login
+  lastLogin          DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  unit Unit @relation(fields: [unitCode], references: [code], onDelete: Cascade)
+
+  @@unique([unitCode, loginId])
+  @@index([unitCode])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  unitCode  String
+  userId    String
+  userName  String
+  role      String   @default("")
+  action    String   // e.g., "LOGIN", "CREATE_INVOICE", "DELETE_INVOICE"
+  target    String   @default("") // what was acted on
+  details   String   @default("") // JSON with extra info
+  ipAddress String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([unitCode, createdAt(sort: Desc)])
+  @@index([unitCode, action])
+  @@index([unitCode, userName])
+  @@index([userId])
+  @@index([action])
+}
+
+// ====== SETTINGS (per unit) ======
+model Settings {
+  unitCode            String   @id
+  shopName            String   @default("")
+  shopAddress         String   @default("")
+  shopEmail           String   @default("")
+  shopPhone           String   @default("")
+  authorizedSignatory String   @default("")
+  shopLogo             String   @default("")
+  deliveryCharge      Float    @default(0)
+  enableDelivery      Boolean  @default(false)
+  enableGst           Boolean  @default(false)
+  gstFullMode         Boolean  @default(false)
+  gstSimpleMode       Boolean  @default(false)
+  gstRate             Float    @default(18)
+  gstNumber           String   @default("")
+  gstState            String   @default("")
+  thermalFontSize     Int      @default(12)
+  thermalLineHeight   Float    @default(1.4)
+  thermalTextWeight   String   @default("Normal")
+  thermalDpi          Int      @default(203)
+  thermalPrintQuality String   @default("Dark")
+  thermalDithering    String   @default("None")
+  thermalContrast     Int      @default(100)
+  thermalPaperWidth   String   @default("80mm")
+  thermalAlignment    String   @default("center")
+  thermalMarginTop    Int      @default(0)
+  thermalMarginBottom Int      @default(0)
+  thermalAutoCutLines Int      @default(3)
+  thermalCharsPerLine58 Int    @default(24)
+  thermalCharsPerLine80 Int    @default(32)
+  thermalShowLogo      Boolean @default(false)
+  thermalLogo          String   @default("")
+  openingTime         String   @default("09:00")
+  closingTime         String   @default("22:00")
+  defaultDailyWageRate Float   @default(500)
+  billAutoGenerate     Boolean  @default(false)
+  billPrefix           String   @default("")
+  billStartNumber      Int      @default(1)
+  billCurrentNumber    Int      @default(0)
+  autoRotate           Boolean  @default(true)
+  invoiceTemplate      String   @default("modern")
+  invoiceCustomizations String  @default("{}")
+  updatedAt           DateTime @updatedAt
+
+  unit Unit @relation(fields: [unitCode], references: [code], onDelete: Cascade)
+}
+
+// ====== ITEMS & CATEGORIES ======
+model Category {
+  id          String  @id @default(cuid())
+  unitCode    String  @default("")
+  name        String
+  description String  @default("")
+  image       String  @default("")  // Category photo/image URL
+  items       Item[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([unitCode, name])
+  @@index([unitCode])
+}
+
+model Item {
+  id          String    @id @default(cuid())
+  unitCode    String    @default("")
+  name        String
+  category    String
+  categoryId  String?
+  categoryRef Category? @relation(fields: [categoryId], references: [id])
+  price       Float
+  quantity    Int       @default(0)
+  description String    @default("")
+  image       String    @default("")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([unitCode])
+}
+
+// ====== INVOICES ======
+model Invoice {
+  id              String   @id @default(cuid())
+  unitCode        String   @default("")
+  invoiceNumber   String
+  date            String
+  customerName    String
+  customerAddress String   @default("")
+  customerPhone   String   @default("")
+  paymentMethod   String   @default("Cash")
+  status          String   @default("Pending") // "Pending" | "Paid" | "Balance" | "Refunded" | "Replaced"
+  subtotal        Float
+  cgst            Float    @default(0)
+  sgst            Float    @default(0)
+  deliveryCharge  Float    @default(0)
+  discountAmount  Float    @default(0)
+  grandTotal      Float
+  paidAmount      Float    @default(0)
+  balanceAmount   Float    @default(0)
+  isCompleted     Boolean  @default(false)
+  orderType       String   @default("Dine-In")
+  invoiceItems    InvoiceItem[]
+  refunds         Refund[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([unitCode, invoiceNumber])
+  @@index([unitCode])
+}
+
+model InvoiceItem {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  itemId      String? @default("")  // Links back to Item for inventory tracking
+  name        String
+  description String  @default("")
+  qty         Int
+  rate        Float
+  total       Float
+}
+
+// ====== REFUNDS ======
+model Refund {
+  id                String  @id @default(cuid())
+  unitCode          String  @default("")
+  refundNumber      String
+  originalInvoice   Invoice @relation(fields: [originalInvoiceId], references: [id])
+  originalInvoiceId String
+  date              String
+  items             String  @default("[]") // JSON array of refunded items
+  refundAmount      Float
+  reason            String  @default("")
+  status            String  @default("Completed")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([unitCode, refundNumber])
+  @@index([unitCode])
+}
+
+// ====== PETTY CASH ======
+model PettyCashTransaction {
+  id          String  @default(cuid())
+  unitCode    String  @default("")
+  type        String  // "income" or "expense"
+  amount      Float
+  description String
+  date        String
+  breakdown   String  @default("{}") // JSON string for denomination breakdown
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@id([id, createdAt])
+  @@index([unitCode])
+}
+
+model PettyCashConfig {
+  id       String @id
+  unitCode String @default("")
+  amount   Float  @default(0)
+}
+
+// ====== KHATA BOOK (legacy - kept for backward compat) ======
+model KhataProfile {
+  id             String             @id @default(cuid())
+  unitCode       String             @default("")
+  name           String
+  phone          String             @default("")
+  type           String             @default("Customer") // "Customer" or "Supplier"
+  openingBalance Float              @default(0)
+  transactions   KhataTransaction[]
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([unitCode])
+}
+
+model KhataTransaction {
+  id              String       @id @default(cuid())
+  profileId       String
+  profile         KhataProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  date            String
+  type            String       // "in" or "out"
+  amount          Float
+  description     String       @default("")
+  balanceSnapshot Float
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+}
+
+// ====== CUSTOMER FOLIO MANAGEMENT SYSTEM (PMS-inspired) ======
+
+model Customer {
+  id              String    @id @default(cuid())
+  unitCode        String    @default("")
+  customerId      String    @unique  // e.g., CUST-001
+  primaryFolioId  String    @unique  // e.g., FOLIO-001
+  fullName        String
+  mobile          String    @default("")
+  whatsapp        String    @default("")
+  email           String    @default("")
+  customerType    String    @default("Retail") // Retail, Wholesale, Supplier, Corporate, VIP
+  creditLimit     Float     @default(0)
+  internalNotes   String    @default("")
+  status          String    @default("Active") // Active, Settled, CheckedOut, Archived
+  gstNumber       String    @default("")
+  address         String    @default("")
+  gstAddress      String    @default("")
+  panNumber       String    @default("")
+  aadhaarNumber   String    @default("")
+  companyName     String    @default("")
+  openingBalance  Float     @default(0)
+  
+  folios          Folio[]
+  ledgerEntries   LedgerEntry[]
+  documents       CustomerDocument[]
+  notes           CustomerNote[]
+  visits          CustomerVisit[]
+  settlements     Settlement[]
+  tags            CustomerTagAssignment[]
+  checkoutRecords CheckoutRecord[]
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  @@index([unitCode])
+  @@index([unitCode, mobile])
+  @@index([unitCode, email])
+  @@index([unitCode, status])
+}
+
+model Folio {
+  id            String    @id @default(cuid())
+  unitCode      String    @default("")
+  folioId       String    @unique  // e.g., FOLIO-001
+  folioNumber   Int       @default(0)  // Folio 0, 1, 2, 3... (PMS-style)
+  customerId    String
+  customer      Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  visitNumber   Int       @default(1)
+  status        String    @default("Active") // Active, Locked, Settled, Archived
+  lockedAt      DateTime?
+  lockedBy      String    @default("")
+  settledAt     DateTime?
+  settledBy     String    @default("")
+  
+  ledgerEntries LedgerEntry[]
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@index([unitCode])
+  @@index([customerId])
+  @@unique([customerId, folioNumber])
+}
+
+model LedgerEntry {
+  id            String    @id @default(cuid())
+  unitCode      String    @default("")
+  folioId       String
+  folio         Folio     @relation(fields: [folioId], references: [id], onDelete: Cascade)
+  customerId    String
+  customer      Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  date          String
+  docNo         String    @default("")
+  invoiceNo     String    @default("")
+  
+  type          String    // Charge, Payment, Refund, Discount, Settlement, Transfer, Opening
+  description   String    @default("")
+  
+  debit         Float     @default(0)
+  credit        Float     @default(0)
+  tax           Float     @default(0)
+  discount      Float     @default(0)
+  balance       Float     @default(0)  // Running balance
+  
+  paymentMode   String    @default("") // Cash, UPI, Card, Bank Transfer, Wallet, Mixed
+  
+  userId        String    @default("")
+  userName      String    @default("")
+  status        String    @default("Active") // Active, Cancelled, Reversed
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@index([unitCode])
+  @@index([folioId])
+  @@index([customerId])
+  @@index([customerId, createdAt(sort: Desc)])
+}
+
+model CustomerDocument {
+  id          String    @id @default(cuid())
+  unitCode    String    @default("")
+  customerId  String
+  customer    Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  type        String    @default("Custom") // Aadhaar, PAN, GST, Agreement, Receipt, Invoice, Contract, Photo, ID Proof, Address Proof, Medical, Custom
+  name        String    @default("")
+  url         String    @default("")
+  notes       String    @default("")
+  fileSize    Int       @default(0)
+  mimeType    String    @default("")
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([unitCode])
+  @@index([customerId])
+}
+
+model CustomerNote {
+  id          String    @id @default(cuid())
+  unitCode    String    @default("")
+  customerId  String
+  customer    Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  type        String    @default("Internal") // Internal, Customer, Staff, Private
+  content     String
+  isPrivate   Boolean   @default(false)
+  isImportant Boolean   @default(false)
+  
+  userId      String    @default("")
+  userName    String    @default("")
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  @@index([unitCode])
+  @@index([customerId])
+}
+
+model CustomerTagAssignment {
+  id          String    @id @default(cuid())
+  unitCode    String    @default("")
+  customerId  String
+  customer    Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  tagName     String    // VIP, Premium, Regular, Wholesale, Supplier, High Risk, Blocked
+  
+  createdAt   DateTime  @default(now())
+  
+  @@unique([customerId, tagName])
+  @@index([unitCode])
+}
+
+model CustomerVisit {
+  id            String    @id @default(cuid())
+  unitCode      String    @default("")
+  customerId    String
+  customer      Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  visitNumber   Int
+  checkInAt     DateTime  @default(now())
+  checkOutAt    DateTime?
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@index([unitCode])
+  @@index([customerId])
+}
+
+model Settlement {
+  id            String    @id @default(cuid())
+  unitCode      String    @default("")
+  customerId    String
+  customer      Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  folioId       String    @default("")
+  
+  amount        Float
+  mode          String    @default("Cash") // Cash, UPI, Card, Bank, Wallet, Mixed
+  reference     String    @default("")
+  description   String    @default("")
+  
+  userId        String    @default("")
+  userName      String    @default("")
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@index([unitCode])
+  @@index([customerId])
+}
+
+// ====== CHECKOUT RECORD (permanent snapshot of each checkout) ======
+model CheckoutRecord {
+  id              String    @id @default(cuid())
+  unitCode        String    @default("")
+  customerId      String
+  customer        Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  
+  // Checkout metadata
+  checkoutNumber      String    @unique  // e.g., CO-001
+  invoiceNumber       String    @default("")
+  customInvoiceNumber String    @default("")  // User-set custom invoice number for reprint
+  checkoutDate        DateTime  @default(now())
+  checkoutUser    String    @default("")
+  checkoutUserId  String    @default("")
+  remarks         String    @default("")
+  
+  // Customer snapshot (frozen at checkout time)
+  customerName      String    @default("")
+  customerMobile    String    @default("")
+  customerEmail     String    @default("")
+  customerAddress   String    @default("")
+  customerType      String    @default("")
+  customerIdRef     String    @default("")  // e.g., CUST-001
+  customerGstNumber String    @default("")  // P2: GST snapshot for accurate reprint
+  customerGstAddress String    @default("") // P2: GST address snapshot
+  customerPanNumber String    @default("")  // P2: PAN snapshot
+  customerCompanyName String  @default("") // P2: Company name snapshot
+  
+  // Folio info
+  folioIds        String    @default("[]")  // JSON array of folio IDs that were closed
+  folioNumbers    String    @default("[]")  // JSON array of folio numbers
+  visitNumber     Int       @default(1)
+  
+  // Financial snapshot (frozen at checkout time)
+  totalCharges    Float     @default(0)
+  totalPayments   Float     @default(0)
+  totalTax        Float     @default(0)
+  totalDiscount   Float     @default(0)
+  totalSettlements Float    @default(0)
+  totalRefunds    Float     @default(0)
+  openingBalance  Float     @default(0)
+  closingBalance  Float     @default(0)
+  outstanding     Float     @default(0)
+  
+  // Complete transaction snapshot (JSON) — the EXACT entries at checkout time
+  transactions    String    @default("[]")  // JSON array of ledger entries
+  
+  // Settlements snapshot
+  settlements     String    @default("[]")  // JSON array of settlements
+  
+  // Payment mode breakdown (JSON)
+  paymentBreakdown String   @default("{}")  // { "Cash": 5000, "UPI": 3000, ... }
+  
+  createdAt       DateTime  @default(now())
+  
+  @@index([unitCode])
+  @@index([customerId])
+  @@index([unitCode, checkoutDate(sort: Desc)])
+}
+
+model FolioAuditLog {
+  id          String    @id @default(cuid())
+  unitCode    String    @default("")
+  customerId  String    @default("")
+  folioId     String    @default("")
+  
+  action      String    // Create, Edit, Delete, Restore, Settlement, Checkout, Refund, Discount, Transfer, Reopen, Lock, Unlock
+  target      String    @default("")
+  details     String    @default("") // JSON
+  userId      String    @default("")
+  userName    String    @default("")
+  ipAddress   String    @default("")
+  device      String    @default("")
+  
+  createdAt   DateTime  @default(now())
+  
+  @@index([unitCode, createdAt(sort: Desc)])
+  @@index([customerId])
+  @@index([folioId])
+}
+
+// ====== STAFF & ATTENDANCE ======
+model StaffProfile {
+  id            String      @id @default(cuid())
+  unitCode      String      @default("")
+  name          String
+  designation   String      @default("")
+  department    String      @default("")
+  dailyWageRate Float       @default(500)
+  attendance    Attendance[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([unitCode])
+}
+
+model Attendance {
+  id        String       @id @default(cuid())
+  profileId String
+  profile   StaffProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  date      String
+  status    String       @default("") // "present", "absent", "leave", "holiday", "halfday", ""
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@unique([profileId, date])
+}
+
+// ====== CALCULATOR HISTORY ======
+model CalcHistory {
+  id         String   @id @default(cuid())
+  unitCode   String   @default("")
+  expression String
+  result     String
+  createdAt  DateTime @default(now())
+
+  @@index([unitCode])
+}
+
+// ====== BUSINESS CATEGORY FEATURES (auto-enabled per category) ======
+model BusinessFeature {
+  id          String  @id @default(cuid())
+  unitCode    String
+  unit        Unit    @relation(fields: [unitCode], references: [code], onDelete: Cascade)
+  key         String  // e.g., "weightBasedSelling", "batchNumber", "kot"
+  label       String  // e.g., "Weight Based Selling", "Kitchen Order Ticket"
+  enabled     Boolean @default(true)
+  module      String  @default("general") // "inventory", "billing", "restaurant", "manufacturing", "service", "general"
+  description String  @default("")
+
+  @@unique([unitCode, key])
+  @@index([unitCode])
+}
+
+// ====== RESTAURANT TABLE MANAGEMENT ======
+model RestaurantTable {
+  id          String  @id @default(cuid())
+  unitCode    String  @default("")
+  tableNumber Int     // Display number: 1, 2, 3...
+  name        String  @default("") // Custom name like "VIP Table", "Corner Table"
+  capacity    Int     @default(4) // Number of seats
+  section     String  @default("") // "Indoor", "Outdoor", "AC", "Terrace", etc.
+  status      String  @default("available") // "available", "occupied", "reserved", "cleaning"
+  sessions    TableSession[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([unitCode, tableNumber])
+  @@index([unitCode])
+}
+
+// ====== TABLE SESSIONS (Restaurant dine-in ordering) ======
+model TableSession {
+  id            String          @id @default(cuid())
+  unitCode      String          @default("")
+  tableId       String
+  table         RestaurantTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  tableNumber   Int
+  status        String          @default("active") // "active", "settled", "cancelled"
+  guestCount    Int             @default(1)
+  waiterId      String          @default("")
+  waiterName    String          @default("")
+  waiterNotes   String          @default("")
+  openedAt      DateTime        @default(now())
+  closedAt      DateTime?
+  totalAmount   Float           @default(0)
+  paidAmount    Float           @default(0)
+  discountAmount Float          @default(0)
+  taxAmount     Float           @default(0)
+  paymentMethod String          @default("Cash") // "Cash", "UPI", "Card", "Mixed"
+  customerName  String          @default("")
+  customerPhone String          @default("")
+  invoiceId     String          @default("")
+  invoiceNumber String          @default("")
+  orders        TableOrder[]
+
+  @@index([unitCode])
+  @@index([tableId])
+  @@index([status])
+}
+
+model TableOrder {
+  id            String        @id @default(cuid())
+  unitCode      String        @default("")
+  sessionId     String
+  session       TableSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  orderNumber   Int
+  status        String        @default("new") // "new", "preparing", "ready", "served", "cancelled"
+  kotPrinted    Boolean       @default(false)
+  slipPrinted   Boolean       @default(false)
+  tableNotes    String        @default("")
+  subtotal      Float         @default(0)
+  items         TableOrderItem[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([unitCode])
+  @@index([sessionId])
+}
+
+model TableOrderItem {
+  id            String      @id @default(cuid())
+  unitCode      String      @default("")
+  orderId       String
+  order         TableOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  itemId        String      @default("") // Links to Item
+  name          String
+  qty           Int         @default(1)
+  rate          Float
+  total         Float       @default(0)
+  customNote    String      @default("")
+  status        String      @default("pending") // "pending", "preparing", "served", "cancelled"
+
+  @@index([unitCode])
+  @@index([orderId])
+}
+
+// ====== CUSTOM ITEM FIELDS (auto-created per category) ======
+model CustomItemField {
+  id          String  @id @default(cuid())
+  unitCode    String
+  unit        Unit    @relation(fields: [unitCode], references: [code], onDelete: Cascade)
+  key         String  // e.g., "weight", "batchNo", "expiryDate"
+  label       String  // e.g., "Weight", "Batch No", "Expiry Date"
+  fieldType   String  @default("text") // text, number, date, select, boolean
+  options     String  @default("[]") // JSON array for select options
+  required    Boolean @default(false)
+  sortOrder   Int     @default(0)
+  visible     Boolean @default(true)
+
+  @@unique([unitCode, key])
+  @@index([unitCode])
+}
